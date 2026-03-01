@@ -31,7 +31,7 @@ Terminology (execution):
   - Replay mode does *not* reuse past LLM decisions; it calls the model on historical snapshots.
 
 Run stages (replay jobs):
-- **Data prepare stage**: market data is requested/backfilled for the chosen window(s) and normalized into canonical events by importers/crawlers (or an API-triggered backfill job). The run cannot start simulating until required datasets are ready.
+- **Data prepare stage**: market + sentiment data is requested/backfilled for the chosen window(s) and normalized into canonical events by importers/crawlers (or an API-triggered backfill job). For sentiment, generate 1:1 `sentiment.item_summary` per `sentiment.item` (sentiment datasets may be empty). The run cannot start simulating until required datasets are ready.
 - **LLM call stage**: the prepared event stream is replayed into the orchestrator; at each tick it builds snapshots, calls the model, and simulates trades/rebalances.
 - **Summary stage**: after simulation completes (tournament: after all 10 windows), run a predefined "post-run review" prompt to generate a free-form text report about performance and learnings.
 
@@ -61,17 +61,19 @@ Non-goals (MVP):
 | Frontend | TypeScript (Next.js) | Dashboard, TradingView Widget for charts |
 | Message Queue | RabbitMQ | Simpler than Kafka. Used for inter-service communication between crawlers, orchestrator, etc. |
 | Event persistence | Event-store service | Dedicated consumer persists canonical events from RabbitMQ into Postgres with idempotent dedupe. |
-| Output persistence | Publish events only | Orchestrator publishes `llm.*` / `sim.*` / `portfolio.*` events; event-store persists canonical events (no direct DB writes required for correctness). Prompts/responses are stored separately in `llm_calls` (written by `llm_gateway`) and referenced from events. |
+| Output persistence | Publish events only | Orchestrator publishes `run.*` / `llm.*` / `sim.*` / `portfolio.*` events; event-store persists canonical events (no direct DB writes required for correctness). Prompts/responses are stored separately in `llm_calls` (written by `llm_gateway`) and referenced from events. |
+| Run status updates | MQ status events | Orchestrator publishes `run.started` / `run.finished` / `run.failed` events on `ex.events`; a consumer updates `runs.status`. |
 | Run concurrency | Global live + queued replay jobs | Live Dashboard is one global live run; Benchmark Lab/Arena runs execute async with bounded concurrency (MVP: 1 replay worker). Each replay job is staged: data prepare -> LLM call/sim -> summary. |
 | Database | Postgres | Start with plain Postgres + good indexes (time-series friendly schema). Timescale can be added later if needed. |
 | Entity typing | Pydantic (Python) + Zod (TypeScript) | Shared via generated OpenAPI spec |
 | API layer | REST + OpenAPI | Auto-generated from Pydantic models |
-| Control plane | API + MQ commands | API server is source of truth for run/dataset lifecycle; it writes DB state then publishes `run.*` / `dataset.*` commands on `ex.control`. |
+| Control plane | API + MQ commands | API server is source of truth for run/dataset lifecycle; it writes DB state then publishes `run.*` / `dataset.*` / `sentiment.*` commands on `ex.control`. |
 | LLM integration | Gateway service | Central service handles provider routing, retries, rate limits, and audit logging (`llm_calls`). OpenAI-compatible facade (OpenRouter likely). Provider endpoints/keys are admin-managed server-side secrets. |
 | Uniform API scope | Internal + external | Internal provider interfaces + stable external REST/OpenAPI for dashboard/clients. |
 | Config | DB-backed + snapshotted | Runtime-editable, but every run stores an immutable config snapshot for reproducibility. |
 | Auth | OIDC (Authentik) | Authentik as OIDC provider (bridges Google/GitHub/etc). Backend validates JWTs via JWKS; user owns their benchmarks. |
-| Tenancy | Per-user ownership | Benchmarks private by default; leaderboard is public but redacted (metrics-only, no prompt text). |
+| Admin authorization | Authentik group claim | Treat membership in an Authentik-managed group/role claim (e.g. `groups` contains `admin`) as admin. |
+| Tenancy | Per-user ownership | Benchmarks private by default; leaderboard is public and includes rationale + post-run summaries by default; prompt text + raw LLM calls remain private by default. |
 | Deployment | Docker Compose | One command to run everything: API, crawlers, MQ, DB, frontend |
 
 ### Data & Markets
@@ -95,8 +97,8 @@ Non-goals (MVP):
 | Provider routing | OpenAI-compatible | All model calls go through the gateway using OpenAI-format requests (OpenRouter preferred). |
 | Prompt strategy | Same prompt within a run | Prompt is fixed within a run (single coin + single model). Tournament runs reuse the same prompt across the 10 scenario windows for comparability. |
 | Prompt authoring | Freeform + templating | Prompt text supports a constrained template engine (no code execution) so users can parameterize prompts safely. |
-| Prompt visibility | Private by default | Store full prompts for audit/repro, but public leaderboard views show only summary metrics/score (no prompt text). |
-| Prompt payload | Raw + features | Include compact raw context (latest prices/bars) plus derived features/alerts and the shared sentiment summary to keep prompts stable and small. |
+| Prompt visibility | Private by default | Store full prompts for audit/repro. Public leaderboard views may show per-tick rationale/confidence + post-run summary, but prompt text and raw LLM prompts/responses remain private by default. |
+| Prompt payload | Raw + features | Include compact raw context (latest prices/bars) plus derived features/alerts and bounded sentiment context (items + per-item summaries) to keep prompts stable and small. |
 | Feature computation | On-the-fly | Compute derived indicators/features in the orchestrator at prompt time (no `feature.*` event stream in v1). |
 | Decision format | Strict JSON schema | Require valid JSON matching Pydantic schema. Decimal fields accept JSON numbers or quoted decimal strings; parsed values are normalized and persisted canonically as decimal strings. Invalid output => error event + hold last targets. |
 | Decision output | Target exposures (% equity) | Model outputs target exposure as a fraction of current equity per `market_id` (resolved to `MarketRef`) (e.g. `-0.25` = 25% short, `+0.40` = 40% long), not discrete orders. |
@@ -105,6 +107,7 @@ Non-goals (MVP):
 | Exposure constraints | Gross/Net limits | Enforce gross leverage + net exposure caps across the whole portfolio; cash is implicit residual. |
 | Instrument constraints | Spot long-only, perps long/short | Spot exposures must be `>= 0`. Perps exposures may be positive or negative. Violations => decision rejected (hold last targets). |
 | Scheduling | Wall-clock baseline + early checks | Model is called on a wall-clock base cadence for comparability/progress. Model may request earlier re-checks via `next_check_seconds`; we only honor earlier-than-base requests, clamp to `[min_interval_seconds, base_interval_seconds]`, align to the next price tick, and log all requests (even ignored ones) for cost/accounting. |
+| Base cadence behavior | Anchored | Base ticks stay anchored to the configured wall-clock cadence; early checks may insert extra ticks in-between but do not shift the next base tick. |
 | Default interval | 1 hour | Base cadence; model may request earlier re-checks; store every schedule request for analysis/cost accounting. |
 | Budgeting | Track + throttle (MVP) | Track calls/tokens/cost per user/run; enforce concurrency + rate limits (no billing; avoid runaway leaderboard submissions). |
 | Backtesting | MQ historical playback | Backfill/ingest historical market events into the DB, then publish a chosen time window into RabbitMQ to mimic live ingestion (LLM is called live on historical snapshots). |
@@ -113,6 +116,10 @@ Non-goals (MVP):
 | LLM benchmarking | Parallel replay (future) | MVP constraint: one model per run. Compare models by running multiple runs over the same window or via tournament leaderboard rankings. |
 | Prompt storage | Store full | Persist full prompt + raw response in `llm_calls`. Keep `llm.decision` payloads bounded by storing parsed decisions + references (e.g., `call_id`) instead of embedding full prompts/responses in events. |
 | LLM failure policy | Hold last targets | On timeout/parse/validation error, keep last target exposures; emit an error event; retry next tick. |
+
+Prompt memory (v1):
+- Include the last **3** decision steps in the trading prompt.
+- For each prior step, include: sentiment context used, parsed decision JSON, rationale/confidence/key_signals, portfolio snapshot/PnL, and guard/reject info.
 
 LLM decision JSON (v1) (draft):
 
@@ -156,14 +163,15 @@ Validation rules (v1):
 |----------|--------|-------|
 | Crawler architecture | Independent microservices | Each crawler (price, sentiment, on-chain) is its own service, communicates via RabbitMQ |
 | Exchange abstraction | CCXT-style unified API | Abstract base with `get_price()`, `get_ohlcv()`, `get_trades()`, `get_liquidity()`, plus perps methods (`get_mark_price()`, `get_funding_rate()`). Leverage CCXT for CEX if needed. |
-| Sentiment source | Scraper + per-tick summarizer | Scrape a curated X/Twitter KOL list + RSS/news into `sentiment.item`. At each tick, run a shared (per-tick) sentiment summarization step (fixed summarizer config for comparability; 1h lookback; cap inputs to 20 posts + 10 news) to emit a global-text `sentiment.summary` (emit empty summaries when no items). Free but risk of blocking. |
+| Sentiment source | Scraper + per-item summarizer | Scrape a curated X/Twitter KOL list + RSS/news into `sentiment.item`. In data prepare (dataset import) and live ingestion, generate a 1:1 `sentiment.item_summary` per item (timestamped at the item time). |
+| Live sentiment refresh | On-demand fetch command | If the model requests an early check in live mode, orchestrator publishes a control command (e.g. `sentiment.fetch_now`) so the sentiment service attempts an immediate refresh before prompt building. |
 | Adapter packaging | In-repo modules | Keep adapters in the repo with explicit registration (no dynamic plugin loading). |
 
 ### Stretch Goals (if time permits)
 | Item | Notes |
 |------|-------|
 | Polymarket module | Binary prediction markets. Share sentiment engine. Separate execution module. Tiannan suggested — real money-making potential (e.g. weather markets). Different liquidity curve, needs its own system. |
-| Per-market sentiment (upgrade) | Upgrade from global-text summaries to per-market summaries + structured scores/signals + better anti-bot resilience. |
+| Per-market sentiment (upgrade) | Upgrade from per-item summaries to per-market rollups + structured scores/signals + better anti-bot resilience. |
 
 ---
 
@@ -224,9 +232,16 @@ Numeric encoding (v1):
 - LLM decisions may provide decimals as JSON numbers or quoted decimal strings; after parsing/validation, canonical stored values are persisted as decimal strings.
 - Units must be explicit in field naming (e.g. `volume_base`, `volume_quote`, `fee_bps`).
 
+REST numeric encoding (v1):
+- External REST API responses return numeric values as JSON numbers for frontend charting convenience.
+- Internally, canonical events remain decimal strings; API conversion should apply explicit rounding/precision rules.
+
 Replay determinism contract (goal):
 - Replay publishes a single, totally ordered stream into RabbitMQ (e.g., order by `(observed_at, source, event_type, dedupe_key)`)
-- Orchestrator applies events idempotently using `(event_type, dedupe_key)` (at-least-once delivery is expected)
+- Orchestrator applies events idempotently using the same scope as DB dedupe:
+  - dataset events: `(dataset_id, event_type, dedupe_key)`
+  - run events: `(run_id, event_type, dedupe_key)`
+  (at-least-once delivery is expected)
 
 Schema evolution:
 - All event payloads are versioned via `schema_version`
@@ -243,6 +258,7 @@ Event stream categories (initial):
 - Sentiment: `sentiment.*`
 - Decisions: `llm.decision`, `llm.schedule_request`
 - Execution: `sim.fill`, `portfolio.snapshot`
+- Run lifecycle: `run.*` (started/finished/failed)
 
 ### Canonical Event Types (v1) (Draft)
 
@@ -265,18 +281,29 @@ Perps (minimum for sim + prompts):
 - `perps.funding_rate` — Funding rate (interval + next funding timestamp).
 - `perps.open_interest` — Optional; used for context/filters.
 
-Sentiment (raw ingestion + per-tick summary):
+Sentiment (raw ingestion + per-item summaries):
 - `sentiment.item` — Raw scraped item (X post or news item), bounded payload (text/title/snippet + URL + timestamps + basic engagement).
   - Dedupe key (suggested): `{source}:{external_id}` (e.g. `x:tweet:123`, `rss:url:<hash>`)
-- `sentiment.summary` — Global per-tick summary text (1h lookback) produced before trading LLM calls. Emit one per tick even if empty (determinism + audit; future: share across multi-model benchmarking).
-  - Payload (suggested): `{tick_time, lookback_start, lookback_end, input_counts, summary_text, llm_call_id?}`
-  - Dedupe key (suggested): `{tick_time}`
+- `sentiment.item_summary` — Per-item summary/annotation (1:1 with `sentiment.item`). Each summary covers exactly one post/item (no merging across posts).
+  - Payload (suggested): `{source, external_id, item_time, item_kind, summary_text, entities?, sentiment_score?, tags?, llm_call_id?}`
+  - Dedupe key (suggested): `{source}:{external_id}`
+
+Sentiment context in prompts (v1):
+- At each decision tick, include bounded sentiment context by selecting recent items within the lookback window (prefer `sentiment.item_summary`, optionally include raw `sentiment.item` snippets/URLs).
+- On early-check ticks, explicitly highlight any new sentiment items since the previous tick (still bounded) so fast flips capture fresh info.
+- Replay/leaderboard ticks can include all relevant dataset sentiment up to the mocked tick time (bounded and time-masked by the prompt builder).
+- Live early-check ticks may trigger `sentiment.fetch_now` prior to prompt building.
 
 Decisions/execution:
 - `llm.decision` — Parsed decision payload (targets keyed by `market_id`, plus rationale/confidence) + references to prompt/response (e.g., `llm_calls.call_id`).
 - `llm.schedule_request` — Optional earlier re-check request derived from `next_check_seconds` in decision JSON (logged for cost + analysis).
 - `sim.fill` — Simulated trade/fill event.
 - `portfolio.snapshot` — Portfolio state projection (equity/cash/positions) at a point in time.
+
+Run lifecycle:
+- `run.started` — Run execution begins.
+- `run.finished` — Run completed successfully.
+- `run.failed` — Run completed with an error (include an error string/code in payload).
 
 ### Snapshot Semantics (Draft)
 
@@ -292,9 +319,12 @@ Dataset-scoped (market/perps) events:
 
 Dataset-scoped (sentiment) events:
 - `sentiment.item`: `{source}:{external_id}`
+- `sentiment.item_summary`: `{source}:{external_id}`
 
 Run-scoped events (unique under `(run_id, event_type, dedupe_key)`):
-- `sentiment.summary`: `{tick_time}` (one per tick per run)
+- `run.started`: `started`
+- `run.finished`: `finished`
+- `run.failed`: `failed`
 - `llm.decision`: `{tick_time}`
 - `llm.schedule_request`: `{tick_time}`
 - `portfolio.snapshot`: `{snapshot_time}`
@@ -343,8 +373,8 @@ Draft config shape:
     "lookback_seconds": 3600,
     "max_x_posts": 20,
     "max_news_items": 10,
-    "summary_kind": "global_text",
-    "empty_policy": "emit_empty_summary"
+    "summary_kind": "per_item",
+    "empty_policy": "allow_empty"
   },
   "replay": {
     "advance_mode": "as_fast_as_possible",
@@ -369,7 +399,7 @@ Draft config shape:
       }
     },
     "lookback": {"kind": "fixed", "bars": 24, "timeframe": "1h"},
-    "include": ["raw", "features", "sentiment_summary"],
+    "include": ["raw", "features", "sentiment_context"],
     "masking": {"time_offset_seconds": 0}
   },
   "execution": {
@@ -387,7 +417,7 @@ Draft config shape:
 Dataset alignment (v1):
 - All non-null referenced dataset ids must have identical `start`/`end` windows. If they do not match exactly, run creation fails.
 - Exactly one of `spot_dataset_id` / `perps_dataset_id` should be non-null, matching the selected `market.market_type`.
-- `sentiment_dataset_id` may be omitted; in that case the orchestrator still emits an empty `sentiment.summary` per tick for determinism.
+- `sentiment_dataset_id` is required for runs, but the dataset may be empty (zero items/zero summaries).
 - Tournament submissions span 10 windows; alignment is enforced per scenario window/run (not across the whole submission).
 
 Arena / leaderboard submission (v1):
@@ -395,7 +425,7 @@ Arena / leaderboard submission (v1):
 - For comparability, scheduler + execution/risk knobs are fixed by the platform; user-controlled knobs are selected `market_id` + prompt + model + metrics spec.
 - The system expands a submission into 10 replay runs (one per scenario window) and aggregates results into one score (default: aggregate return %).
 - After aggregation, run the predefined summary prompt and store it on `arena_results` (`summary_call_id` + `summary_text`).
-- Leaderboard is public, but details are redacted by default (show score + key metrics only; keep prompt text private).
+- Leaderboard is public. Default public fields include score + key metrics + post-run `summary_text` + per-tick rationale/confidence/key_signals (if present). Prompt text and raw LLM prompts/responses remain private by default.
 
 Notes (tournament v1):
 - Tournament runs select exactly 1 `market_id` (coin) from the pinned watchlist.
@@ -426,16 +456,21 @@ Minimal API surface for a dashboard + CLI:
 ## MQ Topology (Draft)
 
 Exchanges:
-- `ex.events` (topic): canonical persisted events from crawlers/importers + orchestrator outputs (`sentiment.summary`, `llm.*`, `sim.*`, `portfolio.*`)
+- `ex.events` (topic): canonical persisted events from crawlers/importers + orchestrator outputs (`run.*`, `llm.*`, `sim.*`, `portfolio.*`)
 - `ex.replay` (topic): replay streaming events feeding replay/orchestrator workers (not persisted; derived from the DB event log)
-- `ex.control` (topic): run + dataset control commands
+- `ex.control` (topic): run + dataset + sentiment refresh control commands
+
+Naming convention (v1):
+- `ex.control` routing keys are commands (imperative), e.g. `run.start`, `run.stop`, `dataset.import`, `sentiment.fetch_now`.
+- `ex.events` routing keys are facts/status (past-tense), e.g. `run.started`, `run.finished`, `llm.decision`, `portfolio.snapshot`.
 
 Queues (initial):
 - `q.event_store.events` binds `ex.events` with `#` (persist all canonical events to Postgres)
-- `q.orchestrator.live.events` binds `ex.events` with `market.*`, `perps.*`, `sentiment.*` (Live Dashboard inputs)
+- `q.orchestrator.live.events` binds `ex.events` with `market.*`, `perps.*`, `sentiment.item`, `sentiment.item_summary` (Live Dashboard inputs)
 - `q.orchestrator.replay.events` binds `ex.replay` with `market.*`, `perps.*`, `sentiment.*` (Benchmark Lab/Arena inputs)
 - `q.orchestrator.control` binds `ex.control` with `run.*`
 - `q.importers.control` binds `ex.control` with `dataset.*`
+- `q.sentiment.control` binds `ex.control` with `sentiment.*`
 
 Replay mode behavior (Benchmark Lab / Arena):
 - Live crawlers continue to feed Live Dashboard.
@@ -467,7 +502,7 @@ Arena / leaderboard:
 - `arena_scenario_results`: `(submission_id, window_id, run_id, return_pct, key_metrics_jsonb)`
 
 LLM audit:
-- `llm_calls`: `(call_id, run_id?, arena_submission_id?, purpose, observed_at, prompt, response_raw, response_parsed, usage_jsonb, latency_ms, error)` (written by `llm_gateway`; referenced by `llm.decision` / `sentiment.summary` and `runs.summary_call_id` / `arena_results.summary_call_id`)
+- `llm_calls`: `(call_id, run_id?, arena_submission_id?, purpose, observed_at, prompt, response_raw, response_parsed, usage_jsonb, latency_ms, error)` (written by `llm_gateway`; referenced by `llm.decision` / `sentiment.item_summary` and `runs.summary_call_id` / `arena_results.summary_call_id`)
 
 Projections for fast reads:
 - `portfolio_snapshots`: `(run_id, observed_at, equity, cash, positions_jsonb)`
@@ -589,30 +624,32 @@ Adapter categories:
 ### Services (v1) (Draft)
 
 - `api` — REST/OpenAPI surface for dashboard + CLI; stores configs/snapshots; run/dataset lifecycle.
-- `orchestrator` — Snapshot builder + scheduler; computes shared per-tick `sentiment.summary`; calls LLM gateway; publishes `sentiment.summary` / `llm.*` / `sim.*` / `portfolio.*` events.
+- `orchestrator` — Snapshot builder + scheduler; assembles bounded sentiment context + short prompt memory window; calls LLM gateway; publishes `run.*` / `llm.*` / `sim.*` / `portfolio.*` events. In live mode, may publish `sentiment.fetch_now` on `ex.control` on early-check ticks.
 - `event_store` — Single writer for the canonical `events` table (idempotent dedupe); optionally maintains simple projections.
 - `replay` — Reads canonical events for selected dataset ids/time window and publishes them into `ex.replay` with deterministic ordering.
 - `importers` — Backfill per category (spot/perps/sentiment) producing dataset ids.
 - `live crawlers` — Continuous ingestion in live mode (always-on for Live Dashboard; replay runs do not require disabling live feeds).
+- `sentiment` — Scrapes X/RSS, emits `sentiment.item` + `sentiment.item_summary`, and handles on-demand refresh commands like `sentiment.fetch_now`.
 - `llm_gateway` — Provider routing, retries, rate limits, usage/cost accounting, and audit logging to `llm_calls` (returns `call_id` for event references); OpenAI-compatible facade.
 - `arena` (optional) — Expands leaderboard submissions into scenario-runs, aggregates return % + key metrics, and serves leaderboard views.
 
 ### Data Flow (Live Mode)
 1. Crawlers independently fetch data on their own schedules → publish to RabbitMQ
 2. Orchestrator consumes from MQ, aggregates into a market snapshot
-3. On each scheduled tick, orchestrator builds a tick snapshot and computes a shared sentiment summary for the lookback window (bounded inputs; emit empty summary if no items)
-4. Orchestrator builds the prompt from the same snapshot + shared sentiment summary → calls the selected model
-5. The LLM returns target exposure (+ optional next-check request)
-6. Simulated execution engine processes decisions, updates paper portfolio, and publishes `llm.decision` / `sim.fill` / `portfolio.snapshot` events
-7. Event-store service consumes canonical events from RabbitMQ and persists them to Postgres (append-only event log + projection tables for fast dashboard queries)
-8. Dashboard polls API for latest state, renders charts
+3. On each scheduled tick, orchestrator builds a tick snapshot and assembles bounded sentiment context from recent `sentiment.item`/`sentiment.item_summary` within the lookback window (sentiment may be empty)
+4. If the tick is an early-check in live mode, orchestrator first publishes `sentiment.fetch_now` and incorporates any newly ingested sentiment before prompt building
+5. Orchestrator builds the prompt from the same snapshot + sentiment context + short memory window → calls the selected model
+6. The LLM returns target exposure (+ optional next-check request)
+7. Simulated execution engine processes decisions, updates paper portfolio, and publishes `llm.decision` / `sim.fill` / `portfolio.snapshot` events
+8. Event-store service consumes canonical events from RabbitMQ and persists them to Postgres (append-only event log + projection tables for fast dashboard queries)
+9. Dashboard polls API for latest state, renders charts
 
 ### Data Flow (Backtest/Replay Mode)
 1. Importers/backfill jobs run per category (spot/perps/sentiment). Each importer fetches vendor data and publishes canonical events to RabbitMQ (tagged with its `dataset_id`); event-store persists them to Postgres
 2. A replay service reads the chosen time window for the run's dataset ids (spot/perps/sentiment) from the DB event log and merges them into a single ordered stream
 3. It republishes that merged stream into RabbitMQ (via `ex.replay`) preserving stored `observed_at` values (for backfilled data, typically `observed_at = event_time`) with deterministic ordering rules
 4. The orchestrator consumes the same message types as live mode (but from `ex.replay`) and rebuilds snapshots
-5. On each scheduled tick, orchestrator computes the shared sentiment summary for the lookback window (emit empty summary if no items), then calls the selected model using the same snapshot + shared sentiment summary
+5. On each scheduled tick, orchestrator assembles bounded sentiment context from the sentiment dataset up to the mocked tick time (time-masked), then calls the selected model using the same snapshot + sentiment context + short memory window
 6. Decisions and simulated P&L are stored as a run (single window) or as scenario-run results that roll up into a tournament submission score
 7. Run the predefined post-run summary prompt; tournament summaries run after all 10 windows and are stored on the submission result (and logged in `llm_calls`)
 8. Dashboard shows single-run views and tournament leaderboard views for any historical period
@@ -633,8 +670,8 @@ Adapter categories:
 10. **Canonical event payload shapes** — For each `market.*` / `perps.*` event type, what is the minimal canonical payload that stays stable across vendors while still being useful for prompt building + sim?
 11. **High-volume events policy** — For `market.trades` (1m buckets + top-20) and other potentially large payloads, what are the exact bucket stats + top-20 selection rule, and what do we keep as raw vs normalized?
 12. **AssetRef conventions** — How do we map on-chain `TokenRef`s, fiat (USD), and perps underlyings into a stable `AssetRef` namespace/id scheme (e.g., chain address vs symbol vs Coingecko id)?
-13. **OIDC integration** — Which claims/groups define admin vs user? Token lifetimes/refresh? Do we accept only Authentik-issued tokens on the API (JWKS pinning + issuer checks)?
-14. **Prompt templating contract** — Exactly which variables are available (snapshot JSON, derived features, shared sentiment summary, risk limits), and how do we keep templates deterministic + bounded in size?
+13. **OIDC integration** — Which Authentik claim contains groups/roles (e.g. `groups`), and what exact group name grants admin? Token lifetimes/refresh? Do we accept only Authentik-issued tokens on the API (JWKS pinning + issuer checks)?
+14. **Prompt templating contract** — Exactly which variables are available (snapshot JSON, derived features, sentiment context, risk limits, short memory window), and how do we keep templates deterministic + bounded in size?
 15. **Leaderboard fairness** — Scenario window definitions, return % aggregation across windows, and which fixed risk constraints to enforce for comparability.
 16. **Metrics DSL** — What safe JSON/DSL operations are allowed, how to validate it, and how to ensure runtime determinism/performance.
 
