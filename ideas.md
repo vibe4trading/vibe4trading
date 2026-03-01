@@ -25,15 +25,21 @@ A **dynamic LLM trading analysis / benchmarking platform** that:
 
 NOT just a live trading bot — it's a **benchmarking and analysis platform** with live capability.
 
-Terminology:
+Terminology (execution):
 - **Live mode**: ingest current data from vendor APIs and run models in real time.
 - **Replay mode**: run the benchmark over a selected historical time window by playing historical data forward as if it were live.
   - Replay mode does *not* reuse past LLM decisions; it calls models on historical snapshots.
 
-Non-goals (for this project):
-- Not a consumer product (no multi-tenant accounts, billing, etc.)
-- No real-money execution (paper/sim only)
-- Minimal auth (admin-only / single user)
+Product modes (UX):
+- **Live Dashboard (main page)**: a curated, global live run with fixed prompt/settings for always-on visualization.
+- **Benchmark Lab**: user-created replay benchmarks with customizable prompt (freeform + templating), model selection, and historical window.
+- **Strategy Arena (Leaderboard)**: user submits a single-model strategy (prompt + metrics spec) and it is battle-tested across a curated set of scenario windows; leaderboard ranks by total return %.
+
+Non-goals (MVP):
+- No billing/subscriptions.
+- No real-money execution (paper/sim only).
+- No arbitrary user-uploaded code execution in the backend (custom metrics aggregators must be a safe JSON/DSL).
+- No enterprise multi-tenant features (orgs, complex RBAC); only per-user ownership + basic admin.
 
 ---
 
@@ -49,7 +55,7 @@ Non-goals (for this project):
 | Message Queue | RabbitMQ | Simpler than Kafka. Used for inter-service communication between crawlers, orchestrator, etc. |
 | Event persistence | Event-store service | Dedicated consumer persists canonical events from RabbitMQ into Postgres with idempotent dedupe. |
 | Output persistence | Publish events only | Orchestrator publishes `llm.*` / `sim.*` / `portfolio.*` events; event-store persists (no direct DB writes required for correctness). |
-| Run concurrency | Single active run | Assume one active replay/live run at a time; simplifies MQ topology (no run-scoped routing keys). |
+| Run concurrency | Global live + queued replay jobs | Live Dashboard is one global live run; Benchmark Lab/Arena runs execute async with bounded concurrency (MVP: 1 replay worker). |
 | Database | Postgres | Start with plain Postgres + good indexes (time-series friendly schema). Timescale can be added later if needed. |
 | Entity typing | Pydantic (Python) + Zod (TypeScript) | Shared via generated OpenAPI spec |
 | API layer | REST + OpenAPI | Auto-generated from Pydantic models |
@@ -57,7 +63,8 @@ Non-goals (for this project):
 | LLM integration | Gateway service | Central service handles provider routing, retries, and rate limits (OpenAI-compatible; likely OpenRouter). |
 | Uniform API scope | Internal + external | Internal provider interfaces + stable external REST/OpenAPI for dashboard/clients. |
 | Config | DB-backed + snapshotted | Runtime-editable, but every run stores an immutable config snapshot for reproducibility. |
-| Auth | None (single user) | Admin-only benchmark tool; not building a multi-tenant product. |
+| Auth | OIDC (Authentik) | Authentik as OIDC provider (bridges Google/GitHub/etc). Backend validates JWTs via JWKS; user owns their benchmarks. |
+| Tenancy | Per-user ownership | Benchmarks private by default; leaderboard is public but redacted (metrics-only, no prompt text). |
 | Deployment | Docker Compose | One command to run everything: API, crawlers, MQ, DB, frontend |
 
 ### Data & Markets
@@ -77,9 +84,11 @@ Non-goals (for this project):
 ### LLM & Trading Logic
 | Decision | Choice | Notes |
 |----------|--------|-------|
-| Model selection | Dynamic / configurable | Users add models by API endpoint, URL, temperature, etc. Not hardcoded to specific providers. |
+| Model selection | Configurable allowlist | Admin manages available models/providers; users select from an allowlist for runs/leaderboard (avoid arbitrary endpoints/keys in MVP). |
 | Provider routing | OpenAI-compatible | All model calls go through the gateway using OpenAI-format requests (OpenRouter preferred). |
-| Prompt strategy | Same prompt across all models | Fair apples-to-apples comparison |
+| Prompt strategy | Same prompt within a benchmark run | Benchmark runs compare models apples-to-apples; prompts are user-configurable per run (Benchmark Lab) and stored/snapshotted. |
+| Prompt authoring | Freeform + templating | Prompt text supports a constrained template engine (no code execution) so users can parameterize prompts safely. |
+| Prompt visibility | Private by default | Store full prompts for audit/repro, but public leaderboard views show only summary metrics/score (no prompt text). |
 | Prompt payload | Raw + features | Include compact raw context (latest prices/bars) plus derived features/alerts to keep prompts stable and small. |
 | Feature computation | On-the-fly | Compute derived indicators/features in the orchestrator at prompt time (no `feature.*` event stream in v1). |
 | Decision format | Strict JSON schema | Require valid JSON matching Pydantic schema. Invalid output => error event + hold last targets. |
@@ -90,7 +99,7 @@ Non-goals (for this project):
 | Instrument constraints | Spot long-only, perps long/short | Spot exposures must be `>= 0`. Perps exposures may be positive or negative. Violations => decision rejected (hold last targets). |
 | Scheduling | Wall-clock baseline + early checks | Models are called on a wall-clock base cadence for comparability/progress. Model may request earlier re-checks via `next_check_seconds`; requests are rounded to the next 1m price tick; extra ticks are logged for analysis/cost accounting. |
 | Default interval | 1 hour | Base cadence; models may request earlier re-checks; store every schedule request for analysis/cost accounting. |
-| Budgeting | No caps | Track calls/tokens/cost, but do not enforce budgets in the benchmark. |
+| Budgeting | Track + throttle (MVP) | Track calls/tokens/cost per user/run; enforce concurrency + rate limits (no billing; avoid runaway leaderboard submissions). |
 | Backtesting | MQ historical playback | Backfill/ingest historical market events into the DB, then publish a chosen time window into RabbitMQ to mimic live ingestion (LLMs are called live on historical snapshots). |
 | Replay time masking | Configurable offset | Allow shifting timestamps by a user-defined offset when running a job to test model memorization/leakage. |
 | Replay speed | As fast as possible | Advance clock event-to-event; bound by `max_concurrent_llm_requests` and provider rate limits. |
@@ -211,7 +220,8 @@ Schema evolution:
 - Read/replay paths upcast older payloads to the latest canonical shape
 
 Benchmark run model:
-- A "benchmark run" groups N model-runs over the same replay window + config snapshot
+- A "benchmark run" groups N model-runs over the same replay window + config snapshot (apples-to-apples prompt).
+- A "strategy arena submission" expands into K scenario-runs (same model + prompt + metrics spec) over a curated set of replay windows, then aggregates into one score for the leaderboard.
 
 Event stream categories (initial):
 - Market data: `market.*` (price, ohlcv, trades, liquidity)
@@ -267,19 +277,24 @@ Run-scoped events (unique under `(run_id, event_type, dedupe_key)`):
 
 ## Run Config Schema (Draft)
 
-Core idea: everything that affects a benchmark run is captured in a config snapshot and stored with the run.
+Core idea: everything that affects a run (benchmark or arena scenario-run) is captured in a config snapshot and stored with the run.
 
 Suggested top-level objects:
 - `Dataset`: imported historical data window per category (spot/perps/sentiment), referenced by id
 - `Run`: execution of N models over a set of datasets (typically one per category)
 - `ModelRun`: one model evaluated within a run
 - `RunConfigSnapshot`: immutable JSON blob referenced by `Run`
+- `PromptTemplate`: user-authored prompt text + variables + engine (snapshotted into the run config)
+- `ScenarioSet`: curated list of replay windows used for arena/leaderboard
+- `ArenaSubmission`: a user's leaderboard entry (model + prompt + metrics spec + scenario set)
 
 Draft config shape:
 
 ```json
 {
   "mode": "replay",
+  "run_kind": "benchmark",
+  "visibility": "private",
   "datasets": {
     "spot_dataset_id": "...",
     "perps_dataset_id": "...",
@@ -318,6 +333,14 @@ Draft config shape:
     "missing_market_policy": "hold_previous"
   },
   "prompt": {
+    "template": {
+      "engine": "mustache",
+      "system": "...",
+      "user": "...",
+      "vars": {
+        "risk_style": "balanced"
+      }
+    },
     "lookback": {"kind": "fixed", "bars": 24, "timeframe": "1h"},
     "include": ["raw", "features"],
     "masking": {"apply_time_offset": true}
@@ -341,12 +364,20 @@ Draft config shape:
 Dataset alignment (v1):
 - All referenced dataset ids must have identical `start`/`end` windows. If they do not match exactly, run creation fails.
 
+Arena / leaderboard submission (v1):
+- A submission references `model_key`, prompt template (freeform + templated), `metrics_aggregator_spec` (JSON/DSL), and `scenario_set_id`.
+- The system expands a submission into K replay runs (one per scenario window) and aggregates results into one score (default: total return %).
+- Leaderboard is public, but details are redacted by default (show score + key metrics only; keep prompt text private).
+
 ## External REST API (Draft)
 
 Minimal API surface for a dashboard + CLI:
+- `GET /me` current user (OIDC-backed)
 - `POST /datasets` create/import a dataset (async) from parameters (spot/perps/sentiment)
 - `GET /datasets` list datasets
 - `GET /datasets/{dataset_id}` dataset status + metadata
+- `POST /prompt_templates` create/update a prompt template (freeform + templating)
+- `GET /prompt_templates` list prompt templates (mine + built-ins)
 - `POST /runs` create a run (async) from config (or config ref)
 - `GET /runs` list runs
 - `GET /runs/{run_id}` run status + config snapshot + high-level metrics
@@ -355,22 +386,30 @@ Minimal API surface for a dashboard + CLI:
 - `GET /runs/{run_id}/models/{model_run_id}` per-model metrics + metadata
 - `GET /runs/{run_id}/timeline` time series for equity/PnL + positions
 - `GET /runs/{run_id}/decisions` decision stream (parsed + raw reasoning)
+- `GET /scenario_sets` list curated arena scenario sets
+- `POST /arena/submissions` create a leaderboard submission (async)
+- `GET /arena/submissions` list my submissions + status
+- `GET /arena/submissions/{submission_id}` submission results (per-scenario + aggregate)
+- `GET /leaderboards` leaderboard overview (overall + per-model)
 
 ## MQ Topology (Draft)
 
 Exchanges:
-- `ex.events` (topic): canonical events from crawlers/importer/replay/orchestrator
+- `ex.events` (topic): canonical persisted events from crawlers/importers + orchestrator outputs (`llm.*`, `sim.*`, `portfolio.*`)
+- `ex.replay` (topic): replay streaming events feeding replay/orchestrator workers (not persisted; derived from the DB event log)
 - `ex.control` (topic): run + dataset control commands
 
 Queues (initial):
 - `q.event_store.events` binds `ex.events` with `#` (persist all canonical events to Postgres)
-- `q.orchestrator.events` binds `ex.events` with `market.*`, `perps.*`, `sentiment.*`
+- `q.orchestrator.live.events` binds `ex.events` with `market.*`, `perps.*`, `sentiment.*` (Live Dashboard inputs)
+- `q.orchestrator.replay.events` binds `ex.replay` with `market.*`, `perps.*`, `sentiment.*` (Benchmark Lab/Arena inputs)
 - `q.orchestrator.control` binds `ex.control` with `run.*`
 - `q.importers.control` binds `ex.control` with `dataset.*`
 
-Replay mode behavior (simple, single-user):
-- Stop/disable live crawlers for deterministic replay
-- Replay publisher is the only source publishing historical events into `ex.events`
+Replay mode behavior (Benchmark Lab / Arena):
+- Live crawlers continue to feed Live Dashboard.
+- Replay publisher reads the selected dataset window from Postgres and publishes the ordered stream into `ex.replay` for the orchestrator worker.
+- Orchestrator publishes outputs into `ex.events` tagged with `run_id`; event-store persists these outputs.
 
 ## DB Schema Outline (Draft)
 
@@ -382,11 +421,20 @@ Idempotency / dedupe (v1):
 - Unique index on `(run_id, event_type, dedupe_key)` where `run_id IS NOT NULL`
 
 Run metadata:
-- `datasets`: `(dataset_id, category, source, start, end, params_jsonb, created_at)`
+- `users`: `(user_id, oidc_issuer, oidc_sub, email, display_name, created_at)`
+- `datasets`: `(dataset_id, category, source, start, end, params_jsonb, created_by_user_id, created_at)`
+- `prompt_templates`: `(template_id, owner_user_id, name, engine, system_template, user_template, vars_schema_jsonb, created_at, updated_at)`
 - `run_config_snapshots`: `(config_id, config_jsonb, created_at)`
-- `runs`: `(run_id, config_id, status, started_at, ended_at)`
+- `runs`: `(run_id, owner_user_id, kind, visibility, config_id, status, started_at, ended_at, created_at)`
 - `run_datasets`: `(run_id, category, dataset_id)`
 - `model_runs`: `(model_run_id, run_id, model_key, status, started_at, ended_at, metrics_jsonb)`
+
+Arena / leaderboard:
+- `scenario_sets`: `(scenario_set_id, name, description, created_at)`
+- `scenario_windows`: `(window_id, scenario_set_id, label, start, end)`
+- `arena_submissions`: `(submission_id, owner_user_id, model_key, prompt_template_id, prompt_snapshot_jsonb, metrics_aggregator_spec_jsonb, scenario_set_id, status, created_at)`
+- `arena_results`: `(submission_id, score_return_pct, key_metrics_jsonb, computed_at)`
+- `arena_scenario_results`: `(submission_id, window_id, run_id, return_pct, key_metrics_jsonb)`
 
 LLM audit:
 - `llm_calls`: `(call_id, model_run_id, observed_at, prompt, response_raw, response_parsed, usage_jsonb, latency_ms, error)`
@@ -513,10 +561,11 @@ Adapter categories:
 - `api` — REST/OpenAPI surface for dashboard + CLI; stores configs/snapshots; run/dataset lifecycle.
 - `orchestrator` — Snapshot builder + scheduler; calls LLM gateway; publishes `llm.*` / `sim.*` / `portfolio.*` events.
 - `event_store` — Single writer for the canonical `events` table (idempotent dedupe); optionally maintains simple projections.
-- `replay` — Reads canonical events for selected dataset ids/time window and republishes them into `ex.events` with deterministic ordering.
+- `replay` — Reads canonical events for selected dataset ids/time window and publishes them into `ex.replay` with deterministic ordering.
 - `importers` — Backfill per category (spot/perps/sentiment) producing dataset ids.
-- `live crawlers` — Continuous ingestion in live mode (disabled during deterministic replay).
+- `live crawlers` — Continuous ingestion in live mode (always-on for Live Dashboard; replay runs do not require disabling live feeds).
 - `llm_gateway` — Provider routing, retries, rate limits, usage/cost accounting; OpenAI-compatible facade.
+- `arena` (optional) — Expands leaderboard submissions into scenario-runs, aggregates return % + key metrics, and serves leaderboard views.
 
 ### Data Flow (Live Mode)
 1. Crawlers independently fetch data on their own schedules → publish to RabbitMQ
@@ -530,11 +579,11 @@ Adapter categories:
 ### Data Flow (Backtest/Replay Mode)
 1. Importers/backfill jobs run per category (spot/perps/sentiment). Each importer fetches vendor data and publishes canonical events to RabbitMQ (tagged with its `dataset_id`); event-store persists them to Postgres
 2. A replay service reads the chosen time window for the run's dataset ids (spot/perps/sentiment) from the DB event log and merges them into a single ordered stream
-3. It republishes that merged stream into RabbitMQ with a simulated `observed_at` clock (deterministic ordering rules)
-4. The orchestrator consumes the same message types as live mode and rebuilds snapshots
+3. It republishes that merged stream into RabbitMQ (via `ex.replay`) with a simulated `observed_at` clock (deterministic ordering rules)
+4. The orchestrator consumes the same message types as live mode (but from `ex.replay`) and rebuilds snapshots
 5. Each configured LLM runs on its own schedule (base interval + optional model-requested earlier checks)
-6. Decisions and simulated P&L are stored as a "benchmark run" (plus per-model run metadata)
-7. Dashboard shows side-by-side model comparison for any historical period
+6. Decisions and simulated P&L are stored as a "benchmark run" (multi-model) or as scenario-runs that roll up into an arena submission score
+7. Dashboard shows side-by-side model comparison and arena leaderboard views for any historical period
 
 ---
 
@@ -552,6 +601,10 @@ Adapter categories:
 10. **Canonical event payload shapes** — For each `market.*` / `perps.*` event type, what is the minimal canonical payload that stays stable across vendors while still being useful for prompt building + sim?
 11. **High-volume events policy** — For `market.trades` (1m buckets + top-20) and other potentially large payloads, what are the exact bucket stats + top-20 selection rule, and what do we keep as raw vs normalized?
 12. **AssetRef conventions** — How do we map on-chain `TokenRef`s, fiat (USD), and perps underlyings into a stable `AssetRef` namespace/id scheme (e.g., chain address vs symbol vs Coingecko id)?
+13. **OIDC integration** — Which claims/groups define admin vs user? Token lifetimes/refresh? Do we accept only Authentik-issued tokens on the API (JWKS pinning + issuer checks)?
+14. **Prompt templating contract** — Exactly which variables are available (snapshot JSON, derived features, risk limits), and how do we keep templates deterministic + bounded in size?
+15. **Leaderboard fairness** — Scenario window definitions, return % aggregation across windows, and which risk constraints are fixed vs user-configurable for comparability.
+16. **Metrics DSL** — What safe JSON/DSL operations are allowed, how to validate it, and how to ensure runtime determinism/performance.
 
 ---
 
