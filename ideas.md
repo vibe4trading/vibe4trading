@@ -1,0 +1,623 @@
+# First Claw Eater - Decisions & Notes
+
+## Context
+
+- **Event**: OpenClaw Hackathon (blockchain/crypto), ~600 participants, Mar 1-7
+- **Team**: 6 people
+  - **Grider** — Software architect, main technical lead
+  - **Tiannan** — Product designer, product owner, AI product & startup experience
+  - **Fiona** — Product lead, research/narrative, sponsor research, LSE
+  - **Jerry** — Product and planning, LSE
+  - **Jacky** — Hackathon veteran, code assist, sponsor framework integration
+  - **Aaron** — CS + cybersec, crawler/scraping expert, indie dev experience, UI/product assist
+- **Product name**: TBD (team name "First Claw Eater" is separate)
+
+---
+
+## Product Vision
+
+A **dynamic LLM trading analysis / benchmarking platform** that:
+1. Pits multiple LLM models against each other making crypto trading decisions
+2. Runs on a paper account (simulated execution, no real money)
+3. Stores all historical data so any time period can be replayed
+4. Benchmarks model performance over identical historical data
+5. Displays decision reasoning, P&L curves, and trade annotations on a dashboard
+
+NOT just a live trading bot — it's a **benchmarking and analysis platform** with live capability.
+
+Terminology:
+- **Live mode**: ingest current data from vendor APIs and run models in real time.
+- **Replay mode**: run the benchmark over a selected historical time window by playing historical data forward as if it were live.
+  - Replay mode does *not* reuse past LLM decisions; it calls models on historical snapshots.
+
+Non-goals (for this project):
+- Not a consumer product (no multi-tenant accounts, billing, etc.)
+- No real-money execution (paper/sim only)
+- Minimal auth (admin-only / single user)
+
+---
+
+## Core Decisions
+
+### Architecture
+| Decision | Choice | Notes |
+|----------|--------|-------|
+| Pattern | Orchestrator Pipeline | Code calls LLM at intervals, feeds data, parses output. Not MCP. |
+| Service boundaries | Microservices + MQ | Independent services (crawlers, orchestrator, API). RabbitMQ is the backbone. |
+| Backend | Python (FastAPI) | Pydantic-first, auto OpenAPI generation |
+| Frontend | TypeScript (Next.js) | Dashboard, TradingView Widget for charts |
+| Message Queue | RabbitMQ | Simpler than Kafka. Used for inter-service communication between crawlers, orchestrator, etc. |
+| Event persistence | Event-store service | Dedicated consumer persists canonical events from RabbitMQ into Postgres with idempotent dedupe. |
+| Output persistence | Publish events only | Orchestrator publishes `llm.*` / `sim.*` / `portfolio.*` events; event-store persists (no direct DB writes required for correctness). |
+| Run concurrency | Single active run | Assume one active replay/live run at a time; simplifies MQ topology (no run-scoped routing keys). |
+| Database | Postgres | Start with plain Postgres + good indexes (time-series friendly schema). Timescale can be added later if needed. |
+| Entity typing | Pydantic (Python) + Zod (TypeScript) | Shared via generated OpenAPI spec |
+| API layer | REST + OpenAPI | Auto-generated from Pydantic models |
+| Control plane | API + MQ commands | API server is source of truth for run/dataset lifecycle; it writes DB state then publishes `run.*` / `dataset.*` commands on `ex.control`. |
+| LLM integration | Gateway service | Central service handles provider routing, retries, and rate limits (OpenAI-compatible; likely OpenRouter). |
+| Uniform API scope | Internal + external | Internal provider interfaces + stable external REST/OpenAPI for dashboard/clients. |
+| Config | DB-backed + snapshotted | Runtime-editable, but every run stores an immutable config snapshot for reproducibility. |
+| Auth | None (single user) | Admin-only benchmark tool; not building a multi-tenant product. |
+| Deployment | Docker Compose | One command to run everything: API, crawlers, MQ, DB, frontend |
+
+### Data & Markets
+| Decision | Choice | Notes |
+|----------|--------|-------|
+| Spot data source | DexScreener | DEX aggregator, Solana tokens primarily |
+| Futures data source | Hyperliquid (v1) | Not CEX futures. dYdX is a likely follow-on adapter. |
+| Trading universe | Fixed watchlist ~20 markets | Universe is defined as explicit `MarketRef`s (pool/contract ids) for deterministic replay, not LLM-discovered. |
+| Instruments | Spot + perpetual futures | Futures adds shorting capability, more complex simulation |
+| Chain focus | Solana primarily | Most meme/sentiment-driven tokens, best fit for LLM alpha |
+| Data source strategy | Vendor-only | Rely on vendor APIs; invest in caching/backoff and store enough history ourselves for replay. |
+| Source resolution | Single source per dataset/run | A run selects exactly one adapter per data category (e.g. spot prices). Avoids cross-vendor reconciliation complexity; compare vendors by running separate datasets. |
+| Canonical identity | AssetRef + MarketRef | Use `AssetRef` for cross-venue identity. Keep `TokenRef` for on-chain addresses. `MarketRef` binds venue+instrument id to (base, quote) assets. |
+| Vendor payload retention | Raw + normalized | Store raw vendor payloads alongside normalized canonical payloads for debugging and adapter evolution. For very large/list payloads, retain only an aggregated/top-X subset (configurable) to avoid unbounded growth. |
+| Historical importer | Required | Backfill a selected time window from vendor APIs into the event log so benchmarks can run on past periods. |
+
+### LLM & Trading Logic
+| Decision | Choice | Notes |
+|----------|--------|-------|
+| Model selection | Dynamic / configurable | Users add models by API endpoint, URL, temperature, etc. Not hardcoded to specific providers. |
+| Provider routing | OpenAI-compatible | All model calls go through the gateway using OpenAI-format requests (OpenRouter preferred). |
+| Prompt strategy | Same prompt across all models | Fair apples-to-apples comparison |
+| Prompt payload | Raw + features | Include compact raw context (latest prices/bars) plus derived features/alerts to keep prompts stable and small. |
+| Feature computation | On-the-fly | Compute derived indicators/features in the orchestrator at prompt time (no `feature.*` event stream in v1). |
+| Decision format | Strict JSON schema | Require valid JSON matching Pydantic schema. Invalid output => error event + hold last targets. |
+| Decision output | Target exposures (% equity) | Models output target exposure as a fraction of current equity per `market_id` (resolved to `MarketRef`) (e.g. `-0.25` = 25% short, `+0.40` = 40% long), not discrete orders. |
+| Decision sparsity | Sparse allowed | Targets are a map keyed by `market_id`. Model may omit markets; omitted markets default to previous targets (configurable). |
+| Decision analysis fields | Rationale + confidence | Decision schema includes optional `rationale` string, `confidence` (0-1), and `key_signals` list for dashboard analysis. |
+| Exposure constraints | Gross/Net limits | Enforce gross leverage + net exposure caps across the whole portfolio; cash is implicit residual. |
+| Instrument constraints | Spot long-only, perps long/short | Spot exposures must be `>= 0`. Perps exposures may be positive or negative. Violations => decision rejected (hold last targets). |
+| Scheduling | Wall-clock baseline + early checks | Models are called on a wall-clock base cadence for comparability/progress. Model may request earlier re-checks via `next_check_seconds`; requests are rounded to the next 1m price tick; extra ticks are logged for analysis/cost accounting. |
+| Default interval | 1 hour | Base cadence; models may request earlier re-checks; store every schedule request for analysis/cost accounting. |
+| Budgeting | No caps | Track calls/tokens/cost, but do not enforce budgets in the benchmark. |
+| Backtesting | MQ historical playback | Backfill/ingest historical market events into the DB, then publish a chosen time window into RabbitMQ to mimic live ingestion (LLMs are called live on historical snapshots). |
+| Replay time masking | Configurable offset | Allow shifting timestamps by a user-defined offset when running a job to test model memorization/leakage. |
+| Replay speed | As fast as possible | Advance clock event-to-event; bound by `max_concurrent_llm_requests` and provider rate limits. |
+| LLM benchmarking | Parallel replay | Run N models over same historical period, same data snapshots, compare decisions and P&L |
+| Prompt storage | Store full | Persist full prompt + raw response + parsed decision for audit/repro. |
+| LLM failure policy | Hold last targets | On timeout/parse/validation error, keep last target exposures; emit an error event; retry next tick. |
+
+LLM decision JSON (v1) (draft):
+
+```json
+{
+  "schema_version": 1,
+  "targets": {
+    "spot:raydium:<pool>": "0.25",
+    "perps:hyperliquid:BTC-PERP": "-0.10"
+  },
+  "next_check_seconds": 600,
+  "confidence": "0.62",
+  "key_signals": ["momentum_up", "funding_positive"],
+  "rationale": "Short BTC perps due to funding + trend reversal; long spot TOKEN on breakout."
+}
+```
+
+Validation rules (v1):
+- `targets` keys must be known `market_id`s from the run universe.
+- Spot markets must have exposure `>= 0`.
+- Any validation failure rejects the whole decision (hold last targets).
+
+### Simulation & Execution
+| Decision | Choice | Notes |
+|----------|--------|-------|
+| Execution style | Rebalance to target | Given target exposure fractions, compute target notional per market (`target = exposure * equity`) and simulate trades to reach the implied target positions (paper account). |
+| Fill pricing | Current snapshot price | Execute at the latest known price in the snapshot at decision time (no lookahead beyond observed data). |
+| Data freshness | Fresh-only | Require fresh `market.price` / `perps.mark` at each decision tick (no carry-forward). Missing required data => skip LLM call, emit an error event, and hold last targets. |
+| Fees | Simple bps model | Apply configurable fee rates per venue/instrument; track fees separately in P&L. |
+| Perps PnL | Mark-to-market | Value perps positions using mark price snapshots; unrealized P&L updates each tick. |
+| Funding | Apply funding | Apply funding payments/receipts using perps funding rate events. |
+| Liquidation | Not simulated (v1) | Enforce gross/net risk caps; do not model liquidation/margin calls initially. |
+
+### Crawlers & Protocols
+| Decision | Choice | Notes |
+|----------|--------|-------|
+| Crawler architecture | Independent microservices | Each crawler (price, sentiment, on-chain) is its own service, communicates via RabbitMQ |
+| Exchange abstraction | CCXT-style unified API | Abstract base with `get_price()`, `get_ohlcv()`, `get_trades()`, `get_liquidity()`, plus perps methods (`get_mark_price()`, `get_funding_rate()`). Leverage CCXT for CEX if needed. |
+| Sentiment source | Aaron's custom crawler + LLM | Scrape X/Twitter KOLs, LLM summarizes into trading signals. Free but risk of blocking. |
+| Adapter packaging | In-repo modules | Keep adapters in the repo with explicit registration (no dynamic plugin loading). |
+
+### Stretch Goals (if time permits)
+| Item | Notes |
+|------|-------|
+| Polymarket module | Binary prediction markets. Share sentiment engine. Separate execution module. Tiannan suggested — real money-making potential (e.g. weather markets). Different liquidity curve, needs its own system. |
+| Sentiment module | Core concept but may be stretch depending on crawler complexity. Aaron owns this. |
+
+---
+
+## Key Design Principles
+
+1. **Modularity** — Every component (crawler, orchestrator, LLM adapter, execution engine) is a separate service communicating via MQ. Can be developed, tested, and deployed independently.
+2. **Replayability** — All market data, signals, and LLM decisions are persisted as an append-only event log with timestamps. Any imported/collected time period can be replayed by re-publishing events through the same MQ pipeline.
+3. **Strong typing** — Pydantic models define all entities. These are the source of truth. Frontend Zod schemas mirror them via OpenAPI.
+4. **Model-agnostic** — No hardcoded LLM providers. Models are configured at runtime via DB config (endpoint URL, API key, temperature, model name).
+5. **Historical-first** — The system is designed around stored data and replay. Live mode is just "replay with real-time data source."
+
+6. **Uniform contracts** — All third-party integrations sit behind typed adapter interfaces and emit canonical events.
+
+7. **Query-first adapters** — Adapters present a CCXT-style, uniform query interface (e.g. `get_price`, `get_ohlcv`). Crawlers/importers use adapters to fetch third-party data and then publish canonical events. The orchestrator consumes canonical events only.
+
+8. **Deterministic replay** — Input data streams are repeatable: given the same event stream ordering + config snapshot, the orchestrator should rebuild identical snapshots. (Model outputs may still vary unless provider settings are deterministic.)
+
+9. **Bounded payloads** — Canonical event payloads must stay bounded. For high-volume/list data (e.g. trades), store aggregates and/or a reasonable top-X subset so storage, replay, and prompt-building stay tractable.
+
+## Uniform Contracts (Draft)
+
+Canonical IDs (used everywhere: events, DB, API):
+- `AssetRef`: `{namespace, id, symbol?}` (cross-venue identity; supports on-chain tokens, perps underlyings, fiat)
+- `TokenRef`: `{chain, address, symbol?}` (on-chain identity only)
+- `MarketRef`: `{venue, market_type, base: AssetRef, quote: AssetRef, instrument_id}` (tradable market identity; `instrument_id` is pool address for spot, contract symbol/id for perps)
+
+`AssetRef` conventions (v1):
+- On-chain token: `namespace=<chain>`, `id=<address>` (mirrors `TokenRef`)
+- Fiat: `namespace="fiat"`, `id="USD"`
+- Perps underlying without an on-chain address mapping: `namespace="symbol"`, `id=<TICKER>`
+
+Canonical string IDs (v1):
+- `asset_id`: `{namespace}:{id}` (e.g. `solana:So111...`, `fiat:USD`)
+- `market_id`: `{market_type}:{venue}:{instrument_id}` (e.g. `spot:raydium:<pool>`, `perps:hyperliquid:BTC-PERP`)
+
+`market_id` is used in prompts and LLM decision output to keep JSON small and avoid brittle nested structures.
+
+Canonical event envelope (every message on RabbitMQ and every stored event row):
+- `event_id` (UUID)
+- `event_type` (string)
+- `source` (service + adapter name)
+- `schema_version` (int)
+- `observed_at` (when we saw it)
+- `event_time` (when it happened on the venue, if available)
+- `dedupe_key` (stable key for idempotency)
+- `dataset_id` (optional; present for imported/live market data events)
+- `run_id` (optional; present for run-generated events like `llm.*` / `sim.*`)
+- `payload` (canonical JSON)
+- `raw_payload` (optional; vendor-specific JSON as received; may be truncated/aggregated)
+
+Time semantics:
+- `observed_at` is the platform clock for snapshot building and LLM scheduling ("what we knew when")
+- `event_time` is optional venue time used for market semantics (bars/trades) and pricing alignment
+- For imported/backfilled historical events, set `observed_at = event_time` (the time the information became knowable, e.g. bar close)
+
+Numeric encoding (v1):
+- Canonical event payload numbers (prices, quantities, volumes, rates) are encoded as decimal strings (e.g. `"0.1234"`) to avoid float drift.
+- Units must be explicit in field naming (e.g. `volume_base`, `volume_quote`, `fee_bps`).
+
+Replay determinism contract (goal):
+- Replay publishes a single, totally ordered stream into RabbitMQ (e.g., order by `(observed_at, source, dedupe_key)`)
+- Orchestrator applies events idempotently using `dedupe_key` (at-least-once delivery is expected)
+
+Schema evolution:
+- All event payloads are versioned via `schema_version`
+- Read/replay paths upcast older payloads to the latest canonical shape
+
+Benchmark run model:
+- A "benchmark run" groups N model-runs over the same replay window + config snapshot
+
+Event stream categories (initial):
+- Market data: `market.*` (price, ohlcv, trades, liquidity)
+- Perps: `perps.*` (funding, open interest, mark/index)
+- Sentiment: `sentiment.*`
+- Decisions: `llm.decision`, `llm.schedule_request`
+- Execution: `sim.fill`, `portfolio.snapshot`
+
+### Canonical Event Types (v1) (Draft)
+
+Market data:
+- `market.ohlcv` — OHLCV bars per `MarketRef` + timeframe.
+  - Payload (suggested): `{market, timeframe, bar_start, bar_end, o, h, l, c, volume_base?, volume_quote?}`
+  - Dedupe key (suggested): `{market_id}:{timeframe}:{bar_start}`
+- `market.price` — Latest price snapshot used for fills + valuation (1m cadence in v1).
+  - Payload (suggested): `{market, price, price_type}` where `price_type in {"last","mid","mark"}`
+  - Dedupe key (suggested): `{market_id}:{event_time_or_observed_at}`
+- `market.liquidity` — Pool/orderbook liquidity snapshot (used for slippage/risk heuristics).
+  - Payload (suggested): `{market, liquidity_usd?, reserves?, depth?}` (bounded)
+  - Dedupe key (suggested): `{market_id}:{event_time_or_observed_at}`
+- `market.trades` — Bucketed trade summary (1m) + top-20 trades by notional (bounded).
+  - Payload (suggested): `{market, bucket_start, bucket_end, stats, top_trades: [...]}` (cap `top_trades` at 20)
+  - Dedupe key (suggested): `{market_id}:{bucket_start}:60`
+
+Perps (minimum for sim + prompts):
+- `perps.mark` — Mark price snapshot (1m cadence in v1).
+- `perps.funding_rate` — Funding rate (interval + next funding timestamp).
+- `perps.open_interest` — Optional; used for context/filters.
+
+Decisions/execution:
+- `llm.decision` — Parsed decision payload (targets keyed by `market_id`, plus rationale/confidence) + references to prompt/response.
+- `llm.schedule_request` — Optional earlier re-check request derived from `next_check_seconds` in decision JSON (logged for cost + analysis).
+- `sim.fill` — Simulated trade/fill event.
+- `portfolio.snapshot` — Portfolio state projection (equity/cash/positions) at a point in time.
+
+### Snapshot Semantics (Draft)
+
+- Snapshot at time T is built from canonical events with `observed_at <= T`.
+- OHLCV bars are only considered usable after they close: `bar_end <= T` (avoid lookahead bias).
+- Fill pricing requires a fresh `market.price` / `perps.mark` point for the tick (no carry-forward). If missing, treat the snapshot as incomplete.
+- If snapshot is incomplete at a scheduled tick, skip the LLM call, emit an error event, and hold last targets.
+
+### Dedupe Key Conventions (v1) (Draft)
+
+Dataset-scoped (market/perps) events:
+- Prefer keys based on `market_id` + a time bucket boundary (bar start/bucket start/tick time) so retries are idempotent.
+
+Run-scoped events (unique under `(run_id, event_type, dedupe_key)`):
+- `llm.decision`: `{model_run_id}:{tick_time}`
+- `llm.schedule_request`: `{model_run_id}:{tick_time}`
+- `portfolio.snapshot`: `{model_run_id}:{snapshot_time}`
+- `sim.fill` (rebalance model): `{model_run_id}:{tick_time}:{market_id}` (at most one fill per market per tick)
+
+## Run Config Schema (Draft)
+
+Core idea: everything that affects a benchmark run is captured in a config snapshot and stored with the run.
+
+Suggested top-level objects:
+- `Dataset`: imported historical data window per category (spot/perps/sentiment), referenced by id
+- `Run`: execution of N models over a set of datasets (typically one per category)
+- `ModelRun`: one model evaluated within a run
+- `RunConfigSnapshot`: immutable JSON blob referenced by `Run`
+
+Draft config shape:
+
+```json
+{
+  "mode": "replay",
+  "datasets": {
+    "spot_dataset_id": "...",
+    "perps_dataset_id": "...",
+    "sentiment_dataset_id": null
+  },
+  "replay": {
+    "time_offset_seconds": 0,
+    "advance_mode": "as_fast_as_possible",
+    "max_concurrent_llm_requests": 8
+  },
+  "universe": {
+    "markets": [
+      {
+        "venue": "raydium",
+        "market_type": "spot",
+        "base": {"namespace": "solana", "id": "...", "symbol": "TOKEN"},
+        "quote": {"namespace": "solana", "id": "...", "symbol": "USDC"},
+        "instrument_id": "..."
+      },
+      {
+        "venue": "hyperliquid",
+        "market_type": "perps",
+        "base": {"namespace": "symbol", "id": "BTC", "symbol": "BTC"},
+        "quote": {"namespace": "fiat", "id": "USD", "symbol": "USD"},
+        "instrument_id": "BTC-PERP"
+      }
+    ]
+  },
+  "scheduler": {
+    "base_interval_seconds": 3600,
+    "min_interval_seconds": 60,
+    "price_tick_seconds": 60,
+    "early_check_alignment": "ceil_to_price_tick"
+  },
+  "decision": {
+    "missing_market_policy": "hold_previous"
+  },
+  "prompt": {
+    "lookback": {"kind": "fixed", "bars": 24, "timeframe": "1h"},
+    "include": ["raw", "features"],
+    "masking": {"apply_time_offset": true}
+  },
+  "execution": {
+    "fill_pricing": "snapshot_price",
+    "gross_leverage_cap": 1.0,
+    "net_exposure_cap": 1.0
+  },
+  "models": [
+    {
+      "key": "gpt-4o-mini",
+      "label": "OpenRouter gpt-4o-mini",
+      "temperature": 0,
+      "max_output_tokens": 800
+    }
+  ]
+}
+```
+
+Dataset alignment (v1):
+- All referenced dataset ids must have identical `start`/`end` windows. If they do not match exactly, run creation fails.
+
+## External REST API (Draft)
+
+Minimal API surface for a dashboard + CLI:
+- `POST /datasets` create/import a dataset (async) from parameters (spot/perps/sentiment)
+- `GET /datasets` list datasets
+- `GET /datasets/{dataset_id}` dataset status + metadata
+- `POST /runs` create a run (async) from config (or config ref)
+- `GET /runs` list runs
+- `GET /runs/{run_id}` run status + config snapshot + high-level metrics
+- `POST /runs/{run_id}/stop` stop a running job
+- `GET /runs/{run_id}/models` list model-runs
+- `GET /runs/{run_id}/models/{model_run_id}` per-model metrics + metadata
+- `GET /runs/{run_id}/timeline` time series for equity/PnL + positions
+- `GET /runs/{run_id}/decisions` decision stream (parsed + raw reasoning)
+
+## MQ Topology (Draft)
+
+Exchanges:
+- `ex.events` (topic): canonical events from crawlers/importer/replay/orchestrator
+- `ex.control` (topic): run + dataset control commands
+
+Queues (initial):
+- `q.event_store.events` binds `ex.events` with `#` (persist all canonical events to Postgres)
+- `q.orchestrator.events` binds `ex.events` with `market.*`, `perps.*`, `sentiment.*`
+- `q.orchestrator.control` binds `ex.control` with `run.*`
+- `q.importers.control` binds `ex.control` with `dataset.*`
+
+Replay mode behavior (simple, single-user):
+- Stop/disable live crawlers for deterministic replay
+- Replay publisher is the only source publishing historical events into `ex.events`
+
+## DB Schema Outline (Draft)
+
+Event log (append-only Postgres table; can become a Timescale hypertable later):
+- `events`: `(event_id, event_type, source, schema_version, observed_at, event_time, dedupe_key, payload_jsonb, raw_payload_jsonb, dataset_id, run_id, ingested_at)`
+
+Idempotency / dedupe (v1):
+- Unique index on `(dataset_id, event_type, dedupe_key)` where `dataset_id IS NOT NULL`
+- Unique index on `(run_id, event_type, dedupe_key)` where `run_id IS NOT NULL`
+
+Run metadata:
+- `datasets`: `(dataset_id, category, source, start, end, params_jsonb, created_at)`
+- `run_config_snapshots`: `(config_id, config_jsonb, created_at)`
+- `runs`: `(run_id, config_id, status, started_at, ended_at)`
+- `run_datasets`: `(run_id, category, dataset_id)`
+- `model_runs`: `(model_run_id, run_id, model_key, status, started_at, ended_at, metrics_jsonb)`
+
+LLM audit:
+- `llm_calls`: `(call_id, model_run_id, observed_at, prompt, response_raw, response_parsed, usage_jsonb, latency_ms, error)`
+
+Projections for fast reads:
+- `portfolio_snapshots`: `(model_run_id, observed_at, equity, cash, positions_jsonb)`
+- `sim_trades`: `(trade_id, model_run_id, observed_at, market_ref, qty, price, fees, metadata_jsonb)`
+
+## Adapter Interfaces (Draft)
+
+Implementation bias: adapters expose a uniform *query* surface; crawlers/importers own scheduling/pagination/deduping and emit canonical events.
+
+Contract boundary (important for replayability):
+- Only ingestion services (crawlers/importers/replay) talk to third-party services.
+- The orchestrator builds snapshots strictly from canonical events (live == replay with realtime ingestion).
+
+Minimal Python-ish contracts:
+
+```python
+class SpotMarketDataAdapter(Protocol):
+    name: str
+
+    def get_price(self, market: MarketRef, now: datetime) -> "PricePoint":
+        ...
+
+    def get_ohlcv(
+        self,
+        market: MarketRef,
+        start: datetime,
+        end: datetime,
+        timeframe: str,
+    ) -> list["OHLCVBar"]:
+        ...
+
+    def get_liquidity(self, market: MarketRef, now: datetime) -> "LiquiditySnapshot":
+        ...
+
+    def get_trades(
+        self,
+        market: MarketRef,
+        start: datetime,
+        end: datetime,
+        limit: int,
+    ) -> list["Trade"]:
+        ...
+
+
+class HistoricalSpotMarketDataAdapter(SpotMarketDataAdapter, Protocol):
+    def backfill_ohlcv(
+        self,
+        market: MarketRef,
+        start: datetime,
+        end: datetime,
+        timeframe: str,
+    ) -> Iterable["OHLCVBar"]:
+        ...
+
+
+class PerpsMarketDataAdapter(Protocol):
+    name: str
+
+    def get_mark_price(self, market: MarketRef, now: datetime) -> "PricePoint":
+        ...
+
+    def get_funding_rate(self, market: MarketRef, now: datetime) -> "FundingRatePoint":
+        ...
+
+    def get_open_interest(self, market: MarketRef, now: datetime) -> "OpenInterestPoint":
+        ...
+
+
+class HistoricalPerpsMarketDataAdapter(PerpsMarketDataAdapter, Protocol):
+    def backfill_funding_rates(
+        self,
+        market: MarketRef,
+        start: datetime,
+        end: datetime,
+    ) -> Iterable["FundingRatePoint"]:
+        ...
+```
+
+Adapter categories:
+- Spot market data adapters (DexScreener, etc.)
+- Perps market data adapters (Hyperliquid first)
+- Sentiment adapters
+
+---
+
+## Rough System Shape
+
+```
+                    ┌─────────────┐
+                    │  Next.js    │
+                    │  Dashboard  │
+                    │ (TradingView│
+                    │  + P&L)     │
+                    └──────┬──────┘
+                           │ REST/OpenAPI
+                    ┌──────┴──────┐
+                    │  FastAPI    │
+                    │  API Server │
+                    │  + Config   │
+                    └──────┬──────┘
+                            │
+               ┌────────────┼────────────┐
+               │            │            │
+         ┌─────┴─────┐ ┌───┴────┐ ┌─────┴──────┐
+         │ Orchestr-  │ │ Postgres │ │  RabbitMQ  │
+         │ ator       │ │(all data)│ │  (events)  │
+         │ (scheduler │ └───┬────┘ └─────┬──────┘
+          │  + LLM     │     │            │
+          │  calls)    │     │     ┌──────┼──────┐
+        └─────┬──────┘     │     │      │      │
+              │            │  ┌──┴──┐┌──┴──┐┌──┴──┐
+              │            │  │Price ││Sent-││On-  │
+              └────────────┘  │Crawl ││iment││Chain│
+                              │(Dex- ││(X/  ││(perps│
+                               │Scr.) ││Twitter)│data)│
+                               └─────┘└─────┘└─────┘
+```
+
+### Services (v1) (Draft)
+
+- `api` — REST/OpenAPI surface for dashboard + CLI; stores configs/snapshots; run/dataset lifecycle.
+- `orchestrator` — Snapshot builder + scheduler; calls LLM gateway; publishes `llm.*` / `sim.*` / `portfolio.*` events.
+- `event_store` — Single writer for the canonical `events` table (idempotent dedupe); optionally maintains simple projections.
+- `replay` — Reads canonical events for selected dataset ids/time window and republishes them into `ex.events` with deterministic ordering.
+- `importers` — Backfill per category (spot/perps/sentiment) producing dataset ids.
+- `live crawlers` — Continuous ingestion in live mode (disabled during deterministic replay).
+- `llm_gateway` — Provider routing, retries, rate limits, usage/cost accounting; OpenAI-compatible facade.
+
+### Data Flow (Live Mode)
+1. Crawlers independently fetch data on their own schedules → publish to RabbitMQ
+2. Orchestrator consumes from MQ, aggregates into a market snapshot
+3. On each model's scheduled tick (base interval + optional earlier checks), orchestrator builds prompt with latest snapshot → calls that model
+4. Each LLM returns target exposures (+ optional next-check request)
+5. Simulated execution engine processes decisions, updates paper portfolio, and publishes `llm.decision` / `sim.fill` / `portfolio.snapshot` events
+6. Event-store service consumes canonical events from RabbitMQ and persists them to Postgres (append-only event log + projection tables for fast dashboard queries)
+7. Dashboard polls API for latest state, renders charts
+
+### Data Flow (Backtest/Replay Mode)
+1. Importers/backfill jobs run per category (spot/perps/sentiment). Each importer fetches vendor data and publishes canonical events to RabbitMQ (tagged with its `dataset_id`); event-store persists them to Postgres
+2. A replay service reads the chosen time window for the run's dataset ids (spot/perps/sentiment) from the DB event log and merges them into a single ordered stream
+3. It republishes that merged stream into RabbitMQ with a simulated `observed_at` clock (deterministic ordering rules)
+4. The orchestrator consumes the same message types as live mode and rebuilds snapshots
+5. Each configured LLM runs on its own schedule (base interval + optional model-requested earlier checks)
+6. Decisions and simulated P&L are stored as a "benchmark run" (plus per-model run metadata)
+7. Dashboard shows side-by-side model comparison for any historical period
+
+---
+
+## Open Questions for Deep Research
+
+1. **DexScreener API limits** — Rate limits, historical data depth, WebSocket availability?
+2. **Hyperliquid historical data** — Mark/index history, funding rate history, rate limits, and how cleanly it supports backfill for replay. (dYdX is a follow-on adapter.)
+3. **RabbitMQ replay patterns** — Deterministic ordering + idempotency: what is the replay contract (exactly-once not guaranteed), and how do we avoid double-applying events?
+4. **Solana watchlist** — Which ~20 tokens/markets have the most sentiment-driven price action (and which specific pools/markets should be pinned as `MarketRef`s)? Need high volume + high social media correlation.
+5. **LLM cost estimation** — At 1h intervals, 20 tokens, 3-5 models, what's the daily API cost? Context window considerations for market data.
+6. **Simulation fidelity** — Slippage model for DEX trades (AMM curve)? How to simulate perps funding rates?
+7. **X/Twitter scraping** — Current state of anti-bot measures? Which KOLs move Solana token prices?
+8. **Hackathon sponsor frameworks** — Which sponsors have agent frameworks we should wrap our logic in? Check Discord for track prizes.
+9. **TradingView Widget limitations** — Can it render custom trade annotations (buy/sell markers)? Or do we need Lightweight Charts for that?
+10. **Canonical event payload shapes** — For each `market.*` / `perps.*` event type, what is the minimal canonical payload that stays stable across vendors while still being useful for prompt building + sim?
+11. **High-volume events policy** — For `market.trades` (1m buckets + top-20) and other potentially large payloads, what are the exact bucket stats + top-20 selection rule, and what do we keep as raw vs normalized?
+12. **AssetRef conventions** — How do we map on-chain `TokenRef`s, fiat (USD), and perps underlyings into a stable `AssetRef` namespace/id scheme (e.g., chain address vs symbol vs Coingecko id)?
+
+---
+
+## Reference Repo Learnings: OpenAlice (MIT)
+
+We reviewed `TraderAlice/OpenAlice` (local checkout: `/home/grider/build/OpenAlice`). It's a file-driven, extension-based trading agent engine. Even though our target architecture is **microservices + RabbitMQ + Postgres**, several patterns are worth copying/adapting.
+
+### License / Copying Notes
+
+- OpenAlice is **MIT licensed** (`OpenAlice/LICENSE`). We can copy code, but must retain the copyright + license notice in any copied/substantial portions.
+- Decision: copy **ideas/patterns** and re-implement in our stack (Python/FastAPI + MQ). Do not vendor/copy OpenAlice modules directly unless we explicitly choose to later.
+
+### Concepts Worth Borrowing
+
+1. **Composition root (clean wiring)**
+   - OpenAlice keeps nearly all runtime wiring in one place (`OpenAlice/src/main.ts`): config load, dependency construction, background tasks, connector startup, provider wiring.
+   - Copy idea: keep orchestration wiring (MQ clients, DB clients, LLM gateway client, scheduler, adapters) in a single, explicit composition root per service.
+
+2. **File-driven config with schema validation + seeded defaults**
+   - Pattern: configs live as JSON files; on first run they are auto-created with defaults; Zod validates and migrates (`OpenAlice/src/core/config.ts`).
+   - Copy idea (even with DB-first config): keep config schemas explicit, versioned, and migratable; seed sensible defaults; and snapshot the exact config used for each run for reproducibility.
+
+3. **Default + user override files for prompts/persona**
+   - Pattern: git-tracked defaults + gitignored user overrides (`data/default/*.default.md` -> `data/brain/*.md`) with a helper that copies defaults on first run (`readWithDefault` in `OpenAlice/src/main.ts`).
+   - Copy idea: prompt templates (and any prompt "policy" text) should follow the same default/override split so we can iterate quickly without editing code.
+
+4. **Append-only JSONL EventLog with in-memory tail cache + subscriptions**
+   - Pattern: disk append (JSONL) + in-memory ring buffer + `subscribeType()` for real-time reactions (`OpenAlice/src/core/event-log.ts`).
+   - Copy idea (our DB/MQ version): keep the event store append-only, and add a small in-memory "tail cache" + typed subscription hooks in services that need fast recent-event access or real-time reactions.
+
+5. **Guard pipeline (pre-execution safety checks) as a chain**
+   - Pattern: one place assembles a context (positions + account + operation), then runs a guard chain; guards are pluggable via a registry resolved from config (`OpenAlice/src/extension/crypto-trading/guards/*`).
+   - Copy idea: implement constraints as first-class "guards" (gross/net caps, per-market caps, spot long-only, turnover limits, cooldowns, missing-data policies) before applying LLM targets.
+
+6. **Git-like Wallet workflow for trading operations (stage/commit/push)**
+   - Pattern: stage operations, commit with a message (the "why"), then push to execute; persistent commit history with short hashes (`OpenAlice/src/extension/crypto-trading/wallet/Wallet.ts`, `OpenAlice/src/extension/crypto-trading/wallet/adapter.ts`).
+   - Copy idea (decision: audit-only commits in sim): treat each tick as an immutable "commit" record (diff from last targets/portfolio, LLM rationale/confidence, guard results). Execution stays automatic in the simulator; no manual staging/push loop required for replay mode.
+
+7. **Hot-reloadable provider routing**
+   - Pattern: ProviderRouter reads runtime config on each call so provider/model can change without restart (`OpenAlice/src/core/ai-provider.ts`, hot-read helpers in `OpenAlice/src/core/config.ts`).
+   - Copy idea: our LLM gateway can support "runtime switch" per model-run (provider, base URL, rate limits) while still snapshotting the exact config used for reproducibility.
+
+8. **Unified session/event persistence formats**
+   - Pattern: a single JSONL session format that both providers can read/write; converts to provider-specific message formats (`OpenAlice/src/core/session.ts`).
+   - Copy idea: define one canonical "LLM call record" format (prompt, response, usage, latency, errors) that is provider-agnostic. Store it once, render it anywhere.
+
+9. **Context compaction (microtruncate + full summary)**
+   - Pattern: first truncate large tool results, then optionally summarize older history into a boundary + summary entry (`OpenAlice/src/core/compaction.ts`).
+   - Copy idea: if we ever add multi-turn agent loops (e.g., sentiment research agent), we should plan compaction early so runs don't die when context grows.
+
+10. **Connector abstraction + "last interaction" routing**
+   - Pattern: connectors register with a ConnectorCenter; outbound notifications go to the last-interacted channel (`OpenAlice/src/core/connector-center.ts`).
+   - Copy idea: if we add Telegram/Discord/webhook notifications (run finished, errors, big drawdown), route to the last active operator channel automatically.
+
+11. **Separation of "tool exposure" vs "agent conversation" surfaces to avoid circular calls**
+   - Pattern: the Ask connector runs on a separate port and is not registered in ToolCenter, preventing the agent from discovering and calling itself (`OpenAlice/docs/mcp-ask-connector.md`).
+   - Copy idea: if we expose our platform via MCP or similar, keep "internal tools" and "external conversation" clearly separated so models can't accidentally create loops.
+
+### What We Should NOT Copy (Mismatch)
+
+- OpenAlice is intentionally **single-tenant + file-first** (no DB, no MQ). Our benchmark/replay requirements benefit from Postgres + durable MQ; use JSONL/eventlog ideas as conceptual inspiration only (decision: no JSONL fallback implementation).
+- Wallet operations are **order-centric**. Our v1 decision format is **target exposures**; copy the UX metaphor, but adapt the data model (diff exposures -> implied fills).
+
+### Decisions From This Review
+
+- Code reuse: re-implement OpenAlice patterns (no direct module vendoring).
+- Execution audit: wallet-style commit log metaphor, audit-only (sim stays automatic).
+- Config: DB-first source of truth, snapshot per run for reproducibility.
+- Event store: RabbitMQ + Postgres only (no JSONL fallback).
