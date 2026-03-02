@@ -55,36 +55,36 @@ first-claw-eater-backend/
 ## Backend Phase 0 - Architecture Lock (Internal Pipeline Edition)
 
 - [ ] Write a short ADR: “Why modular monolith now” (explicitly: hackathon speed + fewer moving parts).
-- [ ] Keep the *same* core data semantics from `ideas.md`, even without MQ:
-  - [ ] Canonical IDs: `asset_id`, `market_id` rules
-  - [ ] Canonical event envelope fields: `event_type`, `source`, `schema_version`, `observed_at`, `event_time`, `dedupe_key`, `dataset_id`, `run_id`, `payload`, `raw_payload`
-  - [ ] Numeric encoding: canonical event payload numbers as **decimal strings**; REST returns JSON numbers.
-- [ ] Decide the internal pipeline mechanism (recommended default):
-  - [ ] Background worker process inside backend repo
-  - [ ] Job queue choice:
-    - [ ] Recommended: Postgres-backed job table (no extra infra)
+- [x] Keep the *same* core data semantics from `ideas.md`, even without MQ:
+  - [x] Canonical IDs: `asset_id`, `market_id` rules
+  - [x] Canonical event envelope fields: `event_type`, `source`, `schema_version`, `observed_at`, `event_time`, `dedupe_key`, `dataset_id`, `run_id`, `payload`, `raw_payload`
+  - [x] Numeric encoding: canonical event payload numbers as **decimal strings**; REST returns JSON numbers.
+- [x] Decide the internal pipeline mechanism (recommended default):
+  - [x] Background worker process inside backend repo
+  - [x] Job queue choice:
+    - [x] Recommended: Postgres-backed job table (no extra infra)
     - [ ] Alternative: Celery + Redis broker (if you want classic distributed queue)
 
 ---
 
 ## Backend Phase 1 - Bootstrap & Local Dev (Compose)
 
-- [ ] Create `infra/compose/docker-compose.yml` with:
-  - [ ] Postgres (named volume)
+- [x] Create `infra/compose/docker-compose.yml` with:
+  - [x] Postgres (named volume)
   - [ ] Authentik + Redis (optional profile; can be enabled later)
-  - [ ] Backend API container
-  - [ ] Backend worker container (same image, different command)
-- [ ] Define a stable port plan and document it in `README.md`.
-- [ ] Add `.env.example` (no secrets) with:
-  - [ ] DB URL
-  - [ ] OIDC issuer/JWKS URL (or Authentik URLs)
-  - [ ] LLM provider base URL + API key placeholders
-  - [ ] vendor API configuration placeholders
-- [ ] Add repo-level “golden commands” section:
-  - [ ] `uv sync`
-  - [ ] `docker compose up`
-  - [ ] `pytest`
-  - [ ] `ruff format && ruff check`
+  - [x] Backend API container
+  - [x] Backend worker container (same image, different command)
+- [x] Define a stable port plan and document it in `README.md`.
+- [x] Add `.env.example` (no secrets) with:
+  - [x] DB URL
+  - [x] OIDC issuer/JWKS URL (or Authentik URLs)
+  - [x] LLM provider base URL + API key placeholders
+  - [x] vendor API configuration placeholders
+- [x] Add repo-level “golden commands” section:
+  - [x] `uv sync`
+  - [x] `docker compose up`
+  - [x] `pytest`
+  - [x] `ruff format && ruff check`
 
 ---
 
@@ -92,36 +92,36 @@ first-claw-eater-backend/
 
 Goal: lock the contracts early so everything else builds on stable types.
 
-- [ ] `src/fce/contracts/ids.py`:
-  - [ ] `AssetRef`, `TokenRef`, `MarketRef`
-  - [ ] `asset_id` and `market_id` codecs + validation helpers
-- [ ] `src/fce/contracts/events.py`:
-  - [ ] event envelope model + JSON serialization rules
-  - [ ] schema versioning scaffolding (upcasters)
-- [ ] Canonical payload models (v1):
-  - [ ] `market.price`, `market.ohlcv` (minimum required for prompts + fills)
-  - [ ] `sentiment.item`, `sentiment.item_summary`
-  - [ ] `llm.decision`, `llm.schedule_request`
-  - [ ] `sim.fill`, `portfolio.snapshot`
-  - [ ] `run.started`, `run.finished`, `run.failed`
-- [ ] Run config snapshot schema (match `ideas.md` draft; keep MVP constraint: 1 market + 1 model).
+- [x] `src/fce/contracts/ids.py`:
+  - [x] `AssetRef`, `TokenRef`, `MarketRef`
+  - [x] `asset_id` and `market_id` codecs + validation helpers
+- [x] `src/fce/contracts/events.py`:
+  - [x] event envelope model + JSON serialization rules
+  - [x] schema versioning scaffolding (upcasters)
+- [x] Canonical payload models (v1):
+  - [x] `market.price`, `market.ohlcv` (minimum required for prompts + fills)
+  - [x] `sentiment.item`, `sentiment.item_summary`
+  - [x] `llm.decision`, `llm.schedule_request`
+  - [x] `sim.fill`, `portfolio.snapshot`
+  - [x] `run.started`, `run.finished`, `run.failed`
+- [x] Run config snapshot schema (match `ideas.md` draft; keep MVP constraint: 1 market + 1 model).
 
 DB (SQLAlchemy + Alembic):
 
-- [ ] `events` append-only log table:
-  - [ ] unique dedupe indexes:
-    - [ ] `(dataset_id, event_type, dedupe_key)` where `dataset_id IS NOT NULL`
-    - [ ] `(run_id, event_type, dedupe_key)` where `run_id IS NOT NULL`
-- [ ] Core metadata tables:
-  - [ ] `users`
-  - [ ] `datasets` (status + params)
-  - [ ] `prompt_templates`
-  - [ ] `run_config_snapshots`
-  - [ ] `runs` (+ status timestamps)
-  - [ ] `run_datasets`
-  - [ ] `llm_calls` (full prompt/response audit)
-- [ ] Projection tables for fast UI reads (recommended even in MVP):
-  - [ ] `portfolio_snapshots` (run_id, observed_at, equity, cash, positions_json)
+- [x] `events` append-only log table:
+  - [x] unique dedupe indexes:
+    - [x] `(dataset_id, event_type, dedupe_key)` where `dataset_id IS NOT NULL`
+    - [x] `(run_id, event_type, dedupe_key)` where `run_id IS NOT NULL`
+- [x] Core metadata tables:
+  - [x] `users`
+  - [x] `datasets` (status + params)
+  - [x] `prompt_templates`
+  - [x] `run_config_snapshots`
+  - [x] `runs` (+ status timestamps)
+  - [x] `run_datasets`
+  - [x] `llm_calls` (full prompt/response audit)
+- [x] Projection tables for fast UI reads (recommended even in MVP):
+  - [x] `portfolio_snapshots` (run_id, observed_at, equity, cash, positions_json)
   - [ ] `sim_trades` (optional)
 - [ ] Seed data strategy:
   - [ ] pinned watchlist markets (10 MarketRefs)
@@ -133,16 +133,18 @@ DB (SQLAlchemy + Alembic):
 
 Goal: all “pipelines” (dataset import, replay runs, tournament) run as background jobs inside backend.
 
-- [ ] Implement job table + worker loop (if Postgres-backed):
-  - [ ] claim jobs with `SELECT ... FOR UPDATE SKIP LOCKED`
-  - [ ] heartbeats + timeout recovery
-  - [ ] concurrency caps (global and per-user)
+- [x] Implement job table + worker loop (if Postgres-backed):
+  - [x] claim jobs with `SELECT ... FOR UPDATE SKIP LOCKED`
+  - [x] heartbeats + timeout recovery
+  - [x] concurrency caps (global and per-user) (best-effort; per-user depends on auth)
 - [ ] Define job types:
-  - [ ] `dataset_import` (spot/perps/sentiment)
-  - [ ] `run_execute_replay`
-  - [ ] `run_execute_live` (global live run)
+  - [x] `dataset_import` (spot/perps/sentiment)
+  - [x] `run_execute_replay`
+  - [x] `run_execute_live` (global live run)
   - [ ] `arena_execute_submission` (optional)
-- [ ] Standardize job logging context: `job_id`, `dataset_id`, `run_id`, `user_id`.
+- [x] Standardize job logging context:
+  - [x] `job_id`, `dataset_id`, `run_id`
+  - [ ] `user_id` (after auth / ownership)
 
 ---
 
@@ -150,21 +152,21 @@ Goal: all “pipelines” (dataset import, replay runs, tournament) run as backg
 
 Goal: create datasets by pulling vendor history and writing canonical events directly to DB.
 
-- [ ] Dataset lifecycle:
-  - [ ] API creates `datasets` row in `pending`
-  - [ ] enqueue `dataset_import` job
-  - [ ] worker runs import, writes canonical events (`dataset_id` scoped), updates dataset status to `ready`/`failed`
-- [ ] Spot importer (DexScreener) v1:
-  - [ ] decide minimal needed data for MVP:
-    - [ ] `market.price` at 1m cadence (for fills + valuation)
-    - [ ] `market.ohlcv` at 1h timeframe (for prompt context)
-  - [ ] dedupe key rules (stable, time-bucketed)
-  - [ ] set `observed_at = event_time` for backfilled events
-- [ ] Sentiment importer v1:
-  - [ ] RSS/news backfill for window
-  - [ ] allow empty dataset (still create dataset_id)
-  - [ ] write `sentiment.item`
-  - [ ] generate `sentiment.item_summary` 1:1 using internal LLM module (store `llm_call_id`)
+- [x] Dataset lifecycle:
+  - [x] API creates `datasets` row in `pending`
+  - [x] enqueue `dataset_import` job
+  - [x] worker runs import, writes canonical events (`dataset_id` scoped), updates dataset status to `ready`/`failed`
+- [x] Spot importer (MVP, DexScreener-seeded synthetic backfill) v1:
+  - [x] `market.price` at 1m cadence (synthetic; for fills + valuation)
+  - [x] `market.ohlcv` at 1h timeframe (synthetic; for prompt context)
+  - [x] dedupe key rules (stable, time-bucketed)
+  - [x] set `observed_at = event_time` for backfilled events
+  - [ ] Real historical candle backfill (needs a provider with candles; DexScreener free API lacks it)
+- [x] Sentiment importer v1:
+  - [x] RSS/news backfill for window
+  - [x] allow empty dataset (still create dataset_id)
+  - [x] write `sentiment.item`
+  - [x] generate `sentiment.item_summary` 1:1 using internal LLM module (store `llm_call_id`)
 - [ ] Perps importer (Hyperliquid) (only if MVP includes perps):
   - [ ] backfill `perps.mark` + `perps.funding_rate`
 
@@ -174,13 +176,13 @@ Goal: create datasets by pulling vendor history and writing canonical events dir
 
 Goal: deterministic ordering + no lookahead.
 
-- [ ] Implement replay iterator:
-  - [ ] query events for dataset_ids within `[start, end]`
-  - [ ] stable ordering key: `(observed_at, source, event_type, dedupe_key)`
-  - [ ] stream events to orchestrator in-process (no MQ)
-- [ ] Add replay correctness tests:
-  - [ ] same DB contents -> same stream ordering
-  - [ ] dedupe/idempotency invariants hold on rerun
+- [x] Implement replay iterator:
+  - [x] query events for dataset_ids within `[start, end]`
+  - [x] stable ordering key: `(observed_at, source, event_type, dedupe_key)`
+  - [x] stream events to orchestrator in-process (no MQ)
+- [x] Add replay correctness tests:
+  - [x] same DB contents -> same stream ordering
+  - [x] dedupe/idempotency invariants hold on rerun
 
 ---
 
@@ -188,47 +190,47 @@ Goal: deterministic ordering + no lookahead.
 
 Goal: consume replay/live events, build snapshots, call LLM, simulate, persist results.
 
-- [ ] Snapshot builder (matches `ideas.md` semantics):
-  - [ ] include only events with `observed_at <= tick_time`
-  - [ ] only use OHLCV after close (`bar_end <= tick_time`)
-  - [ ] require fresh price for fill pricing (age <= 60s; configurable)
-- [ ] Scheduler:
-  - [ ] base cadence 1h (anchored)
-  - [ ] early-check requests via `next_check_seconds` (clamped + aligned)
-  - [ ] always log schedule requests (even ignored)
-- [ ] Prompt builder:
-  - [ ] Mustache templates (no code execution)
-  - [ ] bounded market context + derived features
-  - [ ] bounded sentiment context (prefer summaries)
-  - [ ] include last 3 decision steps (memory window)
-  - [ ] prompt-only time masking option
-- [ ] Strict decision JSON parsing + validation:
-  - [ ] decimal parsing (number or string) -> Decimal -> persist as string
-  - [ ] MVP constraint: exactly 1 selected `market_id`
-  - [ ] invalid output => reject + hold last targets + record error
+- [x] Snapshot builder (matches `ideas.md` semantics):
+  - [x] include only events with `observed_at <= tick_time`
+  - [x] only use OHLCV after close (`bar_end <= tick_time`)
+  - [x] require fresh price for fill pricing (age <= 60s; configurable)
+- [x] Scheduler:
+  - [x] base cadence 1h (anchored)
+  - [x] early-check requests via `next_check_seconds` (clamped + aligned)
+  - [x] always log schedule requests (even ignored)
+- [x] Prompt builder:
+  - [x] Mustache templates (no code execution)
+  - [x] bounded market context + derived features
+  - [x] bounded sentiment context (prefer summaries)
+  - [x] include last 3 decision steps (memory window)
+  - [x] prompt-only time masking option
+- [x] Strict decision JSON parsing + validation:
+  - [x] decimal parsing (number or string) -> Decimal -> persist as string
+  - [x] MVP constraint: exactly 1 selected `market_id`
+  - [x] invalid output => reject + hold last targets + record error
 
 Persistence:
 
-- [ ] Write run-scoped canonical events directly to `events` (`run_id` scoped):
-  - [ ] `run.started` / `run.finished` / `run.failed`
-  - [ ] `llm.decision` / `llm.schedule_request`
-  - [ ] `sim.fill` / `portfolio.snapshot`
-- [ ] Maintain projection tables (`portfolio_snapshots`, `sim_trades`) for UI speed.
+- [x] Write run-scoped canonical events directly to `events` (`run_id` scoped):
+  - [x] `run.started` / `run.finished` / `run.failed`
+  - [x] `llm.decision` / `llm.schedule_request`
+  - [x] `sim.fill` / `portfolio.snapshot`
+- [x] Maintain projection tables (`portfolio_snapshots`, `sim_trades`) for UI speed.
 
 ---
 
 ## Backend Phase 7 - Simulation + Guard Chain (Internal)
 
-- [ ] Implement rebalance-to-target exposure engine:
-  - [ ] compute target notional = exposure * equity
-  - [ ] simulate fills at snapshot price
-  - [ ] apply fee bps
-- [ ] Implement guard chain (single place, deterministic):
-  - [ ] spot long-only
-  - [ ] gross/net caps
-  - [ ] missing data policy (skip tick; hold last targets)
-  - [ ] decision validation failures => hold last targets
-- [ ] Deterministic tests for fills + portfolio snapshots.
+- [x] Implement rebalance-to-target exposure engine:
+  - [x] compute target notional = exposure * equity
+  - [x] simulate fills at snapshot price
+  - [x] apply fee bps
+- [x] Implement guard chain (single place, deterministic):
+  - [x] spot long-only
+  - [x] gross/net caps
+  - [x] missing data policy (skip tick; hold last targets)
+  - [x] decision validation failures => hold last targets
+- [x] Deterministic tests for fills + portfolio snapshots.
 
 ---
 
@@ -236,14 +238,19 @@ Persistence:
 
 Goal: centralize provider routing and audit logging without a separate service.
 
-- [ ] Implement internal `llm.call_chat_completion()`:
-  - [ ] provider routing (OpenAI-compatible; OpenRouter optional)
-  - [ ] retries + timeouts
-  - [ ] record `llm_calls` (prompt, response_raw, response_parsed, usage, latency, error)
-  - [ ] per-run and per-user budgets (hard caps in MVP)
-- [ ] Model allowlist:
+- [x] Implement internal `llm.call_chat_completion()`:
+  - [x] provider routing (OpenAI-compatible; OpenRouter optional)
+  - [x] retries + timeouts
+  - [x] record `llm_calls` (prompt, response_raw, response_parsed, usage, latency, error)
+  - [x] per-run and per-dataset budgets (hard caps in MVP; env-configured)
+    - [x] max decision calls per run
+    - [x] max summary calls per run
+    - [x] max sentiment item summaries per dataset
+    - [ ] per-user budgets (after auth / ownership)
+- [x] Model allowlist:
   - [ ] admin-managed list in DB (no secrets in run snapshots)
-  - [ ] env-based secret storage in MVP
+  - [x] env-based allowlist in MVP (`FCE_LLM_MODEL_ALLOWLIST`)
+  - [x] env-based secret storage in MVP
 
 ---
 
@@ -256,16 +263,16 @@ Goal: the backend is the only public surface; everything else is internal module
   - [ ] auto-provision user row on `/me`
   - [ ] admin via group claim
 - [ ] Endpoints (from `ideas.md`, adjusted for internal pipeline):
-  - [ ] `GET /me`
-  - [ ] `POST /datasets` (enqueues import job)
-  - [ ] `GET /datasets` / `GET /datasets/{id}`
-  - [ ] `POST /prompt_templates` / `GET /prompt_templates`
-  - [ ] `POST /runs` (validates config, stores snapshot, enqueues run job)
-  - [ ] `GET /runs` / `GET /runs/{id}`
-  - [ ] `POST /runs/{id}/stop` (signals worker via DB flag)
-  - [ ] `GET /runs/{id}/timeline` (from projections)
-  - [ ] `GET /runs/{id}/decisions` (paged from events)
-  - [ ] `GET /runs/{id}/summary`
+  - [x] `GET /me`
+  - [x] `POST /datasets` (enqueues import job)
+  - [x] `GET /datasets` / `GET /datasets/{id}`
+  - [x] `POST /prompt_templates` / `GET /prompt_templates`
+  - [x] `POST /runs` (validates config, stores snapshot, enqueues run job)
+  - [x] `GET /runs` / `GET /runs/{id}`
+  - [x] `POST /runs/{id}/stop` (signals worker via DB flag)
+  - [x] `GET /runs/{id}/timeline` (from projections)
+  - [x] `GET /runs/{id}/decisions` (paged from events)
+  - [x] `GET /runs/{id}/summary`
   - [ ] optional Arena:
     - [ ] `GET /scenario_sets`
     - [ ] `POST /arena/submissions`
@@ -278,19 +285,21 @@ Goal: the backend is the only public surface; everything else is internal module
 
 Goal: one always-on live run for the main dashboard.
 
-- [ ] Implement live ingestion loop (still inside backend worker):
-  - [ ] poll vendor prices every 60s
-  - [ ] write `market.price` events (dataset_id = live dataset)
-- [ ] Live run execution loop:
-  - [ ] anchored tick schedule
+- [x] Implement live ingestion loop (still inside backend worker):
+  - [x] poll vendor prices every `price_tick_seconds`
+  - [x] write `market.price` events (run-scoped)
+  - [x] build/write `market.ohlcv` bars (run-scoped)
+- [x] Live run execution loop:
+  - [x] anchored tick schedule + early-check support
   - [ ] optional early sentiment refresh (best effort)
-  - [ ] write run-scoped events and projections
+  - [x] write run-scoped events and projections
 
 ---
 
 ## Backend Phase 11 - Observability, CI, and Guardrails
 
-- [ ] Structured JSON logs (consistent keys): `service`, `job_id`, `run_id`, `dataset_id`, `event_type`.
+- [x] Structured JSON logs (worker) (consistent keys): `service`, `job_id`, `run_id`, `dataset_id`.
+- [ ] Extend logs to API/orchestrator; include `event_type` when appending events.
 - [ ] Prometheus metrics:
   - [ ] job queue depth, job latency, failures
   - [ ] DB write latency
@@ -331,16 +340,17 @@ Frontend TODO:
 
 - [ ] Auth UI: OIDC login flow (Authentik) or dev token mode.
 - [ ] Generate typed client from backend OpenAPI.
-- [ ] Live Dashboard page:
-  - [ ] price chart (TradingView widget or alternative)
-  - [ ] equity/PnL chart
-  - [ ] decisions timeline (rationale/confidence/key_signals)
-- [ ] Benchmark Lab:
-  - [ ] dataset import form + status
-  - [ ] run creation form + run status
-  - [ ] run timeline + decisions + summary
+- [x] Live Dashboard page:
+  - [x] price chart (TradingView widget or alternative)
+  - [x] equity/PnL chart
+  - [x] decisions timeline (rationale/confidence/key_signals)
+- [x] Benchmark Lab:
+  - [x] dataset import form + status
+  - [x] run creation form + run status
+  - [x] run timeline + decisions + summary
 - [ ] Optional Arena views: submission progress + leaderboard.
-- [ ] Performance: pagination for decisions/events; polling strategy (MVP: polling).
+- [x] Performance: pagination for decisions + stop polling terminal runs (MVP: polling).
+- [ ] (Optional) pagination for raw events.
 
 ---
 
@@ -355,7 +365,7 @@ Recommended direction:
 
 Crawler placeholder TODO:
 
-- [ ] Repo scaffold + README (“not required for MVP”).
+- [x] Repo scaffold + README (“not required for MVP”).
 - [ ] Define adapter interfaces that match `ideas.md` contracts:
   - [ ] `get_price`, `get_ohlcv`, optional perps endpoints
 - [ ] Add one minimal DexScreener adapter stub (no production hardening yet).
@@ -375,7 +385,7 @@ Crawler placeholder TODO:
 
 ## MVP Demo-Ready Definition (Hackathon)
 
-- [ ] `docker compose up` in backend repo brings up Postgres + backend API + backend worker (and optionally Authentik).
-- [ ] User can import a historical dataset and run a replay benchmark (single `market_id`, single `model_key`).
-- [ ] Backend calls LLM on historical ticks and produces a PnL curve + decision stream + post-run summary.
-- [ ] Frontend shows Live Dashboard + Benchmark Lab results.
+- [x] `docker compose up` in backend repo brings up Postgres + backend API + backend worker (and optionally Authentik).
+- [x] User can import a historical dataset and run a replay benchmark (single `market_id`, single `model_key`).
+- [x] Backend calls LLM on historical ticks and produces a PnL curve + decision stream + post-run summary.
+- [x] Frontend shows Live Dashboard + Benchmark Lab results.
