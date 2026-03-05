@@ -10,7 +10,7 @@
   - **Jerry** — Product and planning, LSE
   - **Jacky** — Hackathon veteran, code assist, sponsor framework integration
   - **Aaron** — CS + cybersec, crawler/scraping expert, indie dev experience, UI/product assist
-- **Product name**: TBD (team name "First Claw Eater" is separate)
+- **Product name**: TBD (team name "vibe4trading" is separate)
 
 ---
 
