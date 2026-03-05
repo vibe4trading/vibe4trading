@@ -80,7 +80,7 @@ class PromptConfigV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     prompt_text: str
-    lookback_bars: int = 24
+    lookback_bars: int = 72
     timeframe: str = "1h"
     include: list[str] = Field(
         default_factory=lambda: [

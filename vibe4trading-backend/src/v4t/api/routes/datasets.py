@@ -92,7 +92,7 @@ def delete_dataset(
     dataset_id: UUID,
     db: Session = Depends(get_db),
     _user: UserRow = Depends(get_current_user),
-) -> dict:
+) -> dict[str, str | bool]:
     row = db.get(DatasetRow, dataset_id)
     if row is None:
         raise HTTPException(status_code=404, detail="dataset not found")

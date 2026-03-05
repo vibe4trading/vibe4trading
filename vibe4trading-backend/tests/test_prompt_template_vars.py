@@ -61,7 +61,7 @@ def test_prompt_text_passed_to_llm_call(db_session) -> None:
         ),
         prompt=PromptConfigV1(
             prompt_text=custom_prompt,
-            lookback_bars=24,
+            lookback_bars=72,
             timeframe="1h",
         ),
     )

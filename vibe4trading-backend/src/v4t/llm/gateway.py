@@ -6,20 +6,20 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Final
+from typing import Any, Final, cast
 from uuid import UUID
 
 import httpx
 import structlog
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from v4t.contracts.payloads import LlmDecisionOutputV1
 from v4t.db.models import LlmCallRow, LlmModelRow
 from v4t.llm.budget import LlmBudgetTracker
-from v4t.llm.json_extract import extract_first_json_object
-from v4t.llm.retry import call_with_retry
+from v4t.llm.json_extract import extract_first_json_object_text
+from v4t.llm.retry import call_with_retry, compute_backoff_seconds, is_retryable
 from v4t.settings import get_settings, parse_csv_set
 from v4t.utils.datetime import now
 
@@ -85,8 +85,6 @@ class LlmGateway:
         return model_key == "stub"
 
     def _api_url_and_headers(self, base_url: str) -> tuple[str, dict[str, str]]:
-        if base_url is None:
-            raise ValueError("base_url must not be None")
         if self.settings.llm_api_key is None:
             raise ValueError("llm_api_key must not be None")
         base_url = base_url.rstrip("/")
@@ -263,6 +261,254 @@ class LlmGateway:
                 raise ValueError("unexpected _missing_config_result return type")
             return res
         url, headers = self._api_url_and_headers(base_url)
+        max_attempts = max(1, int(self.settings.llm_max_retries) + 1)
+        attempt_user_prompt = user_prompt
+
+        last_call_id: UUID | None = None
+        last_error: str | None = None
+        last_exc: Exception | None = None
+
+        with httpx.Client(timeout=float(self.settings.llm_timeout_seconds)) as client:
+            for attempt in range(1, max_attempts + 1):
+                req_attempt = self._build_request(
+                    model_key=model_key,
+                    system_prompt=system_prompt,
+                    user_prompt=attempt_user_prompt,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                )
+
+                started = time.perf_counter()
+                resp_raw: str | None = None
+                resp_parsed: dict[str, Any] | None = None
+                usage: dict[str, Any] | None = None
+                error: str | None = None
+                decision: LlmDecisionOutputV1 | None = None
+
+                try:
+                    r = client.post(url, headers=headers, json=req_attempt)
+                    r.raise_for_status()
+                    data_any = r.json()
+                    if not isinstance(data_any, dict):
+                        raise ValueError("LLM response is not a JSON object")
+
+                    data = cast(dict[str, Any], data_any)
+
+                    usage_any = data.get("usage")
+                    usage = usage_any if isinstance(usage_any, dict) else None
+
+                    choices = data.get("choices")
+                    if not isinstance(choices, list) or not choices:
+                        raise ValueError("LLM response missing 'choices'")
+
+                    first = choices[0]
+                    if not isinstance(first, dict):
+                        raise ValueError("LLM response has invalid 'choices' entry")
+                    msg_any = first.get("message")
+                    if not isinstance(msg_any, dict):
+                        raise ValueError("LLM response missing 'message'")
+                    content_any = msg_any.get("content")
+                    if not isinstance(content_any, str):
+                        raise ValueError("LLM response missing text content")
+
+                    content = content_any
+
+                    resp_raw = content
+                    obj, _candidate = extract_first_json_object_text(content)
+                    resp_parsed = obj
+                    decision = LlmDecisionOutputV1.model_validate(obj)
+                except Exception as exc:  # noqa: BLE001
+                    last_exc = exc
+                    error = repr(exc)
+                    last_error = error
+                finally:
+                    latency_ms = int((time.perf_counter() - started) * 1000)
+                    try:
+                        call = self._record_call(
+                            session,
+                            run_id=run_id,
+                            dataset_id=None,
+                            purpose="decision",
+                            observed_at=observed_at,
+                            prompt=req_attempt,
+                            response_raw=resp_raw,
+                            response_parsed=resp_parsed,
+                            usage=usage,
+                            latency_ms=latency_ms,
+                            error=error,
+                        )
+                        last_call_id = call.call_id
+                    except Exception as rec_exc:  # noqa: BLE001
+                        session.rollback()
+                        last_call_id = None
+                        last_error = last_error or repr(rec_exc)
+                        _LOG.error(
+                            "llm_record_call_failed",
+                            run_id=str(run_id) if run_id else None,
+                            error=repr(rec_exc),
+                            llm_error=error,
+                            exc_info=True,
+                        )
+
+                if decision is not None:
+                    return LlmCallResult(call_id=last_call_id, decision=decision, error=None)
+
+                if attempt >= max_attempts:
+                    break
+
+                if last_exc is None:
+                    break
+
+                if is_retryable(last_exc):
+                    time.sleep(compute_backoff_seconds(attempt=attempt, exc=last_exc))
+                    continue
+
+                if _should_retry_structured_exc(last_exc):
+                    attempt_user_prompt = _retry_prompt(user_prompt, last_error)
+                    continue
+
+                break
+
+        if last_error:
+            _LOG.error(
+                "llm_decision_failed",
+                run_id=str(run_id) if run_id else None,
+                error=last_error,
+                exc_info=True,
+            )
+
+        return LlmCallResult(
+            call_id=last_call_id,
+            decision=LlmDecisionOutputV1(schema_version=1, targets={}),
+            error=last_error,
+        )
+
+    def call_decision_streaming(
+        self,
+        session: Session,
+        *,
+        run_id: UUID,
+        observed_at: datetime,
+        model_key: str,
+        system_prompt: str,
+        user_prompt: str,
+        stub_features: StubDecisionFeatures,
+        on_delta: Callable[[str], None],
+        temperature: float = 0.0,
+        max_output_tokens: int = 800,
+    ) -> LlmCallResult:
+        if self._use_stub(session, model_key):
+            decision = self._stub_decision(stub_features)
+            text = decision.model_dump_json()
+            for chunk in _chunk_text(text):
+                on_delta(chunk)
+            call = self._record_call(
+                session,
+                run_id=run_id,
+                dataset_id=None,
+                purpose="decision",
+                observed_at=observed_at,
+                prompt={
+                    "model": "stub",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "stub_features": stub_features.model_dump(),
+                },
+                response_raw=text,
+                response_parsed=decision.model_dump(mode="json"),
+                usage=None,
+                latency_ms=0,
+                error=None,
+            )
+            return LlmCallResult(call_id=call.call_id, decision=decision, error=None)
+
+        res = self.call_decision(
+            session,
+            run_id=run_id,
+            observed_at=observed_at,
+            model_key=model_key,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            stub_features=stub_features,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+        if res.error is None:
+            text = json.dumps(res.decision.model_dump(mode="json"), separators=(",", ":"))
+        else:
+            text = f"(error) {res.error}"
+
+        for chunk in _chunk_text(text):
+            on_delta(chunk)
+        return res
+
+    def call_summary(
+        self,
+        session: Session,
+        *,
+        run_id: UUID,
+        observed_at: datetime,
+        model_key: str,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.0,
+        max_output_tokens: int = 300,
+    ) -> tuple[UUID | None, str]:
+        if self._use_stub(session, model_key):
+            text = "(stub) summary unavailable"
+            call = self._record_call(
+                session,
+                run_id=run_id,
+                dataset_id=None,
+                purpose="run_summary",
+                observed_at=observed_at,
+                prompt={
+                    "model": "stub",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                },
+                response_raw=text,
+                response_parsed=None,
+                usage=None,
+                latency_ms=0,
+                error=None,
+            )
+            return call.call_id, text
+
+        if not self._model_allowed(session, model_key):
+            return None, f"(error) model_not_allowed: {model_key}"
+
+        if self._budget.exceeded_run(
+            session,
+            run_id=run_id,
+            purpose="run_summary",
+            limit=int(self.settings.llm_max_summary_calls_per_run),
+        ):
+            return None, "(error) budget_exceeded: max summary calls per run"
+
+        base_url = self._resolve_base_url(session, model_key)
+        if base_url is None or not self.settings.llm_api_key:
+            res = self._missing_config_result(
+                session,
+                run_id=run_id,
+                dataset_id=None,
+                purpose="run_summary",
+                observed_at=observed_at,
+                model_key=model_key,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=temperature,
+                max_output_tokens=max_output_tokens,
+            )
+            if not isinstance(res, tuple):
+                raise ValueError("unexpected _missing_config_result return type")
+            return res
+
+        url, headers = self._api_url_and_headers(base_url)
         req = self._build_request(
             model_key=model_key,
             system_prompt=system_prompt,
@@ -273,11 +519,9 @@ class LlmGateway:
 
         started = time.perf_counter()
         resp_raw: str | None = None
-        resp_parsed: dict[str, Any] | None = None
         usage: dict[str, Any] | None = None
         error: str | None = None
-        decision: LlmDecisionOutputV1 | None = None
-
+        text: str
         try:
             data = call_with_retry(
                 url=url,
@@ -286,44 +530,37 @@ class LlmGateway:
                 timeout_seconds=float(self.settings.llm_timeout_seconds),
                 max_retries=int(self.settings.llm_max_retries),
             )
-            usage = data.get("usage")
+            usage_any = data.get("usage")
+            usage = usage_any if isinstance(usage_any, dict) else None
             choices = data.get("choices")
-            if not choices or not isinstance(choices, list):
+            if not isinstance(choices, list) or not choices:
                 raise ValueError("LLM response missing 'choices'")
-            content = choices[0].get("message", {}).get("content")
+            msg = choices[0].get("message") if isinstance(choices[0], dict) else None
+            content = msg.get("content") if isinstance(msg, dict) else None
+            if not isinstance(content, str):
+                raise ValueError("LLM response missing text content")
             resp_raw = content
-            obj = extract_first_json_object(content)
-            resp_parsed = obj
-            decision = LlmDecisionOutputV1.model_validate(obj)
+            text = content
         except Exception as exc:  # noqa: BLE001
             error = repr(exc)
-            _LOG.error(
-                "llm_decision_failed",
-                run_id=str(run_id) if run_id else None,
-                error=error,
-                exc_info=True,
-            )
+            text = f"(error) summary unavailable: {error}"
         finally:
             latency_ms = int((time.perf_counter() - started) * 1000)
             call = self._record_call(
                 session,
                 run_id=run_id,
                 dataset_id=None,
-                purpose="decision",
+                purpose="run_summary",
                 observed_at=observed_at,
                 prompt=req,
                 response_raw=resp_raw,
-                response_parsed=resp_parsed,
+                response_parsed=None,
                 usage=usage,
                 latency_ms=latency_ms,
                 error=error,
             )
 
-        return LlmCallResult(
-            call_id=call.call_id,
-            decision=decision or LlmDecisionOutputV1(schema_version=1, targets={}),
-            error=error,
-        )
+        return call.call_id, text
 
     def call_sentiment_item_summary(
         self,
@@ -427,13 +664,22 @@ class LlmGateway:
                 timeout_seconds=float(self.settings.llm_timeout_seconds),
                 max_retries=int(self.settings.llm_max_retries),
             )
-            usage = data.get("usage")
+            usage_any = data.get("usage")
+            usage = usage_any if isinstance(usage_any, dict) else None
             choices = data.get("choices")
-            if not choices or not isinstance(choices, list):
+            if not isinstance(choices, list) or not choices:
                 raise ValueError("LLM response missing 'choices'")
-            content = choices[0].get("message", {}).get("content")
-            resp_raw = content
-            return_text = content
+            first = choices[0]
+            if not isinstance(first, dict):
+                raise ValueError("LLM response has invalid 'choices' entry")
+            msg_any = first.get("message")
+            if not isinstance(msg_any, dict):
+                raise ValueError("LLM response missing 'message'")
+            content_any = msg_any.get("content")
+            if not isinstance(content_any, str):
+                raise ValueError("LLM response missing text content")
+            resp_raw = content_any
+            return_text = content_any
         except Exception as exc:  # noqa: BLE001
             error = repr(exc)
             _LOG.error(
@@ -486,3 +732,24 @@ class LlmGateway:
             key_signals=["stub_momentum"],
             rationale=rationale,
         )
+
+
+def _retry_prompt(user_prompt: str, err: str | None) -> str:
+    suffix = (
+        "\n\nYour previous output was invalid. "
+        "Return ONLY a valid JSON object matching the example. "
+        "Do not wrap in markdown or add extra text."
+    )
+    if err:
+        suffix += f" Error: {err[:200]}"
+    return user_prompt + suffix
+
+
+def _should_retry_structured_exc(exc: Exception) -> bool:
+    return isinstance(exc, (ValueError, json.JSONDecodeError, ValidationError))
+
+
+def _chunk_text(text: str, *, chunk_size: int = 48) -> list[str]:
+    if not text:
+        return []
+    return [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]

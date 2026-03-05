@@ -55,7 +55,7 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/runs", tags=["runs"])
 
 
-def _to_out(row: RunRow) -> RunOut:
+def to_out(row: RunRow) -> RunOut:
     return RunOut(
         run_id=row.run_id,
         parent_run_id=row.parent_run_id,
@@ -208,7 +208,7 @@ def create_run(
             except Exception as exc:
                 logger.error("child_run_dispatch_failed", run_id=job.run_id, error=str(exc))
 
-        return _to_out(parent_run)
+        return to_out(parent_run)
     else:
         run = RunRow(
             owner_user_id=user.user_id,
@@ -235,7 +235,7 @@ def create_run(
             run.status = "failed"
             db.commit()
 
-        return _to_out(run)
+        return to_out(run)
 
 
 @router.get("", response_model=list[RunOut])
@@ -252,7 +252,7 @@ def list_runs(
         .offset(offset)
     )
     rows = list(db.execute(stmt).scalars().all())
-    return [_to_out(r) for r in rows]
+    return [to_out(r) for r in rows]
 
 
 @router.get("/{run_id}", response_model=RunOut)
@@ -261,7 +261,7 @@ def get_run(run_id: UUID, db: Session = Depends(get_db)) -> RunOut:
     if row is None:
         raise HTTPException(status_code=404, detail="run not found")
     _assert_run_details_visible(row)
-    return _to_out(row)
+    return to_out(row)
 
 
 @router.get("/{run_id}/config")

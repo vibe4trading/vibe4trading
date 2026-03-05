@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from v4t.llm.json_extract import extract_first_json_object
+from v4t.llm.json_extract import extract_first_json_object, extract_first_json_object_text
 
 
 def test_extract_plain_json() -> None:
@@ -15,6 +15,13 @@ def test_extract_json_with_prefix() -> None:
     text = 'Here is the result: {"key": "value"}'
     result = extract_first_json_object(text)
     assert result == {"key": "value"}
+
+
+def test_extract_json_text_returns_candidate() -> None:
+    text = 'prefix {"key": "value"} suffix'
+    obj, candidate = extract_first_json_object_text(text)
+    assert obj == {"key": "value"}
+    assert candidate == '{"key": "value"}'
 
 
 def test_extract_json_with_markdown_fence() -> None:

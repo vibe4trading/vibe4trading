@@ -32,6 +32,8 @@ def generate_freqtrade_ohlcv_events(
     end = _ensure_aware_utc(end)
 
     df = pd.read_feather(feather_path)
+    if "market_id" in df.columns:
+        df = df[df["market_id"] == market_id]
     df = df[(df["date"] >= start) & (df["date"] <= end)]
 
     for _, row in df.iterrows():

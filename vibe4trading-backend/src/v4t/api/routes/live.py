@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from v4t.api.deps import get_db
-from v4t.api.routes.runs import _to_out
+from v4t.api.routes.runs import to_out
 from v4t.api.schemas import LiveRunCreateRequest, LiveRunOut, RunOut
 from v4t.api.utils import assert_model_predefined, now
 from v4t.auth.deps import get_current_user
@@ -53,7 +53,7 @@ def _find_latest_live_run(db: Session) -> RunRow | None:
 @router.get("/run", response_model=LiveRunOut)
 def get_live_run(db: Session = Depends(get_db)) -> LiveRunOut:
     r = _find_latest_live_run(db)
-    return LiveRunOut(run=_to_out(r) if r is not None else None)
+    return LiveRunOut(run=to_out(r) if r is not None else None)
 
 
 @router.post("/run", response_model=RunOut)
@@ -67,7 +67,7 @@ def start_live_run(
 
     existing = _find_latest_live_run(db)
     if existing is not None and existing.status == "running" and not req.force_restart:
-        return _to_out(existing)
+        return to_out(existing)
 
     if existing is not None and existing.status == "running" and req.force_restart:
         existing.stop_requested = True
@@ -134,4 +134,4 @@ def start_live_run(
         run.status = "failed"
         db.commit()
 
-    return _to_out(run)
+    return to_out(run)

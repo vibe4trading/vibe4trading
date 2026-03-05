@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     )
 
     replay_prompt_lookback_bars: int = Field(
-        default=24,
+        default=72,
         description="Replay: number of bars included in prompt context.",
     )
     replay_prompt_timeframe: str = Field(

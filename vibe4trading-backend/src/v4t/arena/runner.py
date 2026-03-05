@@ -209,15 +209,26 @@ def execute_arena_submission(session: Session, *, submission_id: UUID) -> None:
                 n_windows=10,
             )
         elif len(market_datasets) == 10:
-            windows = [
-                ScenarioWindow(
-                    index=i,
-                    label=f"Window {i + 1}",
-                    start=as_utc(ds.start),
-                    end=as_utc(ds.end),
+            windows = []
+            for i, ds in enumerate(market_datasets):
+                scoring_start = (ds.params or {}).get("scoring_start")
+                scoring_end = (ds.params or {}).get("scoring_end")
+                if scoring_start and scoring_end:
+                    from datetime import datetime as _dt
+
+                    w_start = as_utc(_dt.fromisoformat(scoring_start.replace("Z", "+00:00")))
+                    w_end = as_utc(_dt.fromisoformat(scoring_end.replace("Z", "+00:00")))
+                else:
+                    w_start = as_utc(ds.start)
+                    w_end = as_utc(ds.end)
+                windows.append(
+                    ScenarioWindow(
+                        index=i,
+                        label=(ds.params or {}).get("event_name", f"Window {i + 1}"),
+                        start=w_start,
+                        end=w_end,
+                    )
                 )
-                for i, ds in enumerate(market_datasets)
-            ]
         elif len(market_datasets) == 1:
             ds = market_datasets[0]
             windows = [

@@ -30,7 +30,7 @@ async def http_exception_handler(request: Request, exc: Exception) -> JSONRespon
     from fastapi import HTTPException
 
     if isinstance(exc, HTTPException):
-        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        detail = str(exc.detail)
         friendly_detail = transform_error(detail)
 
         return JSONResponse(

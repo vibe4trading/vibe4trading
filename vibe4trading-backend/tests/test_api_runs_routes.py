@@ -330,7 +330,7 @@ def test_timeline_prices_decisions_and_summary(db_session, client) -> None:  # n
         },
         "prompt": {
             "prompt_text": "Analyze market data.",
-            "lookback_bars": 24,
+            "lookback_bars": 72,
             "timeframe": "1h",
         },
         "execution": {

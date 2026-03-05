@@ -1,15 +1,10 @@
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 
-def extract_first_json_object(text: str) -> dict:
-    """Extract and parse the first JSON object from a string.
-
-    Models sometimes wrap JSON in markdown fences or include pre/post text.
-    This parser finds the first balanced {...} region and json.loads it.
-    """
-
+def extract_first_json_object_text(text: str) -> tuple[dict[str, Any], str]:
     if not text:
         raise ValueError("Empty LLM response")
 
@@ -41,6 +36,14 @@ def extract_first_json_object(text: str) -> dict:
             depth -= 1
             if depth == 0:
                 candidate = text[start : i + 1]
-                return json.loads(candidate)
+                parsed = json.loads(candidate)
+                if not isinstance(parsed, dict):
+                    raise ValueError("Expected a JSON object")
+                return cast(dict[str, Any], parsed), candidate
 
     raise ValueError("Unbalanced JSON braces in response")
+
+
+def extract_first_json_object(text: str) -> dict[str, Any]:
+    obj, _candidate = extract_first_json_object_text(text)
+    return obj

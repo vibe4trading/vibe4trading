@@ -15,7 +15,7 @@ router = APIRouter(tags=["me"])
 def me(
     user: UserRow = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> dict:
+) -> dict[str, str | bool | dict[str, int | bool] | None]:
     has_quota, runs_used, runs_limit = check_quota(db, user.user_id)
 
     return {

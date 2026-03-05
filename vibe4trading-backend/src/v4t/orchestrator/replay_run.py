@@ -66,6 +66,7 @@ def execute_replay_run(session: Session, *, run_id: UUID) -> None:
 
     window_start = as_utc(market_ds.start)
     window_end = as_utc(market_ds.end)
+    data_start = window_start
 
     dataset_ids: list[UUID] = [market_dataset_id]
     if sentiment_dataset_id is not None:
@@ -120,7 +121,7 @@ def execute_replay_run(session: Session, *, run_id: UUID) -> None:
     events = iter_dataset_events(
         session,
         dataset_ids=dataset_ids,
-        start=window_start,
+        start=data_start,
         end=window_end,
     )
 

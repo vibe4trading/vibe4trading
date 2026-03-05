@@ -13,7 +13,7 @@ from v4t.api.deps import get_db
 from v4t.api.schemas import ModelAdminCreateRequest, ModelAdminOut, ModelAdminUpdateRequest
 from v4t.api.utils import now
 from v4t.auth.deps import get_admin_user
-from v4t.db.models import LlmModelRow
+from v4t.db.models import LlmModelRow, UserRow
 
 router = APIRouter(prefix="/admin/models", tags=["admin-models"])
 
@@ -64,7 +64,7 @@ def _to_out(row: LlmModelRow) -> ModelAdminOut:
 @router.get("", response_model=list[ModelAdminOut])
 def list_models(
     db: Session = Depends(get_db),
-    _admin=Depends(get_admin_user),  # noqa: ANN001
+    _admin: UserRow = Depends(get_admin_user),
 ) -> list[ModelAdminOut]:
     rows = list(db.execute(select(LlmModelRow).order_by(LlmModelRow.model_key)).scalars().all())
     return [_to_out(r) for r in rows]
@@ -74,7 +74,7 @@ def list_models(
 def create_model(
     req: ModelAdminCreateRequest,
     db: Session = Depends(get_db),
-    _admin=Depends(get_admin_user),  # noqa: ANN001
+    _admin: UserRow = Depends(get_admin_user),
 ) -> ModelAdminOut:
     key = (req.model_key or "").strip()
     if not key:
@@ -108,7 +108,7 @@ def update_model(
     model_key: str,
     req: ModelAdminUpdateRequest,
     db: Session = Depends(get_db),
-    _admin=Depends(get_admin_user),  # noqa: ANN001
+    _admin: UserRow = Depends(get_admin_user),
 ) -> ModelAdminOut:
     key = (model_key or "").strip()
     if key in _RESERVED_KEYS:
@@ -139,8 +139,8 @@ def update_model(
 def delete_model(
     model_key: str,
     db: Session = Depends(get_db),
-    _admin=Depends(get_admin_user),  # noqa: ANN001
-) -> dict:
+    _admin: UserRow = Depends(get_admin_user),
+) -> dict[str, bool]:
     key = (model_key or "").strip()
     if key in _RESERVED_KEYS:
         raise HTTPException(status_code=400, detail="model_key is reserved")

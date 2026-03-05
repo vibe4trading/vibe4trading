@@ -16,7 +16,7 @@ export function ReportHero({
     summary,
 }: {
     run: RunOut | null;
-    summary: SummaryOut | null;
+    summary: string | null;
 }) {
     return (
         <article className="hero-card block">
@@ -39,7 +39,7 @@ export function ReportHero({
                 </div>
             </div>
             <p className="hero-summary">
-                {summary?.summary_text ||
+                {summary ||
                     "你的策略在 10 个标准化事件中表现出强趋势捕捉能力，在 Extreme-Up 与 Stable 行情中显著领先； 在极端下跌阶段暴露出止损响应偏慢的问题，建议降低单笔仓位并增加保护性对冲。"}
             </p>
         </article>
