@@ -179,6 +179,12 @@ export type LeaderboardEntryOut = {
   model_key: string;
   total_return_pct: number;
   avg_return_pct: number;
+  sharpe_ratio: number | null;
+  max_drawdown_pct: number | null;
+  win_rate_pct: number | null;
+  profit_factor: number | null;
+  num_trades: number | null;
+  per_window_returns: number[] | null;
   created_at: string;
 };
 

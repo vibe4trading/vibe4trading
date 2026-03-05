@@ -6,24 +6,20 @@ import { useEffect, useState } from "react";
 
 import type { MeOut } from "@/app/lib/v4t";
 
-const NAV_LINKS = [
-  { href: "/live", label: "Live" },
-  { href: "/arena", label: "Tournament" },
-] as const;
+function pageName(pathname: string): string {
+  if (pathname === "/") return "Home";
+  if (pathname === "/arena" || pathname.startsWith("/arena/")) return "Trials";
+  if (pathname === "/leaderboard") return "Leaderboard";
+  if (pathname === "/live") return "Live";
+  if (pathname === "/contact") return "Contact";
+  if (pathname === "/runs" || pathname.startsWith("/runs/")) return "Runs";
+  if (pathname.startsWith("/admin")) return "Admin";
+  return "Dashboard";
+}
 
-export function SiteHeader() {
+export function SiteHeader({ isHome }: { isHome?: boolean }) {
   const pathname = usePathname();
   const [me, setMe] = useState<MeOut | null>(null);
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
-    if (typeof window === "undefined") return "dark";
-    const saved = localStorage.getItem("theme");
-    return saved === "light" ? "light" : "dark";
-  });
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-  }, [theme]);
 
   useEffect(() => {
     fetch("/api/v4t/me")
@@ -35,123 +31,34 @@ export function SiteHeader() {
       .catch(() => setMe(null));
   }, []);
 
-  const toggleTheme = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    localStorage.setItem("theme", next);
-    document.documentElement.setAttribute("data-theme", next);
-  };
-
-  const navLinkClass = (path: string) => {
-    const isActive = pathname === path || (pathname.startsWith(path) && path !== "/");
-    return `rounded-full px-3 py-1.5 transition-all duration-300 ${isActive
-      ? "bg-white/10 text-white shadow-[0_0_15px_rgba(255,255,255,0.1)] border border-white/20"
-      : "text-zinc-400 hover:bg-white/5 hover:text-white"
-      }`;
-  };
-
-  const mobileNavLinkClass = (path: string) => {
-    const isActive = pathname === path || (pathname.startsWith(path) && path !== "/");
-    return `block rounded-xl px-4 py-3 text-sm font-medium transition-all ${isActive
-      ? "bg-white/10 text-white border border-white/15"
-      : "text-zinc-400 hover:bg-white/5 hover:text-white"
-      }`;
-  };
-
   return (
-    <header className="sticky top-0 z-20 border-b border-[color:var(--border)] bg-[color:var(--bg)]/60 backdrop-blur-xl supports-[backdrop-filter]:bg-[color:var(--bg)]/60">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-        <Link href="/" className="group flex items-baseline gap-2">
-          <span className="font-display text-xl tracking-tight text-white drop-shadow-[0_0_8px_var(--accent-glow)]">
-            vibe4trading
-          </span>
-          <span className="rounded-full border border-[color:var(--accent)]/30 bg-[color:var(--accent)]/10 px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--accent)] shadow-[0_0_10px_var(--accent-glow)]">
-            MVP
-          </span>
-        </Link>
-
-        <nav className="hidden items-center gap-3 text-sm font-medium md:flex">
-          <button
-            onClick={toggleTheme}
-            className="rounded-full border border-zinc-700 bg-zinc-800/50 p-2 text-zinc-300 transition-colors hover:bg-zinc-700/50"
-            aria-label="Toggle theme"
-          >
-            {theme === "dark" ? "\u2600\uFE0F" : "\uD83C\uDF19"}
-          </button>
-          {me?.quota && (
-            <div className="rounded-full border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 text-xs text-zinc-300">
-              Runs: {me.quota.runs_used}/{me.quota.runs_limit}
-            </div>
-          )}
-          {me?.is_admin ? (
-            <Link href="/admin/models" className={navLinkClass("/admin/models")}>
-              Admin
-            </Link>
-          ) : null}
-          {NAV_LINKS.map((link) => (
-            <Link key={link.href} href={link.href} className={navLinkClass(link.href)}>
-              {link.label}
-            </Link>
-          ))}
-        </nav>
-
-        <button
-          onClick={() => setMobileOpen(!mobileOpen)}
-          className="flex items-center justify-center rounded-lg border border-white/10 bg-white/5 p-2 text-zinc-300 transition-colors hover:bg-white/10 md:hidden"
-          aria-label="Toggle menu"
-          aria-expanded={mobileOpen}
-        >
-          {mobileOpen ? (
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          ) : (
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          )}
-        </button>
+    <header className={`top-nav ${isHome ? "home-top-nav" : ""}`}>
+      <div className="brand">
+        <span className="brand-mark">V4T</span>
+        <span className="brand-sub">Vibe4Trading / {pageName(pathname)}</span>
       </div>
 
-        {mobileOpen && (
-          <div className="animate-rise border-t border-white/5 bg-[color:var(--bg)]/95 px-5 pb-5 pt-3 backdrop-blur-xl md:hidden">
-            <nav className="flex flex-col gap-1">
-              {me?.is_admin ? (
-                <Link
-                  href="/admin/models"
-                  className={mobileNavLinkClass("/admin/models")}
-                  onClick={() => setMobileOpen(false)}
-                >
-                  Admin
-                </Link>
-              ) : null}
-              {NAV_LINKS.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={mobileNavLinkClass(link.href)}
-                  onClick={() => setMobileOpen(false)}
-                >
-                  {link.label}
-                </Link>
-              ))}
-            </nav>
-          <div className="mt-4 flex items-center gap-3 border-t border-white/5 pt-4">
-            <button
-              onClick={toggleTheme}
-              className="rounded-full border border-zinc-700 bg-zinc-800/50 p-2 text-zinc-300 transition-colors hover:bg-zinc-700/50"
-              aria-label="Toggle theme"
-            >
-              {theme === "dark" ? "\u2600\uFE0F" : "\uD83C\uDF19"}
-            </button>
-            {me?.quota && (
-              <div className="rounded-full border border-zinc-700 bg-zinc-800/50 px-3 py-1.5 text-xs text-zinc-300">
-                Runs: {me.quota.runs_used}/{me.quota.runs_limit}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <nav className="nav-links">
+        <Link href="/" className={pathname === "/" ? "active" : ""}>HOME</Link>
+        <Link href="/arena" className={pathname === "/arena" || pathname.startsWith("/arena/") ? "active" : ""}>TRIALS</Link>
+        <Link href="/leaderboard" className={pathname === "/leaderboard" ? "active" : ""}>LEADERBOARD</Link>
+        <Link href="/live" className={pathname === "/live" ? "active" : ""}>LIVE</Link>
+        <Link href="/contact" className={pathname === "/contact" ? "active" : ""}>CONTACT US</Link>
+        {me?.is_admin && (
+          <Link href="/admin/models" className={pathname.startsWith("/admin") ? "active" : ""}>ADMIN</Link>
+        )}
+      </nav>
+
+      <div className="top-actions">
+        {me?.quota && (
+          <span className="user-chip">
+            RUNS: {me.quota.runs_used}/{me.quota.runs_limit}
+          </span>
+        )}
+        <span className="user-chip">USER: YOU</span>
+        <Link href="/runs/new" className="new-run-btn">NEW RUN</Link>
+        <Link href="#" className="waitlist">JOIN BETA</Link>
+      </div>
     </header>
   );
 }
