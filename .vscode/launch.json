@@ -1,0 +1,103 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend API",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "preLaunchTask": "Ensure Aux Services",
+      "args": [
+        "v4t.api.app:app",
+        "--reload",
+        "--port",
+        "8000"
+      ],
+      "envFile": "${workspaceFolder}/vibe4trading-backend/.env",
+      "cwd": "${workspaceFolder}/vibe4trading-backend",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Frontend",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "dev"
+      ],
+      "cwd": "${workspaceFolder}/vibe4trading-frontend/apps/web",
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "pattern": "Local:.*http://localhost:([0-9]+)",
+        "uriFormat": "http://localhost:%s",
+        "action": "openExternally"
+      }
+    },
+    {
+      "name": "Celery Worker (default)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "celery",
+      "args": [
+        "-A",
+        "v4t.worker.celery_app:celery_app",
+        "worker",
+        "--loglevel=info",
+        "--queues=default",
+        "--concurrency=2"
+      ],
+      "envFile": "${workspaceFolder}/vibe4trading-backend/.env",
+      "cwd": "${workspaceFolder}/vibe4trading-backend",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Celery Worker (live)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "celery",
+      "args": [
+        "-A",
+        "v4t.worker.celery_app:celery_app",
+        "worker",
+        "--loglevel=info",
+        "--queues=live",
+        "--concurrency=1"
+      ],
+      "envFile": "${workspaceFolder}/vibe4trading-backend/.env",
+      "cwd": "${workspaceFolder}/vibe4trading-backend",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Celery Beat",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "celery",
+      "args": [
+        "-A",
+        "v4t.worker.celery_app:celery_app",
+        "beat",
+        "--loglevel=info"
+      ],
+      "envFile": "${workspaceFolder}/vibe4trading-backend/.env",
+      "cwd": "${workspaceFolder}/vibe4trading-backend",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack",
+      "configurations": [
+        "Backend API",
+        "Frontend",
+        "Celery Worker (default)",
+        "Celery Worker (live)",
+        "Celery Beat"
+      ],
+      "stopAll": true
+    }
+  ]
+}

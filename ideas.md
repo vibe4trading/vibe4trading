@@ -1,4 +1,4 @@
-# First Claw Eater - Decisions & Notes
+# vibe4trading - Decisions & Notes
 
 ## Context
 
@@ -79,13 +79,12 @@ Non-goals (MVP):
 ### Data & Markets
 | Decision | Choice | Notes |
 |----------|--------|-------|
-| Spot data source | DexScreener | DEX aggregator, Solana tokens primarily |
-| Futures data source | Hyperliquid (v1) | Not CEX futures. dYdX is a likely follow-on adapter. |
+| Market data source | DexScreener | DEX aggregator, Solana tokens primarily. Spot-only for MVP. |
 | Trading universe | Fixed watchlist (10 markets) | Universe is defined as explicit `MarketRef`s (pool/contract ids) for deterministic replay, not LLM-discovered. MVP constraint: every run selects exactly 1 `market_id` from the pinned watchlist. |
-| Instruments | Spot + perpetual futures | Futures adds shorting capability, more complex simulation |
+| Instruments | Spot only (MVP) | Spot provides long-only trading. Futures/perps support deferred to reduce MVP complexity. |
 | Chain focus | Solana primarily | Most meme/sentiment-driven tokens, best fit for LLM alpha |
 | Data source strategy | Vendor-only | Rely on vendor APIs; invest in caching/backoff and store enough history ourselves for replay. |
-| Source resolution | Single adapter per category | A run selects exactly one adapter per data category (e.g. spot prices). For sentiment, that adapter may aggregate multiple feeds (X KOL list + RSS) but still emits one canonical stream. Avoids cross-vendor reconciliation complexity; compare vendors by running separate datasets. |
+| Source resolution | Single adapter per category | A run selects exactly one adapter per data category (e.g. market prices). For sentiment, that adapter may aggregate multiple feeds (X KOL list + RSS) but still emits one canonical stream. Avoids cross-vendor reconciliation complexity; compare vendors by running separate datasets. |
 | Canonical identity | AssetRef + MarketRef | Use `AssetRef` for cross-venue identity. Keep `TokenRef` for on-chain addresses. `MarketRef` binds venue+instrument id to (base, quote) assets. |
 | Vendor payload retention | Raw + normalized | Store raw vendor payloads alongside normalized canonical payloads for debugging and adapter evolution. For very large/list payloads, retain only an aggregated/top-X subset (configurable) to avoid unbounded growth. |
 | Historical importer | Required | Backfill a selected time window from vendor APIs into the event log so benchmarks can run on past periods. |
@@ -101,11 +100,11 @@ Non-goals (MVP):
 | Prompt payload | Raw + features | Include compact raw context (latest prices/bars) plus derived features/alerts and bounded sentiment context (items + per-item summaries) to keep prompts stable and small. |
 | Feature computation | On-the-fly | Compute derived indicators/features in the orchestrator at prompt time (no `feature.*` event stream in v1). |
 | Decision format | Strict JSON schema | Require valid JSON matching Pydantic schema. Decimal fields accept JSON numbers or quoted decimal strings; parsed values are normalized and persisted canonically as decimal strings. Invalid output => error event + hold last targets. |
-| Decision output | Target exposures (% equity) | Model outputs target exposure as a fraction of current equity per `market_id` (resolved to `MarketRef`) (e.g. `-0.25` = 25% short, `+0.40` = 40% long), not discrete orders. |
+| Decision output | Target exposures (% equity) | Model outputs target exposure as a fraction of current equity per `market_id` (resolved to `MarketRef`) (e.g. `0.40` = 40% long), not discrete orders. Spot is long-only (0 to 1). |
 | Decision sparsity | Sparse allowed | Targets are a map keyed by `market_id`. Model may omit markets; omitted markets default to previous targets (configurable). |
 | Decision analysis fields | Rationale + confidence | Decision schema includes optional `rationale` string, `confidence` (0-1), and `key_signals` list for dashboard analysis. |
 | Exposure constraints | Gross/Net limits | Enforce gross leverage + net exposure caps across the whole portfolio; cash is implicit residual. |
-| Instrument constraints | Spot long-only, perps long/short | Spot exposures must be `>= 0`. Perps exposures may be positive or negative. Violations => decision rejected (hold last targets). |
+| Instrument constraints | Spot long-only | Spot exposures must be `>= 0` and `<= 1.0`. Violations => decision rejected (hold last targets). |
 | Scheduling | Wall-clock baseline + early checks | Model is called on a wall-clock base cadence for comparability/progress. Model may request earlier re-checks via `next_check_seconds`; we only honor earlier-than-base requests, clamp to `[min_interval_seconds, base_interval_seconds]`, align to the next price tick, and log all requests (even ignored ones) for cost/accounting. |
 | Base cadence behavior | Anchored | Base ticks stay anchored to the configured wall-clock cadence; early checks may insert extra ticks in-between but do not shift the next base tick. |
 | Default interval | 1 hour | Base cadence; model may request earlier re-checks; store every schedule request for analysis/cost accounting. |
@@ -134,7 +133,7 @@ When persisted into canonical events (e.g. `llm.decision`), decimals are stored 
   },
   "next_check_seconds": 600,
   "confidence": 0.62,
-  "key_signals": ["momentum_up", "funding_positive"],
+  "key_signals": ["momentum_up", "volume_spike"],
   "rationale": "Long spot TOKEN on breakout; reduce exposure if momentum fades."
 }
 ```
@@ -144,25 +143,23 @@ Validation rules (v1):
 - `targets` must not include any `market_id` other than the single selected market for the run.
 - `targets` values must be parseable decimals (either JSON numbers or quoted decimal strings).
 - If present, `confidence` must be a parseable decimal in `[0, 1]`.
-- Spot markets must have exposure `>= 0`.
+- Spot markets must have exposure `>= 0` and `<= 1.0`.
 - Any validation failure rejects the whole decision (hold last targets).
 
 ### Simulation & Execution
 | Decision | Choice | Notes |
 |----------|--------|-------|
 | Execution style | Rebalance to target | Given target exposure fractions, compute target notional per market (`target = exposure * equity`) and simulate trades to reach the implied target positions (paper account). |
-| Fill pricing | Current snapshot price | Execute at the latest known snapshot price at decision time (spot uses pool/mid `market.price`; perps use `perps.mark`) with no lookahead beyond observed data. |
-| Data freshness | Fresh-only | Require `market.price` / `perps.mark` with `observed_at <= tick_time` and age `<= 60s` (configurable; typically equals `price_tick_seconds`) at each decision tick (no carry-forward). Missing required data => skip LLM call, emit an error event, and hold last targets. |
+| Fill pricing | Current snapshot price | Execute at the latest known snapshot price at decision time (uses pool/mid `market.price`) with no lookahead beyond observed data. |
+| Data freshness | Fresh-only | Require `market.price` with `observed_at <= tick_time` and age `<= 60s` (configurable; typically equals `price_tick_seconds`) at each decision tick (no carry-forward). Missing required data => skip LLM call, emit an error event, and hold last targets. |
 | Fees | Simple bps model | Apply configurable fee rates per venue/instrument; track fees separately in P&L. |
-| Perps PnL | Mark-to-market | Value perps positions using mark price snapshots; unrealized P&L updates each tick. |
-| Funding | Apply funding | Apply funding payments/receipts using perps funding rate events. |
 | Liquidation | Not simulated (v1) | Enforce gross/net risk caps; do not model liquidation/margin calls initially. |
 
 ### Crawlers & Protocols
 | Decision | Choice | Notes |
 |----------|--------|-------|
 | Crawler architecture | Independent microservices | Each crawler (price, sentiment, on-chain) is its own service, communicates via RabbitMQ |
-| Exchange abstraction | CCXT-style unified API | Abstract base with `get_price()`, `get_ohlcv()`, `get_trades()`, `get_liquidity()`, plus perps methods (`get_mark_price()`, `get_funding_rate()`). Leverage CCXT for CEX if needed. |
+| Exchange abstraction | CCXT-style unified API | Abstract base with `get_price()`, `get_ohlcv()`, `get_trades()`, `get_liquidity()`. Leverage CCXT for CEX if needed. |
 | Sentiment source | Scraper + per-item summarizer | Scrape a curated X/Twitter KOL list + RSS/news into `sentiment.item`. In data prepare (dataset import) and live ingestion, generate a 1:1 `sentiment.item_summary` per item (timestamped at the item time). |
 | Live sentiment refresh | On-demand fetch command | If the model requests an early check in live mode, orchestrator publishes a control command (e.g. `sentiment.fetch_now`) so the sentiment service attempts an immediate refresh before prompt building. |
 | Adapter packaging | In-repo modules | Keep adapters in the repo with explicit registration (no dynamic plugin loading). |
@@ -254,7 +251,6 @@ Benchmark run model (MVP v1):
 
 Event stream categories (initial):
 - Market data: `market.*` (price, ohlcv, trades, liquidity)
-- Perps: `perps.*` (funding, open interest, mark/index)
 - Sentiment: `sentiment.*`
 - Decisions: `llm.decision`, `llm.schedule_request`
 - Execution: `sim.fill`, `portfolio.snapshot`
@@ -267,7 +263,7 @@ Market data:
   - Payload (suggested): `{market, timeframe, bar_start, bar_end, o, h, l, c, volume_base?, volume_quote?}`
   - Dedupe key (suggested): `{market_id}:{timeframe}:{bar_start}`
 - `market.price` — Latest price snapshot used for fills + valuation (1m cadence in v1).
-  - Payload (suggested): `{market, price, price_type}` where `price_type in {"last","mid","mark"}`. In v1, spot uses `price_type="mid"` (pool-implied mid); perps valuation uses `perps.mark`.
+  - Payload (suggested): `{market, price, price_type}` where `price_type in {"last","mid","mark"}`. In v1, spot uses `price_type="mid"` (pool-implied mid).
   - Dedupe key (suggested): `{market_id}:{event_time_or_observed_at}`
 - `market.liquidity` — Pool/orderbook liquidity snapshot (used for slippage/risk heuristics).
   - Payload (suggested): `{market, liquidity_usd?, reserves?, depth?}` (bounded)
@@ -275,11 +271,6 @@ Market data:
 - `market.trades` — Bucketed trade summary (1m) + top-20 trades by notional (bounded).
   - Payload (suggested): `{market, bucket_start, bucket_end, stats, top_trades: [...]}` (cap `top_trades` at 20)
   - Dedupe key (suggested): `{market_id}:{bucket_start}:60`
-
-Perps (minimum for sim + prompts):
-- `perps.mark` — Mark price snapshot (1m cadence in v1).
-- `perps.funding_rate` — Funding rate (interval + next funding timestamp).
-- `perps.open_interest` — Optional; used for context/filters.
 
 Sentiment (raw ingestion + per-item summaries):
 - `sentiment.item` — Raw scraped item (X post or news item), bounded payload (text/title/snippet + URL + timestamps + basic engagement).
@@ -336,7 +327,7 @@ Core idea: everything that affects a run is captured in a config snapshot and st
 MVP constraint: every run selects exactly 1 coin (`market_id`) and exactly 1 model (`model_key`).
 
 Suggested top-level objects:
-- `Dataset`: imported historical data window per category (spot/perps/sentiment), referenced by id
+- `Dataset`: imported historical data window per category (market/sentiment), referenced by id
 - `Run`: execution of 1 model over 1 selected `market_id` for a single replay window
 - `RunConfigSnapshot`: immutable JSON blob referenced by `Run`
 - `PromptTemplate`: user-authored prompt text + variables + engine (snapshotted into the run config)
@@ -365,8 +356,7 @@ Draft config shape:
     "max_output_tokens": 800
   },
   "datasets": {
-    "spot_dataset_id": "...",
-    "perps_dataset_id": null,
+    "market_dataset_id": "...",
     "sentiment_dataset_id": "..."
   },
   "sentiment": {
@@ -416,7 +406,7 @@ Draft config shape:
 
 Dataset alignment (v1):
 - All non-null referenced dataset ids must have identical `start`/`end` windows. If they do not match exactly, run creation fails.
-- Exactly one of `spot_dataset_id` / `perps_dataset_id` should be non-null, matching the selected `market.market_type`.
+- `market_dataset_id` is required for replay runs (spot data).
 - `sentiment_dataset_id` is required for runs, but the dataset may be empty (zero items/zero summaries).
 - Tournament submissions span 10 windows; alignment is enforced per scenario window/run (not across the whole submission).
 
@@ -435,7 +425,7 @@ Notes (tournament v1):
 
 Minimal API surface for a dashboard + CLI:
 - `GET /me` current user (OIDC-backed)
-- `POST /datasets` create/import a dataset (async) from parameters (spot/perps/sentiment)
+- `POST /datasets` create/import a dataset (async) from parameters (market/sentiment)
 - `GET /datasets` list datasets
 - `GET /datasets/{dataset_id}` dataset status + metadata
 - `POST /prompt_templates` create/update a prompt template (freeform + templating)
@@ -488,8 +478,7 @@ Idempotency / dedupe (v1):
 
 Run metadata:
 - `users`: `(user_id, oidc_issuer, oidc_sub, email, display_name, created_at)`
-- `datasets`: `(dataset_id, category, source, start, end, params_jsonb, created_by_user_id, created_at)`
-- `prompt_templates`: `(template_id, owner_user_id, name, engine, system_template, user_template, vars_schema_jsonb, created_at, updated_at)`
+- `datasets`: `(dataset_id, category, source, start, end, params_jsonb, created_by_user_id, created_at)`- `prompt_templates`: `(template_id, owner_user_id, name, engine, system_template, user_template, vars_schema_jsonb, created_at, updated_at)`
 - `run_config_snapshots`: `(config_id, config_jsonb, created_at)`
 - `runs`: `(run_id, owner_user_id, kind, visibility, market_id, model_key, config_id, status, started_at, ended_at, summary_call_id, summary_text, created_at)`
 - `run_datasets`: `(run_id, category, dataset_id)`
@@ -519,7 +508,7 @@ Contract boundary (important for replayability):
 Minimal Python-ish contracts:
 
 ```python
-class SpotMarketDataAdapter(Protocol):
+class MarketDataAdapter(Protocol):
     name: str
 
     def get_price(self, market: MarketRef, now: datetime) -> "PricePoint":
@@ -547,7 +536,7 @@ class SpotMarketDataAdapter(Protocol):
         ...
 
 
-class HistoricalSpotMarketDataAdapter(SpotMarketDataAdapter, Protocol):
+class HistoricalMarketDataAdapter(MarketDataAdapter, Protocol):
     def backfill_ohlcv(
         self,
         market: MarketRef,
@@ -556,34 +545,10 @@ class HistoricalSpotMarketDataAdapter(SpotMarketDataAdapter, Protocol):
         timeframe: str,
     ) -> Iterable["OHLCVBar"]:
         ...
-
-
-class PerpsMarketDataAdapter(Protocol):
-    name: str
-
-    def get_mark_price(self, market: MarketRef, now: datetime) -> "PricePoint":
-        ...
-
-    def get_funding_rate(self, market: MarketRef, now: datetime) -> "FundingRatePoint":
-        ...
-
-    def get_open_interest(self, market: MarketRef, now: datetime) -> "OpenInterestPoint":
-        ...
-
-
-class HistoricalPerpsMarketDataAdapter(PerpsMarketDataAdapter, Protocol):
-    def backfill_funding_rates(
-        self,
-        market: MarketRef,
-        start: datetime,
-        end: datetime,
-    ) -> Iterable["FundingRatePoint"]:
-        ...
 ```
 
 Adapter categories:
-- Spot market data adapters (DexScreener, etc.)
-- Perps market data adapters (Hyperliquid first)
+- Market data adapters (DexScreener, etc.)
 - Sentiment adapters
 
 ---
@@ -743,3 +708,27 @@ We reviewed `TraderAlice/OpenAlice` (local checkout: `/home/grider/build/OpenAli
 - Execution audit: wallet-style commit log metaphor, audit-only (sim stays automatic).
 - Config: DB-first source of truth, snapshot per run for reproducibility.
 - Event store: RabbitMQ + Postgres only (no JSONL fallback).
+
+---
+
+## Dataset Simplification (Mar 2026)
+
+**Decision**: Make dataset layer future/spot agnostic by using a single market data source.
+
+**Rationale**:
+- MVP complexity: Supporting both spot and perpetual futures adds significant complexity for adapters, simulation, and data alignment
+- Focus: Spot-only allows us to focus on the core LLM benchmarking platform without perps-specific concerns (funding rates, mark prices, liquidation)
+- DexScreener limitation: Our primary data source (DexScreener) is spot-only; Hyperliquid perps would require a separate adapter with different data semantics
+- Simplification: Single data source eliminates cross-venue reconciliation, instrument-specific validation, and dual-path simulation logic
+
+**Changes**:
+1. Rename `spot_dataset_id` → `market_dataset_id` throughout the codebase (more generic, future-proof naming)
+2. Remove `perps_dataset_id` field from `DatasetRefsV1` config schema
+3. Keep dataset category as "spot" internally (DB schema unchanged)
+4. Update API schemas, orchestrator, and tests to use `market_dataset_id`
+5. Update ideas.md to reflect spot-only architecture
+
+**Future**: If perps support is needed later, we can:
+- Add a `market_type` field to datasets to distinguish spot vs perps
+- Extend the single `market_dataset_id` to support either type
+- Keep the unified dataset reference pattern

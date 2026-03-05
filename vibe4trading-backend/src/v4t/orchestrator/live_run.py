@@ -1,0 +1,510 @@
+from __future__ import annotations
+
+import logging
+import random
+import time
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from decimal import Decimal
+from uuid import UUID
+
+from sqlalchemy.orm import Session
+
+from v4t.contracts.events import make_event_v1
+from v4t.contracts.numbers import decimal_to_str
+from v4t.contracts.payloads import (
+    LlmDecisionPayloadV1,
+    LlmStreamDeltaPayloadV1,
+    LlmStreamEndPayloadV1,
+    LlmStreamStartPayloadV1,
+    MarketOHLCVPayloadV1,
+    MarketPricePayloadV1,
+    SentimentItemSummaryPayloadV1,
+)
+from v4t.contracts.run_config import LiveConfigV1, RunMode
+from v4t.db.event_store import append_event
+from v4t.ingest.dexscreener import resolve_spot_market
+from v4t.llm.gateway import LlmGateway, StubDecisionFeatures
+from v4t.orchestrator.prompt_builder import render_user_prompt
+from v4t.orchestrator.run_base import (
+    SYSTEM_PROMPT,
+    advance_schedule,
+    append_decision_memory,
+    append_schedule_request_event,
+    append_sim_fill_event,
+    build_prompt_context,
+    choose_tick_time,
+    compute_early_tick,
+    compute_features,
+    load_run_and_config,
+    mark_run_cancelled,
+    mark_run_started,
+    select_usable_bars,
+    validate_decision_targets,
+    write_portfolio_snapshot,
+)
+from v4t.sim.nautilus_sim import NautilusPaperSim
+from v4t.utils.datetime import as_utc, ceil_time, floor_time, now
+
+_logger = logging.getLogger(__name__)
+
+
+def _timeframe_to_seconds(timeframe: str) -> int:
+    tf = (timeframe or "").strip().lower()
+    if tf.endswith("h") and tf[:-1].isdigit():
+        return int(tf[:-1]) * 3600
+    if tf.endswith("m") and tf[:-1].isdigit():
+        return int(tf[:-1]) * 60
+    if tf.endswith("s") and tf[:-1].isdigit():
+        return int(tf[:-1])
+    # Default to 1h to keep the prompt context stable.
+    return 3600
+
+
+@dataclass
+class _OhlcvBarBuilder:
+    market_id: str
+    timeframe: str
+
+    bar_start: datetime | None = None
+    bar_end: datetime | None = None
+    o: Decimal | None = None
+    h: Decimal | None = None
+    l: Decimal | None = None
+    c: Decimal | None = None
+
+    def update(self, *, ts: datetime, price: Decimal) -> MarketOHLCVPayloadV1 | None:
+        """Update the current bar and return a closed bar if we rolled."""
+
+        ts = as_utc(ts)
+        step = _timeframe_to_seconds(self.timeframe)
+        new_start = floor_time(ts, step_seconds=step)
+        new_end = new_start + timedelta(seconds=step)
+
+        closed: MarketOHLCVPayloadV1 | None = None
+        if self.bar_start is None:
+            # First tick creates the initial bar.
+            self.bar_start = new_start
+            self.bar_end = new_end
+        elif new_start != self.bar_start:
+            # Roll: close previous bar (if it has data).
+            if self.bar_start is not None and self.bar_end is not None and self.c is not None:
+                closed = MarketOHLCVPayloadV1(
+                    market_id=self.market_id,
+                    timeframe=self.timeframe,
+                    bar_start=self.bar_start,
+                    bar_end=self.bar_end,
+                    o=decimal_to_str(self.o or self.c),
+                    h=decimal_to_str(self.h or self.c),
+                    l=decimal_to_str(self.l or self.c),
+                    c=decimal_to_str(self.c),
+                    volume_base=None,
+                    volume_quote=None,
+                )
+
+            # Start a new bar.
+            self.bar_start = new_start
+            self.bar_end = new_end
+            self.o = None
+            self.h = None
+            self.l = None
+            self.c = None
+
+        # Update current bar OHLC.
+        if self.o is None:
+            self.o = price
+        self.c = price
+        self.h = price if self.h is None else max(self.h, price)
+        self.l = price if self.l is None else min(self.l, price)
+        return closed
+
+
+def _fetch_live_price(
+    *,
+    cfg: LiveConfigV1,
+    market_id: str,
+    rng: random.Random,
+    demo_price: Decimal | None,
+) -> tuple[Decimal, dict, Decimal | None]:
+    if cfg.source == "demo":
+        step_bp = rng.randint(-int(cfg.step_bps), int(cfg.step_bps))
+        drift_bp = int(cfg.drift_bps)
+        # price_{t+1} = price_t * (1 + (drift+step)/10000)
+        price = demo_price if demo_price is not None else Decimal(str(cfg.base_price))
+        price = (price * Decimal(10000 + drift_bp + step_bp)) / Decimal(10000)
+        if price <= 0:
+            price = Decimal(str(cfg.base_price))
+        price_q = price.quantize(Decimal("0.000001"))
+        return (
+            price_q,
+            {
+                "source": "demo",
+                "step_bp": step_bp,
+                "drift_bp": drift_bp,
+                "market_id": market_id,
+            },
+            price_q,
+        )
+
+    if cfg.source == "dexscreener":
+        if not cfg.chain_id or not cfg.pair_id:
+            raise ValueError("live.source=dexscreener requires live.chain_id and live.pair_id")
+        resolved = resolve_spot_market(chain_id=cfg.chain_id, pair_id=cfg.pair_id)
+        return (
+            resolved.base_price,
+            {
+                "source": "dexscreener",
+                "resolved_market_id": resolved.market_id,
+            },
+            demo_price,
+        )
+
+    raise ValueError(f"Unknown live.source={cfg.source}")
+
+
+def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = None) -> None:
+    """Execute a live run until stop is requested.
+
+    This is intentionally simple for MVP: the same worker can run this job as a
+    long-lived loop, while other job types can be handled by separate workers.
+    """
+
+    run, cfg = load_run_and_config(session, run_id=run_id, expected_mode=RunMode.live)
+    mark_run_started(
+        session,
+        run=run,
+        run_id=run_id,
+        mode="live",
+        source="orchestrator.live",
+    )
+
+    rng = random.Random(run_id.int & 0xFFFFFFFF)
+    gateway = LlmGateway()
+
+    fee_bps = Decimal(str(cfg.execution.fee_bps))
+    sim = NautilusPaperSim(
+        market_id=cfg.market_id,
+        initial_equity_quote=Decimal(str(cfg.execution.initial_equity_quote)),
+        fee_bps=fee_bps,
+    )
+    last_target = Decimal("0")
+    memory: list[dict] = []
+
+    # Live state caches.
+    latest_price: tuple[datetime, Decimal] | None = None
+    ohlcv_bars: list[MarketOHLCVPayloadV1] = []
+    sentiment_summaries: list[SentimentItemSummaryPayloadV1] = []
+
+    bar_builder = _OhlcvBarBuilder(market_id=cfg.market_id, timeframe=cfg.prompt.timeframe)
+
+    base_interval = timedelta(seconds=int(cfg.scheduler.base_interval_seconds))
+    price_step = int(cfg.scheduler.price_tick_seconds)
+    price_max_age = timedelta(seconds=price_step)
+
+    start_tick = ceil_time(now(), step_seconds=price_step)
+    next_base_tick = start_tick
+    next_early_tick: datetime | None = None
+
+    last_price_tick: datetime | None = None
+    demo_price: Decimal | None = None
+    tick_count = 0
+
+    try:
+        while True:
+            # Refresh stop flag.
+            session.refresh(run)
+            if run.stop_requested:
+                mark_run_cancelled(session, run=run)
+                return
+
+            current_time = now()
+
+            # Emit price ticks on a stable cadence (bucketed).
+            price_tick_time = floor_time(current_time, step_seconds=price_step)
+            if last_price_tick is None or price_tick_time > last_price_tick:
+                price, raw, demo_price = _fetch_live_price(
+                    cfg=cfg.live,
+                    market_id=cfg.market_id,
+                    rng=rng,
+                    demo_price=demo_price,
+                )
+                last_price_tick = price_tick_time
+                latest_price = (price_tick_time, price)
+
+                append_event(
+                    session,
+                    ev=make_event_v1(
+                        event_type="market.price",
+                        source="ingest.live",
+                        observed_at=price_tick_time,
+                        event_time=price_tick_time,
+                        dedupe_key=f"{cfg.market_id}:{price_tick_time.isoformat()}",
+                        run_id=run_id,
+                        payload=MarketPricePayloadV1(
+                            market_id=cfg.market_id,
+                            price=decimal_to_str(price),
+                        ).model_dump(mode="json"),
+                        raw_payload=raw,
+                    ),
+                    dedupe_scope="run",
+                )
+
+                closed = bar_builder.update(ts=price_tick_time, price=price)
+                if closed is not None:
+                    append_event(
+                        session,
+                        ev=make_event_v1(
+                            event_type="market.ohlcv",
+                            source="ingest.live",
+                            observed_at=closed.bar_end,
+                            event_time=closed.bar_end,
+                            dedupe_key=f"{cfg.market_id}:{closed.timeframe}:{closed.bar_start.isoformat()}",
+                            run_id=run_id,
+                            payload=closed.model_dump(mode="json"),
+                        ),
+                        dedupe_scope="run",
+                    )
+                    ohlcv_bars.append(closed)
+                    ohlcv_bars = ohlcv_bars[-1000:]
+
+                session.commit()
+
+            # Decide whether we have a scheduled tick to run.
+            tick_time = choose_tick_time(next_base_tick, next_early_tick)
+
+            current_time = now()
+            if current_time < tick_time:
+                # Sleep until the next price tick or scheduled tick, whichever is sooner.
+                next_price_emit = (last_price_tick or price_tick_time) + timedelta(
+                    seconds=price_step
+                )
+                wake_at = min(next_price_emit, tick_time)
+                sleep_s = max(0.0, min(0.75, (wake_at - current_time).total_seconds()))
+                time.sleep(sleep_s)
+                continue
+
+            # If we just consumed an early tick, clear it; base ticks remain anchored.
+            next_base_tick, next_early_tick = advance_schedule(
+                tick_time=tick_time,
+                next_base_tick=next_base_tick,
+                next_early_tick=next_early_tick,
+                base_interval=base_interval,
+            )
+
+            # Guard: require fresh price.
+            if latest_price is None:
+                continue
+            price_ts, price = latest_price
+            if tick_time - price_ts > price_max_age:
+                continue
+
+            usable_bars = select_usable_bars(
+                ohlcv_bars,
+                tick_time=tick_time,
+                lookback_bars=int(cfg.prompt.lookback_bars),
+                timeframe=cfg.prompt.timeframe,
+            )
+            closes = [b.c for b in usable_bars]
+            features = compute_features(closes)
+
+            portfolio_view = {
+                "equity_quote": decimal_to_str(sim.equity_quote(price=price)),
+                "cash_quote": decimal_to_str(sim.cash_quote()),
+                "position_qty_base": decimal_to_str(sim.position_qty_base()),
+                "price": decimal_to_str(price),
+            }
+
+            mask_offset = timedelta(seconds=int(cfg.prompt.masking.time_offset_seconds))
+            prompt_ctx = build_prompt_context(
+                market_id=cfg.market_id,
+                tick_time=tick_time,
+                mask_offset=mask_offset,
+                timeframe=cfg.prompt.timeframe,
+                latest_price=(price_ts, portfolio_view["price"]),
+                ohlcv_bars=usable_bars,
+                closes=closes,
+                features=features,
+                sentiment_summaries=sentiment_summaries,
+                portfolio_view=portfolio_view,
+                memory=memory,
+            )
+
+            user_prompt = render_user_prompt(
+                style_text=cfg.prompt.prompt_text,
+                context=prompt_ctx,
+                include=list(cfg.prompt.include or []),
+            )
+
+            append_event(
+                session,
+                ev=make_event_v1(
+                    event_type="llm.stream_start",
+                    source="orchestrator.live",
+                    observed_at=tick_time,
+                    dedupe_key=tick_time.isoformat(),
+                    run_id=run_id,
+                    payload=LlmStreamStartPayloadV1(tick_time=tick_time).model_dump(mode="json"),
+                ),
+                dedupe_scope="run",
+            )
+            session.commit()
+
+            seq = 0
+            last_commit = time.perf_counter()
+
+            def _on_delta(delta: str, *, _tick_time: datetime = tick_time) -> None:
+                nonlocal seq, last_commit
+                seq += 1
+                append_event(
+                    session,
+                    ev=make_event_v1(
+                        event_type="llm.stream_delta",
+                        source="orchestrator.live",
+                        observed_at=_tick_time,
+                        dedupe_key=f"{_tick_time.isoformat()}:{seq}",
+                        run_id=run_id,
+                        payload=LlmStreamDeltaPayloadV1(
+                            tick_time=_tick_time, seq=seq, delta=delta
+                        ).model_dump(mode="json"),
+                    ),
+                    dedupe_scope="run",
+                )
+
+                now_perf = time.perf_counter()
+                if seq % 20 == 0 or (now_perf - last_commit) >= 0.25:
+                    try:
+                        session.commit()
+                    except Exception:
+                        _logger.error("streaming_commit_failed", run_id=str(run_id), exc_info=True)
+                        session.rollback()
+                    last_commit = now_perf
+
+            call = gateway.call_decision_streaming(
+                session,
+                run_id=run_id,
+                observed_at=tick_time,
+                model_key=cfg.model.key,
+                system_prompt=SYSTEM_PROMPT,
+                user_prompt=user_prompt,
+                stub_features=StubDecisionFeatures(market_id=cfg.market_id, closes=closes),
+                on_delta=_on_delta,
+                temperature=cfg.model.temperature,
+                max_output_tokens=cfg.model.max_output_tokens,
+            )
+
+            append_event(
+                session,
+                ev=make_event_v1(
+                    event_type="llm.stream_end",
+                    source="orchestrator.live",
+                    observed_at=tick_time,
+                    dedupe_key=tick_time.isoformat(),
+                    run_id=run_id,
+                    payload=LlmStreamEndPayloadV1(tick_time=tick_time, error=call.error).model_dump(
+                        mode="json"
+                    ),
+                ),
+                dedupe_scope="run",
+            )
+            session.commit()
+
+            accepted, reject_reason, effective_target = validate_decision_targets(
+                targets=call.decision.targets,
+                market_id=cfg.market_id,
+                last_target=last_target,
+                gross_leverage_cap=Decimal(str(cfg.execution.gross_leverage_cap)),
+                net_exposure_cap=Decimal(str(cfg.execution.net_exposure_cap)),
+                call_error=call.error,
+            )
+
+            requested = call.decision.next_check_seconds
+            honored: int | None = None
+            if requested is not None:
+                honored, candidate = compute_early_tick(
+                    requested_seconds=int(requested),
+                    min_interval_seconds=int(cfg.scheduler.min_interval_seconds),
+                    base_interval_seconds=int(cfg.scheduler.base_interval_seconds),
+                    step_seconds=price_step,
+                    tick_time=tick_time,
+                    next_base_tick=next_base_tick,
+                    align_to_step=True,
+                )
+                if candidate is not None:
+                    next_early_tick = candidate
+
+                append_schedule_request_event(
+                    session,
+                    source="orchestrator.live",
+                    tick_time=tick_time,
+                    run_id=run_id,
+                    requested_seconds=int(requested),
+                    honored_seconds=honored,
+                )
+
+            decision_payload = LlmDecisionPayloadV1(
+                tick_time=tick_time,
+                market_id=cfg.market_id,
+                targets={cfg.market_id: decimal_to_str(effective_target)},
+                llm_call_id=call.call_id,
+                accepted=accepted,
+                reject_reason=reject_reason,
+                next_check_seconds=requested,
+                confidence=decimal_to_str(call.decision.confidence)
+                if call.decision.confidence is not None
+                else None,
+                key_signals=call.decision.key_signals,
+                rationale=call.decision.rationale,
+            )
+            append_event(
+                session,
+                ev=make_event_v1(
+                    event_type="llm.decision",
+                    source="orchestrator.live",
+                    observed_at=tick_time,
+                    dedupe_key=tick_time.isoformat(),
+                    run_id=run_id,
+                    payload=decision_payload.model_dump(mode="json"),
+                ),
+                dedupe_scope="run",
+            )
+
+            memory = append_decision_memory(memory, decision_payload.model_dump(mode="json"))
+
+            fill = sim.rebalance_to_target_exposure(
+                tick_time=tick_time,
+                price=price,
+                target_exposure=effective_target,
+            )
+            if fill is not None:
+                append_sim_fill_event(
+                    session,
+                    source="orchestrator.live",
+                    tick_time=tick_time,
+                    run_id=run_id,
+                    market_id=cfg.market_id,
+                    fill=fill,
+                )
+
+            equity = sim.equity_quote(price=price)
+            cash = sim.cash_quote()
+            pos = sim.position_qty_base()
+            write_portfolio_snapshot(
+                session,
+                source="orchestrator.live",
+                tick_time=tick_time,
+                run_id=run_id,
+                market_id=cfg.market_id,
+                equity=equity,
+                cash=cash,
+                position_base=pos,
+            )
+
+            last_target = effective_target
+            session.commit()
+
+            tick_count += 1
+            if max_ticks is not None and tick_count >= max_ticks:
+                mark_run_cancelled(session, run=run)
+                return
+    finally:
+        sim.close()

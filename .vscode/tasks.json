@@ -1,0 +1,16 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Ensure Aux Services",
+      "type": "shell",
+      "command": "docker compose -f vibe4trading-backend/infra/compose/docker-compose.yml up -d db redis",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

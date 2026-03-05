@@ -1,0 +1,103 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: v4t
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d v4t"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      V4T_DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/v4t
+      V4T_REDIS_URL: redis://redis:6379/0
+      V4T_LOG_LEVEL: info
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["sh", "-c", "uvicorn v4t.api.app:app --host 0.0.0.0 --port 8000"]
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      V4T_DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/v4t
+      V4T_REDIS_URL: redis://redis:6379/0
+      V4T_LOG_LEVEL: info
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: [
+      "sh",
+      "-c",
+      "celery -A v4t.worker.celery_app:celery_app worker --loglevel=info --queues=default --concurrency=2",
+    ]
+
+  worker_live:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      V4T_DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/v4t
+      V4T_REDIS_URL: redis://redis:6379/0
+      V4T_LOG_LEVEL: info
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: [
+      "sh",
+      "-c",
+      "celery -A v4t.worker.celery_app:celery_app worker --loglevel=info --queues=live --concurrency=1",
+    ]
+
+  beat:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      V4T_DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/v4t
+      V4T_REDIS_URL: redis://redis:6379/0
+      V4T_LOG_LEVEL: info
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: [
+      "sh",
+      "-c",
+      "celery -A v4t.worker.celery_app:celery_app beat --loglevel=info",
+    ]
+
+volumes:
+  pg_data:
