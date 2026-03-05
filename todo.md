@@ -2,21 +2,21 @@
 
 This plan intentionally reduces scope from a microservice monorepo to **three separate repos**:
 
-- `first-claw-eater-backend` (Python, `uv`) - **modular monolith**: API + import/replay/orchestrator/sim/LLM/sentiment all in one codebase.
-- `first-claw-eater-frontend` (TypeScript, `pnpm`) - Next.js dashboard.
-- `first-claw-eater-crawler` (placeholder) - future home for vendor adapters; not required to ship MVP.
+- `vibe4trading-backend` (Python, `uv`) - **modular monolith**: API + import/replay/orchestrator/sim/LLM/sentiment all in one codebase.
+- `vibe4trading-frontend` (TypeScript, `pnpm`) - Next.js dashboard.
+- `vibe4trading-crawler` (placeholder) - future home for vendor adapters; not required to ship MVP.
 
 Key constraint from you: **all pipeline stages are internal to the backend** (no separate orchestrator/event-store/replay services for now). We still keep the *interfaces and data contracts* so a later split is straightforward.
 
 ---
 
-## Repo 1: `first-claw-eater-backend` (Internal Pipeline)
+## Repo 1: `vibe4trading-backend` (Internal Pipeline)
 
 ### Target shape (backend repo)
 
 ```text
-first-claw-eater-backend/
-├─ src/fce/
+vibe4trading-backend/
+├─ src/v4t/
 │  ├─ api/                      # FastAPI routers (REST)
 │  ├─ auth/                     # OIDC/JWKS validation + user provisioning
 │  ├─ contracts/                # Pydantic models (IDs, events, configs, decisions)
@@ -92,10 +92,10 @@ first-claw-eater-backend/
 
 Goal: lock the contracts early so everything else builds on stable types.
 
-- [x] `src/fce/contracts/ids.py`:
+- [x] `src/v4t/contracts/ids.py`:
   - [x] `AssetRef`, `TokenRef`, `MarketRef`
   - [x] `asset_id` and `market_id` codecs + validation helpers
-- [x] `src/fce/contracts/events.py`:
+- [x] `src/v4t/contracts/events.py`:
   - [x] event envelope model + JSON serialization rules
   - [x] schema versioning scaffolding (upcasters)
 - [x] Canonical payload models (v1):
@@ -249,7 +249,7 @@ Goal: centralize provider routing and audit logging without a separate service.
     - [ ] per-user budgets (after auth / ownership)
 - [x] Model allowlist:
   - [ ] admin-managed list in DB (no secrets in run snapshots)
-  - [x] env-based allowlist in MVP (`FCE_LLM_MODEL_ALLOWLIST`)
+  - [x] env-based allowlist in MVP (`V4T_LLM_MODEL_ALLOWLIST`)
   - [x] env-based secret storage in MVP
 
 ---
@@ -314,12 +314,12 @@ Goal: one always-on live run for the main dashboard.
 
 ---
 
-## Repo 2: `first-claw-eater-frontend` (Dashboard)
+## Repo 2: `vibe4trading-frontend` (Dashboard)
 
 ### Target shape (frontend repo)
 
 ```text
-first-claw-eater-frontend/
+vibe4trading-frontend/
 ├─ apps/web/                 # Next.js (App Router)
 ├─ packages/ui/              # optional shared components
 ├─ pnpm-workspace.yaml
@@ -354,7 +354,7 @@ Frontend TODO:
 
 ---
 
-## Repo 3: `first-claw-eater-crawler` (Placeholder)
+## Repo 3: `vibe4trading-crawler` (Placeholder)
 
 This repo is a **placeholder** so vendor adapters can be extracted cleanly later. For MVP, backend can own ingestion directly.
 
