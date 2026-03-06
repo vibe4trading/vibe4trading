@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -42,8 +43,8 @@ class EventRow(Base):
     dataset_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True, index=True)
     run_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True, index=True)
 
-    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
-    raw_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    raw_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -68,6 +69,8 @@ class UserRow(Base):
     )
     email: Mapped[str | None] = mapped_column(String(256), nullable=True, unique=True)
     display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    model_allowlist_override: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    oidc_groups: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )
@@ -82,6 +85,7 @@ class LlmModelRow(Base):
     model_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
     label: Mapped[str | None] = mapped_column(String(256), nullable=True)
     api_base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -111,7 +115,7 @@ class DatasetRow(Base):
     source: Mapped[str] = mapped_column(String(64), nullable=False)
     start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    params: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="pending")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -133,7 +137,7 @@ class PromptTemplateRow(Base):
     engine: Mapped[str] = mapped_column(String(32), nullable=False, default="mustache")
     system_template: Mapped[str] = mapped_column(Text, nullable=False)
     user_template: Mapped[str] = mapped_column(Text, nullable=False)
-    vars_schema: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    vars_schema: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )
@@ -146,7 +150,7 @@ class RunConfigSnapshotRow(Base):
     __tablename__ = "run_config_snapshots"
 
     config_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    config: Mapped[dict] = mapped_column(JSON, nullable=False)
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )
@@ -204,10 +208,10 @@ class LlmCallRow(Base):
     purpose: Mapped[str] = mapped_column(String(64), nullable=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    prompt: Mapped[dict] = mapped_column(JSON, nullable=False)
+    prompt: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     response_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
-    response_parsed: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    response_parsed: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    usage: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -222,7 +226,7 @@ class JobRow(Base):
     job_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     job_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="pending")
-    payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
@@ -261,7 +265,7 @@ class PortfolioSnapshotRow(Base):
     )
     equity_quote: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
     cash_quote: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
-    positions: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    positions: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
     __table_args__ = (
         UniqueConstraint("run_id", "observed_at", name="uq_portfolio_snapshots_run_time"),
@@ -278,7 +282,7 @@ class ArenaSubmissionRow(Base):
     market_id: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
     model_key: Mapped[str] = mapped_column(String(128), nullable=False)
     prompt_template_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
-    prompt_vars: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    prompt_vars: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
     visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="public")
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="pending")
@@ -287,6 +291,8 @@ class ArenaSubmissionRow(Base):
 
     total_return_pct: Mapped[Decimal | None] = mapped_column(Numeric(38, 18), nullable=True)
     avg_return_pct: Mapped[Decimal | None] = mapped_column(Numeric(38, 18), nullable=True)
+    report_call_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    report_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

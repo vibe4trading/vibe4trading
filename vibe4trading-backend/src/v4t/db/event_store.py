@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
-from v4t.contracts.events import EventEnvelopeV1
+from v4t.contracts.events import EventEnvelope
 from v4t.db.models import EventRow
 
 
@@ -15,7 +15,7 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def append_event(session: Session, *, ev: EventEnvelopeV1, dedupe_scope: str) -> None:
+def append_event(session: Session, *, ev: EventEnvelope, dedupe_scope: str) -> None:
     """Append an event to the DB event log with idempotent dedupe.
 
     dedupe_scope:

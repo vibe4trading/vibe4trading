@@ -50,6 +50,8 @@ test-results/
 # Misc
 demo_webpage/
 designed_pages/
+lovable_pages/
+sentiment_raw/
 
 # Debug logs
 npm-debug.log*

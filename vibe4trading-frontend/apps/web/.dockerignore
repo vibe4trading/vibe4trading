@@ -1,0 +1,41 @@
+node_modules
+.next
+dist
+.env
+.env.local
+.env.*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+*.log
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Test coverage
+coverage
+.nyc_output
+
+# Git
+.git
+.gitignore
+
+# Documentation
+docs
+
+# Docker
+Dockerfile
+.dockerignore
+
+# E2E tests
+e2e/
+playwright-report/
+test-results/

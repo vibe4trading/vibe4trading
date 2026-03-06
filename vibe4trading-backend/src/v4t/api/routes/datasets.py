@@ -3,12 +3,12 @@ from __future__ import annotations
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from v4t.api.deps import get_db
-from v4t.api.schemas import DatasetCreateRequest, DatasetOut
+from v4t.api.schemas import DatasetCreateRequest, DatasetIndexOut, DatasetOut
 from v4t.api.utils import now
 from v4t.auth.deps import get_current_user
 from v4t.db.models import DatasetRow, UserRow
@@ -71,12 +71,23 @@ def create_dataset(
     return _to_out(row)
 
 
-@router.get("", response_model=list[DatasetOut])
-def list_datasets(db: Session = Depends(get_db)) -> list[DatasetOut]:
-    rows = list(
-        db.execute(select(DatasetRow).order_by(DatasetRow.created_at.desc())).scalars().all()
+@router.get("", response_model=DatasetIndexOut)
+def list_datasets(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+) -> DatasetIndexOut:
+    stmt = select(DatasetRow).order_by(DatasetRow.created_at.desc()).limit(limit + 1).offset(offset)
+    rows = list(db.execute(stmt).scalars().all())
+    total = int(db.execute(select(func.count()).select_from(DatasetRow)).scalar_one())
+    visible_rows = rows[:limit]
+    return DatasetIndexOut(
+        items=[_to_out(r) for r in visible_rows],
+        limit=limit,
+        offset=offset,
+        has_more=len(rows) > limit,
+        total=total,
     )
-    return [_to_out(r) for r in rows]
 
 
 @router.get("/{dataset_id}", response_model=DatasetOut)

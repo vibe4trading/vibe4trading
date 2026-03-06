@@ -275,12 +275,82 @@ def test_private_tournament_run_is_hidden(db_session, client) -> None:  # noqa: 
     db_session.add(run)
     db_session.commit()
 
-    assert client.get("/runs").status_code == 200
-    assert all(r["run_id"] != str(run.run_id) for r in client.get("/runs").json())
+    list_res = client.get("/runs")
+    assert list_res.status_code == 200
+    assert all(r["run_id"] != str(run.run_id) for r in list_res.json()["items"])
 
     assert client.get(f"/runs/{run.run_id}").status_code == 404
     assert client.get(f"/runs/{run.run_id}/decisions").status_code == 404
     assert client.get(f"/runs/{run.run_id}/summary").status_code == 404
+
+
+def test_runs_list_uses_cursor_pagination(db_session, client) -> None:  # noqa: ANN001
+    now = datetime.now(UTC)
+    cfg = RunConfigSnapshotRow(config={"mode": "replay"}, created_at=now)
+    db_session.add(cfg)
+    db_session.flush()
+
+    rows = []
+    for i in range(3):
+        row = RunRow(
+            market_id=f"spot:demo:PAIR{i}",
+            model_key="stub",
+            config_id=cfg.config_id,
+            status="finished",
+            created_at=now - timedelta(minutes=i),
+            updated_at=now - timedelta(minutes=i),
+        )
+        rows.append(row)
+    db_session.add_all(rows)
+    db_session.commit()
+
+    first = client.get("/runs?limit=2")
+    assert first.status_code == 200
+    first_payload = first.json()
+    assert len(first_payload["items"]) == 2
+    assert first_payload["has_more"] is True
+    assert first_payload["next_cursor"] is not None
+
+    second = client.get("/runs", params={"limit": 2, "cursor": first_payload["next_cursor"]})
+    assert second.status_code == 200
+    second_payload = second.json()
+    assert len(second_payload["items"]) == 1
+    assert second_payload["has_more"] is False
+
+
+def test_runs_cursor_tiebreaks_same_timestamp(db_session, client) -> None:  # noqa: ANN001
+    now = datetime.now(UTC)
+    cfg = RunConfigSnapshotRow(config={"mode": "replay"}, created_at=now)
+    db_session.add(cfg)
+    db_session.flush()
+
+    first_row = RunRow(
+        market_id="spot:demo:AAA",
+        model_key="stub",
+        config_id=cfg.config_id,
+        status="finished",
+        created_at=now,
+        updated_at=now,
+    )
+    second_row = RunRow(
+        market_id="spot:demo:BBB",
+        model_key="stub",
+        config_id=cfg.config_id,
+        status="finished",
+        created_at=now,
+        updated_at=now,
+    )
+    db_session.add_all([first_row, second_row])
+    db_session.commit()
+
+    first = client.get("/runs?limit=1")
+    assert first.status_code == 200
+    first_payload = first.json()
+    second = client.get("/runs", params={"limit": 1, "cursor": first_payload["next_cursor"]})
+    assert second.status_code == 200
+    second_payload = second.json()
+    returned_ids = {first_payload["items"][0]["run_id"], second_payload["items"][0]["run_id"]}
+    assert returned_ids == {str(first_row.run_id), str(second_row.run_id)}
 
 
 def test_stop_run_sets_flag(db_session, client) -> None:  # noqa: ANN001

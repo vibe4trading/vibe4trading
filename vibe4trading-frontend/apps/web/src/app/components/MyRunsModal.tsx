@@ -15,7 +15,7 @@ function fmt(dt: string | null) {
 }
 
 function pct(v: number | null) {
-  if (v === null || Number.isNaN(v)) return "\u2013";
+  if (v == null || Number.isNaN(v)) return "\u2013";
   const s = v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2);
   return `${s}%`;
 }

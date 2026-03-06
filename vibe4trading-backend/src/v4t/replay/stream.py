@@ -18,7 +18,7 @@ def iter_dataset_events(
 ) -> list[EventRow]:
     """Deterministic ordered event stream for replay.
 
-    Ordering contract (v1): (observed_at, source, event_type, dedupe_key)
+    Ordering contract: (observed_at, source, event_type, dedupe_key)
     """
 
     if not dataset_ids:

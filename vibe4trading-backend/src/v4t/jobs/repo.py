@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -17,7 +18,7 @@ def enqueue_job(
     session: Session,
     *,
     job_type: str,
-    payload: dict,
+    payload: dict[str, Any],
     run_id: UUID | None = None,
     dataset_id: UUID | None = None,
 ) -> JobRow:
@@ -41,7 +42,7 @@ def enqueue_unique_job(
     session: Session,
     *,
     job_type: str,
-    payload: dict,
+    payload: dict[str, Any],
     run_id: UUID | None = None,
     dataset_id: UUID | None = None,
 ) -> JobRow:

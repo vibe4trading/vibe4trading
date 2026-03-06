@@ -24,13 +24,16 @@ for pair, market_id in pairs:
         continue
 
     response = requests.post(
-        f"{BACKEND_URL}/api/datasets",
+        f"{BACKEND_URL}/datasets",
         json={
             "category": "spot",
             "source": "freqtrade",
             "start": start,
             "end": end,
-            "params": {"market_id": market_id, "feather_path": str(feather_file.absolute())},
+            "params": {
+                "market_id": market_id,
+                "feather_path": str(feather_file.absolute()),
+            },
         },
     )
 

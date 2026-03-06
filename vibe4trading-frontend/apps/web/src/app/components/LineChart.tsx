@@ -19,6 +19,7 @@ export function LineChart({
   strokeFrom = "rgba(20,184,166,0.95)",
   strokeTo = "rgba(249,115,22,0.85)",
   markers,
+  variant = "dark",
 }: {
   points: Point[];
   height?: number;
@@ -27,6 +28,7 @@ export function LineChart({
   strokeFrom?: string;
   strokeTo?: string;
   markers?: { index: number; color?: string; label?: string }[];
+  variant?: "dark" | "light";
 }) {
   const id = React.useId();
   const safeId = id.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -37,9 +39,22 @@ export function LineChart({
   const padding = 14;
 
   const ys = points.map((p) => p.y);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
+  const minY = ys.length > 0 ? Math.min(...ys) : 0;
+  const maxY = ys.length > 0 ? Math.max(...ys) : 1;
   const spanY = Math.max(1e-9, maxY - minY);
+  const isLight = variant === "light";
+  const cardClass = isLight
+    ? "w-full overflow-hidden border-2 border-[var(--line)] bg-[#fbfbf8] shadow-[6px_6px_0_rgba(0,0,0,0.08)]"
+    : "w-full overflow-hidden rounded-2xl border border-[color:var(--border)] bg-white/5 shadow-lg backdrop-blur-md";
+  const titleClass = isLight ? "text-sm font-medium text-[var(--ink)]" : "text-sm font-medium text-white";
+  const metaClass = isLight ? "text-xs text-[var(--muted)]" : "text-xs text-zinc-400";
+  const positivePctClass = isLight ? "text-[var(--green)]" : "text-[color:var(--accent)] drop-shadow-[0_0_6px_var(--accent-glow)]";
+  const gridStroke = isLight ? "rgba(0,0,0,0.09)" : "rgba(255,255,255,0.06)";
+  const emptyTextFill = isLight ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.4)";
+  const axisLabelFill = isLight ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.4)";
+  const markerStroke = isLight ? "rgba(0,0,0,0.2)" : "rgba(0,0,0,0.35)";
+  const markerFill = isLight ? "rgba(0,0,0,0.92)" : "rgba(255,255,255,0.92)";
+  const footerClass = isLight ? "mt-2 flex justify-between text-xs text-[var(--muted)]" : "mt-2 flex justify-between text-xs text-zinc-500";
 
   const toX = (i: number) => {
     if (points.length <= 1) return padding;
@@ -68,16 +83,14 @@ export function LineChart({
     : "";
 
   return (
-    <div className="w-full overflow-hidden rounded-2xl border border-[color:var(--border)] bg-white/5 shadow-lg backdrop-blur-md">
+    <div className={cardClass}>
       <div className="flex items-center justify-between px-4 py-3">
-        <div className="text-sm font-medium text-white">{title}</div>
-        <div className="text-xs text-zinc-400">
+        <div className={titleClass}>{title}</div>
+        <div className={metaClass}>
           <span className="font-mono">{lastY.toFixed(2)}</span>
           <span className="mx-2 text-zinc-600">/</span>
           <span
-            className={
-              lastPct >= 0 ? "text-[color:var(--accent)] drop-shadow-[0_0_6px_var(--accent-glow)]" : "text-rose-400"
-            }
+            className={lastPct >= 0 ? positivePctClass : "text-rose-400"}
           >
             {lastPct >= 0 ? "+" : ""}
             {isFinite(lastPct) ? lastPct.toFixed(2) : "0.00"}%
@@ -121,7 +134,7 @@ export function LineChart({
                 x2={width - padding}
                 y1={y}
                 y2={y}
-                stroke="rgba(255,255,255,0.06)"
+                stroke={gridStroke}
                 strokeWidth={1}
               />
             );
@@ -151,7 +164,7 @@ export function LineChart({
                             cy={toY(points[m.index].y)}
                             r={3.25}
                             fill={c}
-                            stroke="rgba(0,0,0,0.35)"
+                            stroke={markerStroke}
                             strokeWidth={1}
                           />
                           {m.label ? (
@@ -181,13 +194,13 @@ export function LineChart({
                 cx={toX(points.length - 1)}
                 cy={toY(lastY)}
                 r={4}
-                fill="rgba(255,255,255,0.92)"
-                stroke="rgba(255,255,255,0.3)"
+                fill={markerFill}
+                stroke={isLight ? "rgba(0,0,0,0.16)" : "rgba(255,255,255,0.3)"}
                 strokeWidth={2}
               />
             </>
           ) : (
-            <text x={padding} y={padding + 12} fill="rgba(255,255,255,0.4)" fontSize={12}>
+            <text x={padding} y={padding + 12} fill={emptyTextFill} fontSize={12}>
               No data yet
             </text>
           )}
@@ -197,7 +210,7 @@ export function LineChart({
             <text
               x={padding}
               y={clamp(toY(maxY) - 6, 12, height - 6)}
-              fill="rgba(255,255,255,0.4)"
+              fill={axisLabelFill}
               fontSize={11}
             >
               {maxY.toFixed(2)}
@@ -207,7 +220,7 @@ export function LineChart({
             <text
               x={padding}
               y={clamp(toY(minY) + 14, 12, height - 6)}
-              fill="rgba(255,255,255,0.4)"
+              fill={axisLabelFill}
               fontSize={11}
             >
               {minY.toFixed(2)}
@@ -215,7 +228,7 @@ export function LineChart({
           ) : null}
         </svg>
 
-        <div className="mt-2 flex justify-between text-xs text-zinc-500">
+        <div className={footerClass}>
           <span className="font-mono">{points[0]?.xLabel ?? ""}</span>
           <span className="font-mono">{points[points.length - 1]?.xLabel ?? ""}</span>
         </div>

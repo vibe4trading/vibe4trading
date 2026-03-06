@@ -24,11 +24,6 @@ def create_token_for_user(db: Session, user_id: UUID) -> str:
     return token
 
 
-def validate_token(db: Session, token: str) -> UUID | None:
+def validate_token(db: Session, token: str) -> UserRow | None:
     stmt = select(UserRow).where(UserRow.api_token == token)
-    user = db.execute(stmt).scalar_one_or_none()
-
-    if not user:
-        return None
-
-    return user.user_id
+    return db.execute(stmt).scalar_one_or_none()

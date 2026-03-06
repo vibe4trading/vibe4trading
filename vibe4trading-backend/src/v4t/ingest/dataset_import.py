@@ -6,12 +6,12 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from v4t.contracts.events import EventEnvelopeV1, make_event_v1
+from v4t.contracts.events import EventEnvelope, make_event
 from v4t.contracts.numbers import decimal_to_str
 from v4t.contracts.payloads import (
     SentimentItemKind,
-    SentimentItemPayloadV1,
-    SentimentItemSummaryPayloadV1,
+    SentimentItemPayload,
+    SentimentItemSummaryPayload,
 )
 from v4t.db.event_store import append_event
 from v4t.db.models import DatasetRow
@@ -23,6 +23,7 @@ from v4t.ingest.demo import (
 from v4t.ingest.dexscreener import resolve_spot_market
 from v4t.ingest.freqtrade import generate_freqtrade_ohlcv_events
 from v4t.ingest.rss import fetch_rss_items
+from v4t.ingest.tweets import generate_tweet_sentiment_events
 from v4t.llm.gateway import LlmGateway
 from v4t.settings import get_settings
 
@@ -31,7 +32,7 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _insert_dataset_event(session: Session, *, ev: EventEnvelopeV1) -> None:
+def _insert_dataset_event(session: Session, *, ev: EventEnvelope) -> None:
     append_event(session, ev=ev, dedupe_scope="dataset")
 
 
@@ -134,6 +135,24 @@ def import_dataset(session: Session, *, dataset_id: UUID) -> None:
         elif ds.source == "empty":
             # Valid MVP case: empty sentiment dataset (still produces a dataset_id).
             pass
+        elif ds.source == "tweets":
+            from pathlib import Path
+
+            tweets_dir_str = ds.params.get("tweets_dir")
+            if not tweets_dir_str:
+                raise ValueError("tweets sentiment dataset requires params.tweets_dir")
+
+            tweets_dir = Path(tweets_dir_str)
+            if not tweets_dir.is_dir():
+                raise ValueError(f"tweets_dir not found: {tweets_dir}")
+
+            for ev in generate_tweet_sentiment_events(
+                dataset_id=dataset_id,
+                tweets_dir=tweets_dir,
+                start=ds.start,
+                end=ds.end,
+            ):
+                _insert_dataset_event(session, ev=ev)
         elif ds.source == "rss":
             settings = get_settings()
 
@@ -162,7 +181,7 @@ def import_dataset(session: Session, *, dataset_id: UUID) -> None:
                 if len(text) > 2000:
                     text = text[:2000].rstrip() + "..."
 
-                item_payload = SentimentItemPayloadV1(
+                item_payload = SentimentItemPayload(
                     source="rss",
                     external_id=it.external_id,
                     item_time=it.item_time,
@@ -172,7 +191,7 @@ def import_dataset(session: Session, *, dataset_id: UUID) -> None:
                 ).model_dump(mode="json")
                 _insert_dataset_event(
                     session,
-                    ev=make_event_v1(
+                    ev=make_event(
                         event_type="sentiment.item",
                         source="ingest.rss",
                         observed_at=it.item_time,
@@ -192,7 +211,7 @@ def import_dataset(session: Session, *, dataset_id: UUID) -> None:
                     item_text=text,
                     item_url=it.url,
                 )
-                summary_payload = SentimentItemSummaryPayloadV1(
+                summary_payload = SentimentItemSummaryPayload(
                     source="rss",
                     external_id=it.external_id,
                     item_time=it.item_time,
@@ -203,7 +222,7 @@ def import_dataset(session: Session, *, dataset_id: UUID) -> None:
                 ).model_dump(mode="json")
                 _insert_dataset_event(
                     session,
-                    ev=make_event_v1(
+                    ev=make_event(
                         event_type="sentiment.item_summary",
                         source="ingest.rss",
                         observed_at=it.item_time,

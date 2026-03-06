@@ -5,7 +5,16 @@ import * as React from "react";
 
 import { PromptInput } from "@/app/components/PromptInput";
 import { useRealtimeRefresh } from "@/app/lib/realtime";
-import { apiJson, ModelPublicOut, RunOut } from "@/app/lib/v4t";
+import { apiJson, ModelPublicOut, RunIndexOut, RunOut } from "@/app/lib/v4t";
+
+function firstSelectableModelKey(rows: ModelPublicOut[]) {
+  return rows.find((row) => row.selectable)?.model_key ?? "";
+}
+
+function mergeRuns(current: RunOut[], fresh: RunOut[]) {
+  const freshIds = new Set(fresh.map((run) => run.run_id));
+  return [...fresh, ...current.filter((run) => !freshIds.has(run.run_id))];
+}
 
 function fmt(dt: string | null) {
   if (!dt) return "–";
@@ -29,7 +38,10 @@ function runBadge(status: string) {
 
 export default function RunsPage() {
   const [runs, setRuns] = React.useState<RunOut[]>([]);
+  const [runsCursor, setRunsCursor] = React.useState<string | null>(null);
+  const [runsHasMore, setRunsHasMore] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
+  const [loadingMore, setLoadingMore] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -46,14 +58,32 @@ export default function RunsPage() {
     setLoading(true);
     setError(null);
     try {
-      const runsRes = await apiJson<RunOut[]>("/runs");
-      setRuns(runsRes);
+      const runsRes = await apiJson<RunIndexOut>("/runs");
+      setRuns((current) => mergeRuns(current, runsRes.items));
+      setRunsCursor(runsRes.next_cursor);
+      setRunsHasMore(runsRes.has_more);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
   }, []);
+
+  async function loadMoreRuns() {
+    if (!runsCursor) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const runsRes = await apiJson<RunIndexOut>(`/runs?cursor=${encodeURIComponent(runsCursor)}`);
+      setRuns((current) => [...current, ...runsRes.items]);
+      setRunsCursor(runsRes.next_cursor);
+      setRunsHasMore(runsRes.has_more);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   React.useEffect(() => {
     refresh();
@@ -64,13 +94,22 @@ export default function RunsPage() {
       .then((rows) => {
         setModels(rows);
         setModelKey((prev) => {
-          if (rows.some((m) => m.model_key === prev)) return prev;
-          return rows[0]?.model_key ?? "stub";
+          if (rows.some((m) => m.model_key === prev && m.selectable)) return prev;
+          return firstSelectableModelKey(rows);
         });
       })
       .catch((e) => {
         setError(`Failed to load models: ${e instanceof Error ? e.message : String(e)}`);
-        setModels([{ model_key: "stub", label: "Stub" }]);
+        setModels([
+          {
+            model_key: "stub",
+            label: "Stub",
+            enabled: true,
+            allowed: true,
+            selectable: true,
+            disabled_reason: null,
+          },
+        ]);
         setModelKey("stub");
       });
   }, []);
@@ -88,6 +127,14 @@ export default function RunsPage() {
 
     if (!promptText.trim()) {
       setError("Prompt text is required");
+      return;
+    }
+    if (!models.some((model) => model.selectable)) {
+      setError("No models are enabled for your account");
+      return;
+    }
+    if (!models.find((model) => model.model_key === modelKey)?.selectable) {
+      setError("Select a model that is enabled for your account");
       return;
     }
 
@@ -179,8 +226,9 @@ export default function RunsPage() {
                 required
               >
                 {models.map((m) => (
-                  <option key={m.model_key} value={m.model_key}>
+                  <option key={m.model_key} value={m.model_key} disabled={!m.selectable}>
                     {m.label ? `${m.label} (${m.model_key})` : m.model_key}
+                    {m.selectable ? "" : ` - ${m.disabled_reason ?? "Unavailable"}`}
                   </option>
                 ))}
               </select>
@@ -190,6 +238,12 @@ export default function RunsPage() {
                 </svg>
               </div>
             </div>
+            {!models.find((m) => m.model_key === modelKey)?.selectable ? (
+              <p className="mt-2 text-xs font-medium text-amber-300">
+                {models.find((m) => m.model_key === modelKey)?.disabled_reason ??
+                  "This model is unavailable."}
+              </p>
+            ) : null}
           </label>
 
           <div className="md:col-span-2 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-zinc-300">
@@ -206,7 +260,7 @@ export default function RunsPage() {
             <button
               type="submit"
               className="rounded-full bg-white px-8 py-3 text-sm font-bold text-black transition-all hover:bg-zinc-200 hover:shadow-[0_0_20px_rgba(255,255,255,0.2)] disabled:opacity-50"
-              disabled={creating}
+              disabled={creating || !models.some((model) => model.selectable)}
             >
               {creating ? "Creating…" : "Create + Enqueue Run"}
             </button>
@@ -291,6 +345,19 @@ export default function RunsPage() {
               </svg>
               <p className="text-sm text-zinc-500">No runs yet. Create one above.</p>
             </div>
+          </div>
+        ) : null}
+
+        {runsHasMore ? (
+          <div className="flex justify-center pt-2">
+            <button
+              type="button"
+              onClick={loadMoreRuns}
+              className="rounded-full border border-white/20 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/10 disabled:opacity-50"
+              disabled={loadingMore}
+            >
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
           </div>
         ) : null}
       </section>

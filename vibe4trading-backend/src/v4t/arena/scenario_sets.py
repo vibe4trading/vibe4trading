@@ -24,7 +24,7 @@ class ScenarioSet:
     pace_seconds_per_base_tick: float = 2.0
 
 
-def _default_v1() -> ScenarioSet:
+def _default() -> ScenarioSet:
     base = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
     windows: list[ScenarioWindow] = []
 
@@ -37,15 +37,33 @@ def _default_v1() -> ScenarioSet:
 
     return ScenarioSet(
         key="default-v1",
-        name="Default (v1)",
+        name="Default",
         description="10x 12h scenario windows (synthetic demo data). Early-checks disabled.",
         windows=windows,
         pace_seconds_per_base_tick=2.0,
     )
 
 
+def _crypto_benchmark() -> ScenarioSet:
+    base = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    windows: list[ScenarioWindow] = []
+    window_hours = 168
+    for i in range(10):
+        start = base + timedelta(hours=i * 168)
+        end = start + timedelta(hours=window_hours)
+        windows.append(ScenarioWindow(index=i, label=f"Window {i + 1}", start=start, end=end))
+
+    return ScenarioSet(
+        key="crypto-benchmark-v1",
+        name="Crypto Benchmark",
+        description="10x 7d benchmark windows for 10-token tournament runs.",
+        windows=windows,
+        pace_seconds_per_base_tick=0.0,
+    )
+
+
 def list_scenario_sets() -> list[ScenarioSet]:
-    return [_default_v1()]
+    return [_default(), _crypto_benchmark()]
 
 
 def get_scenario_set(key: str) -> ScenarioSet | None:

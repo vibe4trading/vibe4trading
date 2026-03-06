@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from typing import Any
+
+import structlog
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
@@ -10,8 +13,6 @@ from v4t.auth.oidc import validate_jwt
 from v4t.auth.tokens import create_token_for_user, validate_token
 from v4t.db.models import UserRow
 from v4t.settings import get_settings, parse_csv_set
-
-import structlog
 
 logger = structlog.get_logger()
 
@@ -51,12 +52,9 @@ async def get_current_user(
 
     token = credentials.credentials
 
-    user_id = validate_token(db, token)
-    if user_id:
-        stmt = select(UserRow).where(UserRow.user_id == user_id)
-        user = db.execute(stmt).scalar_one_or_none()
-        if user:
-            return user
+    user = validate_token(db, token)
+    if user is not None:
+        return user
 
     try:
         settings = get_settings()
@@ -72,11 +70,24 @@ async def get_current_user(
         ) from exc
 
 
-async def provision_user_from_jwt(db: Session, payload: dict) -> UserRow:
+async def provision_user_from_jwt(db: Session, payload: dict[str, Any]) -> UserRow:
     oidc_issuer = payload.get("iss")
     oidc_sub = payload.get("sub")
     email = payload.get("email")
     display_name = payload.get("name") or payload.get("preferred_username")
+    groups_raw = payload.get("groups")
+
+    if not isinstance(oidc_issuer, str) or not isinstance(oidc_sub, str):
+        raise ValueError("Invalid JWT payload")
+    if email is not None and not isinstance(email, str):
+        email = None
+    if display_name is not None and not isinstance(display_name, str):
+        display_name = None
+
+    groups: str | None = None
+    if isinstance(groups_raw, list):
+        group_names: list[str] = [g for g in groups_raw if isinstance(g, str)]
+        groups = ",".join(group_names) if group_names else None
 
     stmt = select(UserRow).where(UserRow.oidc_issuer == oidc_issuer, UserRow.oidc_sub == oidc_sub)
     user = db.execute(stmt).scalar_one_or_none()
@@ -87,6 +98,7 @@ async def provision_user_from_jwt(db: Session, payload: dict) -> UserRow:
             oidc_sub=oidc_sub,
             email=email,
             display_name=display_name,
+            oidc_groups=groups,
         )
         db.add(user)
         db.commit()
@@ -101,6 +113,9 @@ async def provision_user_from_jwt(db: Session, payload: dict) -> UserRow:
         if display_name and user.display_name != display_name:
             user.display_name = display_name
             changed = True
+        if groups != user.oidc_groups:
+            user.oidc_groups = groups
+            changed = True
         if changed:
             db.commit()
 
@@ -112,12 +127,20 @@ def is_admin_user(user: UserRow) -> bool:
     if settings.bypass_auth:
         return True
 
-    admins = parse_csv_set(settings.admin_email_allowlist)
-    if not admins:
-        return False
+    admin_groups = parse_csv_set(settings.admin_groups)
+    if admin_groups:
+        user_groups_raw = (user.oidc_groups or "").split(",")
+        user_groups = {g.strip() for g in user_groups_raw if g.strip()}
+        if user_groups & admin_groups:
+            return True
 
-    email = (user.email or "").strip().lower()
-    return bool(email) and email in {e.strip().lower() for e in admins}
+    admins = parse_csv_set(settings.admin_email_allowlist)
+    if admins:
+        email = (user.email or "").strip().lower()
+        if bool(email) and email in {e.strip().lower() for e in admins}:
+            return True
+
+    return False
 
 
 async def get_admin_user(user: UserRow = Depends(get_current_user)) -> UserRow:

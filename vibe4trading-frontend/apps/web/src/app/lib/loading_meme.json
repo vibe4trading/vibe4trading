@@ -1,0 +1,128 @@
+{
+  "description": "Loading screen config. Each stage has a label + 4-5 random meme variants. Frontend picks one randomly per stage. No AI needed - hardcoded.",
+  "behavior": {
+    "total_duration_seconds": "Match actual backend processing time. If backend is faster than expected, add minimum display time per stage (1.5s) so users can read the memes.",
+    "text_transition": "Fade out 300ms -> swap text -> fade in 300ms",
+    "progress_bar": "Smooth animate between stage progress values",
+    "on_complete": "Show 'VIEW REPORT' button with fade-in"
+  },
+  "stages": [
+    {
+      "stage": 0,
+      "progress_percent": 0,
+      "label": "INITIALIZING",
+      "memes": [
+        "GM anon. Time to find out if you're based or cringe.",
+        "Not financial advice. But your strategy might need some.",
+        "WAGMI? Let's verify that claim.",
+        "ser... are you sure you want to see this?"
+      ]
+    },
+    {
+      "stage": 1,
+      "progress_percent": 12,
+      "label": "CONNECTING TO BINANCE",
+      "memes": [
+        "CZ sends his regards.",
+        "Funds are safu. Your ego might not be.",
+        "4 is not enough. Loading 10 tokens.",
+        "Pinging Binance... they didn't freeze our account (yet)."
+      ]
+    },
+    {
+      "stage": 2,
+      "progress_percent": 25,
+      "label": "LOADING HISTORICAL DATA",
+      "memes": [
+        "Loading 168 candles per event... still less painful than watching your portfolio.",
+        "Downloading 10/10 crash data... $19B liquidated. Hope you weren't one of them.",
+        "Fetching price history... every red candle is a lesson you probably ignored.",
+        "10 tokens x 10 events x 168 candles = 16,800 data points of truth."
+      ]
+    },
+    {
+      "stage": 3,
+      "progress_percent": 40,
+      "label": "WARMING UP AI AGENT",
+      "memes": [
+        "Your AI agent is reading your strategy... trying not to laugh.",
+        "AI is calibrating... it's seen worse. Actually, maybe not.",
+        "Injecting your risk parameters... the AI just raised an eyebrow.",
+        "Loading model weights... heavier than your bags."
+      ]
+    },
+    {
+      "stage": 4,
+      "progress_percent": 55,
+      "label": "EXECUTING TRADES",
+      "memes": [
+        "AI just opened a 40x long... wait, that's James Wynn's strategy, not yours.",
+        "Executing across 10 historical events... your strategy is already sweating.",
+        "Trading through the 10/10 crash... 1.6 million accounts got rekt that day.",
+        "Your agent is panic selling... just kidding. Maybe.",
+        "Buy high sell low protocol activated... oh wait, that's not your config? Sure about that?"
+      ]
+    },
+    {
+      "stage": 5,
+      "progress_percent": 70,
+      "label": "SURVIVING THE CRASHES",
+      "memes": [
+        "Simulating Feb 2025... Bybit just lost $1.5B. Your agent is coping.",
+        "Running through the 2026 crash... BTC broke $70K to the downside. Pain.",
+        "Your strategy during 10/10: 'This is fine.'",
+        "Testing survival... the market doesn't care about your feelings."
+      ]
+    },
+    {
+      "stage": 6,
+      "progress_percent": 82,
+      "label": "CALCULATING SCORE",
+      "memes": [
+        "Calculating Sharpe ratio... it's trying its best.",
+        "Crunching numbers... hopium levels critical.",
+        "Computing your win rate... it's a number. That's all we'll say for now.",
+        "Measuring max drawdown... you might want to sit down.",
+        "Few understand what's about to happen to your confidence."
+      ]
+    },
+    {
+      "stage": 7,
+      "progress_percent": 91,
+      "label": "MATCHING TRADER PERSONALITY",
+      "memes": [
+        "Comparing you to GCR... it's not looking great.",
+        "You trade like... actually, let's wait for the full report.",
+        "Cross-referencing with 13 archetypes... one of them is called 'FOMO Warrior'. Just saying.",
+        "Determining if you're a Contract King or a Paper Hands Shill... suspense."
+      ]
+    },
+    {
+      "stage": 8,
+      "progress_percent": 96,
+      "label": "GENERATING REPORT",
+      "memes": [
+        "Report almost ready. No refunds.",
+        "Your trader personality has been determined. It cannot be unseen.",
+        "Rendering your ego in chart form...",
+        "This is gentlemen."
+      ]
+    },
+    {
+      "stage": 9,
+      "progress_percent": 100,
+      "label": "COMPLETE",
+      "memes": [
+        "Score calculated. Brace yourself.",
+        "ngmi or gmi? Scroll down to find out.",
+        "The market has spoken. Let's see the verdict."
+      ]
+    }
+  ],
+  "implementation_notes": {
+    "how_to_use": "On each stage transition: pick a random index from that stage's memes array. Display with fade transition.",
+    "code_example": "const meme = stages[currentStage].memes[Math.floor(Math.random() * stages[currentStage].memes.length)]",
+    "stage_trigger": "Trigger stage transitions based on actual backend progress events if available. If backend doesn't send progress, use fixed timers as fallback.",
+    "minimum_display_time": "1500ms per stage minimum, so users can actually read the text"
+  }
+}

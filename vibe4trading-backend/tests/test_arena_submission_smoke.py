@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
 from v4t.arena.runner import execute_arena_submission
-from v4t.db.models import ArenaSubmissionRow, ArenaSubmissionRunRow, DatasetRow
+from v4t.db.models import ArenaSubmissionRow, ArenaSubmissionRunRow, DatasetRow, LlmCallRow
 from v4t.settings import get_settings
 from v4t.utils.datetime import as_utc
 
@@ -67,6 +68,9 @@ def test_arena_submission_smoke(db_session, monkeypatch):
     assert sub.windows_completed == 10
     assert sub.total_return_pct is not None
     assert sub.avg_return_pct is not None
+    assert sub.report_json is not None
+    assert sub.report_json["schema_version"] == 1
+    assert isinstance(sub.report_json["overall_score"], int)
 
     runs = list(
         db_session.execute(
@@ -80,6 +84,35 @@ def test_arena_submission_smoke(db_session, monkeypatch):
     assert len(runs) == 10
     assert all(r.status == "finished" for r in runs)
     assert all(r.return_pct is not None for r in runs)
+
+    report_calls = list(
+        db_session.execute(
+            select(LlmCallRow)
+            .where(LlmCallRow.purpose == "submission_report")
+            .order_by(LlmCallRow.created_at)
+        )
+        .scalars()
+        .all()
+    )
+    assert len(report_calls) == 1
+    prompt = report_calls[0].prompt
+    messages = prompt.get("messages", [])
+    assert len(messages) == 2
+    report_input = json.loads(messages[1]["content"])
+    assert report_input["style_metrics"]["source"] == "summary_prompt.md-single-coin-adaptation"
+    assert report_input["style_metrics"]["window_days"] == 5.0
+    assert (
+        report_input["style_metrics"]["trade_count"] == sub.report_json["key_metrics"]["num_trades"]
+    )
+    assert (
+        report_input["style_metrics"]["decision_count"]
+        == sub.report_json["key_metrics"]["decision_count"]
+    )
+    assert "btc_exposure_pct" not in report_input["style_metrics"]
+    assert report_input["style_metrics"]["removed_multi_pair_metrics"] == [
+        "btc_exposure_pct",
+        "top1_position_pct",
+    ]
 
 
 def test_arena_submission_smoke_single_dataset(db_session, monkeypatch):
@@ -134,6 +167,8 @@ def test_arena_submission_smoke_single_dataset(db_session, monkeypatch):
     assert sub.windows_completed == 10
     assert sub.total_return_pct is not None
     assert sub.avg_return_pct is not None
+    assert sub.report_json is not None
+    assert sub.report_json["schema_version"] == 1
 
     runs = list(
         db_session.execute(

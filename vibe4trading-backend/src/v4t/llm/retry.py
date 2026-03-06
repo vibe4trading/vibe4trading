@@ -3,9 +3,11 @@ from __future__ import annotations
 import random
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import httpx
+
+from v4t.llm.concurrency import submit_llm_request
 
 
 def is_retryable(exc: Exception) -> bool:
@@ -45,6 +47,35 @@ def _sleep_before_retry(*, attempt: int, exc: Exception) -> None:
         time.sleep(delay)
 
 
+def post_json_request(
+    *,
+    url: str,
+    headers: dict[str, str],
+    req: dict[str, Any],
+    timeout_seconds: float,
+    client: httpx.Client | None = None,
+    queue_priority: int = 0,
+) -> dict[str, Any]:
+    def _decode_response(response: httpx.Response) -> dict[str, Any]:
+        data_any = response.json()
+        if not isinstance(data_any, dict):
+            raise ValueError("LLM response is not a JSON object")
+        return cast(dict[str, Any], data_any)
+
+    def _send() -> dict[str, Any]:
+        if client is not None:
+            response = client.post(url, headers=headers, json=req)
+            response.raise_for_status()
+            return _decode_response(response)
+
+        with httpx.Client(timeout=timeout_seconds) as local_client:
+            response = local_client.post(url, headers=headers, json=req)
+            response.raise_for_status()
+            return _decode_response(response)
+
+    return submit_llm_request(_send, queue_priority=queue_priority)
+
+
 def call_with_retry(
     *,
     url: str,
@@ -61,9 +92,15 @@ def call_with_retry(
     with httpx.Client(timeout=timeout_seconds) as client:
         for attempt in range(1, max_attempts + 1):
             try:
-                r = client.post(url, headers=headers, json=req)
-                r.raise_for_status()
-                data = r.json()
+                queue_priority = -1 if attempt > 1 else 0
+                data = post_json_request(
+                    url=url,
+                    headers=headers,
+                    req=req,
+                    timeout_seconds=timeout_seconds,
+                    client=client,
+                    queue_priority=queue_priority,
+                )
                 break
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc

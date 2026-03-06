@@ -303,6 +303,102 @@ for pair in pairs:
         print(f"✗ {pair}: {response.status_code} - {response.text}")
 ```
 
+## Restoring from a Database Backup
+
+Pre-made backups live in `backups/`. Each backup folder contains:
+
+- `datasets.jsonl` — one JSON object per line, one row per dataset
+- `events.jsonl` — one JSON object per line, one row per event
+- `arena_dataset_ids.txt` — comma-separated UUIDs of spot datasets used by Arena
+- `manifest.json` — metadata (row counts, categories, timestamp)
+
+### Prerequisites
+
+- Postgres running and the `v4t` database created (tables must exist)
+- `psql` available on your PATH
+- Backend DB connection: `postgresql://postgres:postgres@localhost:5433/v4t`
+
+### Step 1: Pick a backup
+
+```bash
+ls backups/
+# e.g. db-reset-20260306T170621Z
+BACKUP=backups/db-reset-20260306T170621Z
+```
+
+### Step 2: Clear existing data (optional)
+
+If you want a clean slate, truncate the tables first:
+
+```sql
+psql "postgresql://postgres:postgres@localhost:5433/v4t" -c "
+  TRUNCATE events, run_datasets, runs, datasets CASCADE;
+"
+```
+
+### Step 3: Load datasets
+
+```bash
+cat "$BACKUP/datasets.jsonl" | psql "postgresql://postgres:postgres@localhost:5433/v4t" -c "
+  CREATE TEMP TABLE _ds (data jsonb);
+  COPY _ds(data) FROM STDIN;
+  INSERT INTO datasets
+    SELECT (data->>'dataset_id')::uuid,
+           data->>'category',
+           data->>'source',
+           (data->>'start')::timestamptz,
+           (data->>'end')::timestamptz,
+           (data->'params')::jsonb,
+           data->>'status',
+           data->>'error',
+           (data->>'created_at')::timestamptz,
+           (data->>'updated_at')::timestamptz
+    FROM _ds
+  ON CONFLICT DO NOTHING;
+"
+```
+
+### Step 4: Load events
+
+```bash
+cat "$BACKUP/events.jsonl" | psql "postgresql://postgres:postgres@localhost:5433/v4t" -c "
+  CREATE TEMP TABLE _ev (data jsonb);
+  COPY _ev(data) FROM STDIN;
+  INSERT INTO events
+    SELECT (data->>'event_id')::uuid,
+           data->>'event_type',
+           data->>'source',
+           (data->>'schema_version')::int,
+           (data->>'observed_at')::timestamptz,
+           (data->>'event_time')::timestamptz,
+           data->>'dedupe_key',
+           (data->>'dataset_id')::uuid,
+           (data->>'run_id')::uuid,
+           (data->'payload')::jsonb,
+           (data->'raw_payload')::jsonb,
+           (data->>'ingested_at')::timestamptz
+    FROM _ev
+  ON CONFLICT DO NOTHING;
+"
+```
+
+### Step 5: Set arena dataset IDs
+
+Copy the contents of `arena_dataset_ids.txt` into your `.env`:
+
+```bash
+echo "V4T_ARENA_DATASET_IDS=$(cat $BACKUP/arena_dataset_ids.txt)" >> ../vibe4trading-backend/.env
+```
+
+### Step 6: Verify
+
+```bash
+psql "postgresql://postgres:postgres@localhost:5433/v4t" -c "
+  SELECT category, count(*) FROM datasets GROUP BY category;
+  SELECT event_type, count(*) FROM events GROUP BY event_type;
+"
+```
+
 ## See Also
 
 - [Freqtrade Documentation](https://www.freqtrade.io/en/stable/)

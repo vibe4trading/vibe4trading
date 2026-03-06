@@ -9,6 +9,8 @@ from v4t.db.models import LlmCallRow
 
 
 class LlmBudgetTracker:
+    _MAX_CACHE_SIZE = 10_000
+
     def __init__(self) -> None:
         self._blocked_runs: set[tuple[UUID, str]] = set()
         self._blocked_datasets: set[tuple[UUID, str]] = set()
@@ -19,6 +21,9 @@ class LlmBudgetTracker:
         key = (run_id, purpose)
         if key in self._blocked_runs:
             return True
+
+        if len(self._blocked_runs) >= self._MAX_CACHE_SIZE:
+            self._blocked_runs.clear()
 
         cnt = session.execute(
             select(func.count())
@@ -38,6 +43,9 @@ class LlmBudgetTracker:
         key = (dataset_id, purpose)
         if key in self._blocked_datasets:
             return True
+
+        if len(self._blocked_datasets) >= self._MAX_CACHE_SIZE:
+            self._blocked_datasets.clear()
 
         cnt = session.execute(
             select(func.count())

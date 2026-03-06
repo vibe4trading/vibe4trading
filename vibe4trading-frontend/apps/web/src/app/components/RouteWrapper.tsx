@@ -2,6 +2,8 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
+
+import { NewRunProvider } from "./NewRunProvider";
 import { SiteHeader } from "./SiteHeader";
 
 export function RouteWrapper({ children }: { children: React.ReactNode }) {
@@ -17,9 +19,11 @@ export function RouteWrapper({ children }: { children: React.ReactNode }) {
     }, [isHome]);
 
     return (
-        <div className={isHome ? "home-canvas" : "canvas"}>
-            <SiteHeader isHome={isHome} />
-            {children}
-        </div>
+        <NewRunProvider>
+            <div className={isHome ? "home-canvas" : "canvas"}>
+                <SiteHeader isHome={isHome} />
+                {children}
+            </div>
+        </NewRunProvider>
     );
 }

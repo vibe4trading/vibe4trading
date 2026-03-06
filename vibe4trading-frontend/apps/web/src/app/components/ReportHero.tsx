@@ -1,5 +1,5 @@
 import React from "react";
-import { RunOut, SummaryOut } from "../lib/v4t";
+import { RunOut } from "../lib/v4t";
 
 function fmtDate(iso: string | null) {
     if (!iso) return "–";

@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 PayloadDict = dict[str, Any]
 
 
-class EventEnvelopeV1(BaseModel):
+class EventEnvelope(BaseModel):
     """Canonical event envelope stored in the append-only event log."""
 
     model_config = ConfigDict(extra="forbid")
@@ -31,7 +31,7 @@ class EventEnvelopeV1(BaseModel):
     raw_payload: dict[str, Any] | None = None
 
 
-def make_event_v1(
+def make_event(
     *,
     event_type: str,
     source: str,
@@ -42,8 +42,8 @@ def make_event_v1(
     dataset_id: UUID | None = None,
     run_id: UUID | None = None,
     raw_payload: dict[str, Any] | None = None,
-) -> EventEnvelopeV1:
-    return EventEnvelopeV1(
+) -> EventEnvelope:
+    return EventEnvelope(
         event_type=event_type,
         source=source,
         observed_at=observed_at,

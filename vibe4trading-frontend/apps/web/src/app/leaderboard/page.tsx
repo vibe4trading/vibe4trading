@@ -65,9 +65,12 @@ export default function LeaderboardPage() {
             );
 
             setEntries(lbRes);
-            if (lbRes.length > 0 && !selectedId) {
-                setSelectedId(lbRes[0].submission_id);
-            }
+            setSelectedId((current) => {
+                if (current && lbRes.some((entry) => entry.submission_id === current)) {
+                    return current;
+                }
+                return lbRes[0]?.submission_id ?? null;
+            });
         } catch (e) {
             setRefreshError(e instanceof Error ? e.message : String(e));
         } finally {
@@ -121,10 +124,10 @@ export default function LeaderboardPage() {
                             value={marketFilter}
                             onChange={(e) => setMarketFilter(e.target.value)}
                         >
-                            <option value="ALL">ALL MARKETS</option>
+                            <option value="ALL">ALL PAIRS</option>
                             {markets.map((m) => (
                                 <option key={m} value={m}>
-                                    {m}
+                                    {pairName(m)}
                                 </option>
                             ))}
                         </select>
@@ -170,7 +173,7 @@ export default function LeaderboardPage() {
                 <section className="leaderboard-proto block">
                     <header className="lb-head">
                         <div>
-                            <h2>SEASON 1.5 · TOP 100</h2>
+                            <h2>Vibe4Trading · TOP 100</h2>
                             <p>Top models sorted by PnL. Displays up to top 100 based on filters.</p>
                         </div>
                         <div className="lb-head-metrics">
@@ -311,7 +314,7 @@ export default function LeaderboardPage() {
 
                             {/* View run link */}
                             <Link
-                                href={`/runs/${selected.submission_id}`}
+                                href={`/arena/submissions/${selected.submission_id}`}
                                 className="lb-reset-btn"
                                 style={{ textAlign: "center", display: "block", marginTop: "8px", textDecoration: "none", color: "inherit" }}
                             >

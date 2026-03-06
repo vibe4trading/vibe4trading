@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -8,28 +9,31 @@ from sqlalchemy.orm import Session
 
 from v4t.arena.env_dataset_set import load_arena_env_dataset_set
 from v4t.arena.regime_windows import compute_regime_windows
+from v4t.arena.reporting import generate_submission_report
 from v4t.arena.scenario_sets import (
     ScenarioSet,
     ScenarioWindow,
     get_scenario_set,
 )
-from v4t.contracts.payloads import RunFinishedPayloadV1
+from v4t.benchmark.spec import HoldingPeriod, get_risk_profile
+from v4t.contracts.payloads import RunFinishedPayload
 from v4t.contracts.run_config import (
-    DatasetRefsV1,
-    ExecutionConfigV1,
-    ModelConfigV1,
-    PromptConfigV1,
-    PromptMaskingV1,
-    ReplayConfigV1,
-    RunConfigSnapshotV1,
+    DatasetRefs,
+    ExecutionConfig,
+    ModelConfig,
+    PromptConfig,
+    PromptMasking,
+    ReplayConfig,
+    RunConfigSnapshot,
     RunKind,
     RunMode,
     RunVisibility,
-    SchedulerConfigV1,
+    SchedulerConfig,
 )
 from v4t.db.models import (
     ArenaSubmissionRow,
     ArenaSubmissionRunRow,
+    DatasetRow,
     EventRow,
     LlmModelRow,
     RunConfigSnapshotRow,
@@ -37,14 +41,69 @@ from v4t.db.models import (
 )
 from v4t.ingest.dataset_import import import_dataset
 from v4t.orchestrator.replay_run import execute_replay_run
-from v4t.settings import get_settings
+from v4t.settings import get_settings, is_env_model_key
 from v4t.utils.datetime import as_utc, now
 
 DEFAULT_PROMPT_TEXT = "Analyze the market data and decide target exposure."
+ALL_MARKETS_SENTINEL = "benchmark:all"
+
+
+def _compute_fixed_windows(
+    *, start, end, window_hours: int, n_windows: int
+) -> list[ScenarioWindow]:
+    start = as_utc(start)
+    end = as_utc(end)
+    window_len = timedelta(hours=window_hours)
+    latest_start = end - window_len
+    if latest_start < start:
+        raise ValueError("dataset range is too small for benchmark windows")
+    total_hours = int((latest_start - start).total_seconds() // 3600)
+    out: list[ScenarioWindow] = []
+    for idx in range(n_windows):
+        frac = 0.0 if n_windows == 1 else idx / (n_windows - 1)
+        offset_hours = int(total_hours * frac)
+        window_start = start + timedelta(hours=offset_hours)
+        window_end = window_start + window_len
+        out.append(
+            ScenarioWindow(
+                index=idx,
+                label=f"Window {idx + 1}",
+                start=window_start,
+                end=window_end,
+            )
+        )
+    return out
+
+
+def _find_sentiment_dataset(session: Session, *, spot_ds: DatasetRow) -> UUID | None:
+    """Find a sentiment dataset matching the same event window as the spot dataset."""
+    event_id = (spot_ds.params or {}).get("event_id")
+    if not event_id:
+        return None
+
+    rows = (
+        session.execute(
+            select(DatasetRow).where(
+                DatasetRow.category == "sentiment",
+                DatasetRow.source == "tweets",
+                DatasetRow.status == "ready",
+            )
+        )
+        .scalars()
+        .all()
+    )
+    matches = [r for r in rows if (r.params or {}).get("event_id") == event_id]
+    if not matches:
+        return None
+
+    matches.sort(key=lambda row: (as_utc(row.created_at), str(row.dataset_id)), reverse=True)
+    return matches[0].dataset_id
 
 
 def _assert_model_allowed(session: Session, model_key: str) -> None:
     if model_key == "stub":
+        return
+    if is_env_model_key(model_key):
         return
 
     row = (
@@ -66,6 +125,7 @@ def _create_scenario_run(
     submission: ArenaSubmissionRow,
     scenario_set: ScenarioSet,
     window: ScenarioWindow,
+    market_id: str,
     market_dataset_id: UUID,
     sentiment_dataset_id: UUID | None,
 ) -> UUID:
@@ -73,38 +133,57 @@ def _create_scenario_run(
     timestamp = now()
 
     prompt_text = (submission.prompt_vars or {}).get("prompt_text", DEFAULT_PROMPT_TEXT)
+    risk_level = (submission.prompt_vars or {}).get("risk_level")
+    holding_period_raw = (submission.prompt_vars or {}).get("holding_period")
+    system_prompt_override = (submission.prompt_vars or {}).get("system_prompt")
+    decision_schema_version = int((submission.prompt_vars or {}).get("decision_schema_version", 1))
+    risk_profile = get_risk_profile(int(risk_level)) if risk_level is not None else None
+    gross_leverage_cap = (
+        float(risk_profile.max_abs_exposure)
+        if risk_profile is not None
+        else settings.execution_gross_leverage_cap
+    )
+    net_exposure_cap = (
+        float(risk_profile.max_abs_exposure)
+        if risk_profile is not None
+        else settings.execution_net_exposure_cap
+    )
 
-    cfg = RunConfigSnapshotV1(
+    cfg = RunConfigSnapshot(
         mode=RunMode.replay,
+        decision_schema_version=decision_schema_version,
         run_kind=RunKind.tournament,
         visibility=RunVisibility.public
         if submission.visibility == "public"
         else RunVisibility.private,
-        market_id=submission.market_id,
-        model=ModelConfigV1(key=submission.model_key),
-        datasets=DatasetRefsV1(
+        market_id=market_id,
+        risk_level=int(risk_level) if risk_level is not None else None,
+        holding_period=HoldingPeriod(holding_period_raw) if holding_period_raw else None,
+        model=ModelConfig(key=submission.model_key),
+        datasets=DatasetRefs(
             market_dataset_id=market_dataset_id,
             sentiment_dataset_id=sentiment_dataset_id,
         ),
-        scheduler=SchedulerConfigV1(
+        scheduler=SchedulerConfig(
             base_interval_seconds=settings.replay_base_interval_seconds,
             min_interval_seconds=settings.replay_min_interval_seconds,
             price_tick_seconds=settings.replay_price_tick_seconds,
         ),
-        replay=ReplayConfigV1(
+        replay=ReplayConfig(
             pace_seconds_per_base_tick=float(scenario_set.pace_seconds_per_base_tick)
         ),
-        prompt=PromptConfigV1(
+        prompt=PromptConfig(
             prompt_text=prompt_text,
+            system_prompt_override=system_prompt_override,
             lookback_bars=settings.replay_prompt_lookback_bars,
             timeframe=settings.replay_prompt_timeframe,
-            masking=PromptMaskingV1(time_offset_seconds=settings.replay_prompt_time_offset_seconds),
+            masking=PromptMasking(time_offset_seconds=settings.replay_prompt_time_offset_seconds),
         ),
-        execution=ExecutionConfigV1(
+        execution=ExecutionConfig(
             fee_bps=settings.execution_fee_bps,
             initial_equity_quote=settings.execution_initial_equity_quote,
-            gross_leverage_cap=settings.execution_gross_leverage_cap,
-            net_exposure_cap=settings.execution_net_exposure_cap,
+            gross_leverage_cap=gross_leverage_cap,
+            net_exposure_cap=net_exposure_cap,
         ),
     )
 
@@ -115,7 +194,7 @@ def _create_scenario_run(
     run = RunRow(
         kind="tournament",
         visibility=submission.visibility,
-        market_id=submission.market_id,
+        market_id=market_id,
         model_key=submission.model_key,
         config_id=cfg_row.config_id,
         status="pending",
@@ -154,7 +233,7 @@ def _get_run_return_pct(session: Session, *, run_id: UUID) -> Decimal | None:
     ).scalar_one_or_none()
     if row is None:
         return None
-    payload = RunFinishedPayloadV1.model_validate(row.payload)
+    payload = RunFinishedPayload.model_validate(row.payload)
     return Decimal(payload.return_pct)
 
 
@@ -186,113 +265,147 @@ def execute_arena_submission(session: Session, *, submission_id: UUID) -> None:
         if env_set is None:
             raise ValueError("Arena datasets are not configured (set V4T_ARENA_DATASET_IDS)")
 
-        market_datasets = env_set.spot_by_market.get(submission.market_id)
-        if not market_datasets:
-            raise ValueError(f"Arena datasets missing for market_id={submission.market_id}")
-
+        market_ids = (
+            env_set.market_ids
+            if submission.market_id == ALL_MARKETS_SENTINEL
+            else [submission.market_id]
+        )
+        market_windows: list[tuple[str, list[DatasetRow], list[ScenarioWindow]]] = []
         mode = str(submission.scenario_set_key or "").strip()
-        if mode == "env-regimes-v1":
-            if len(market_datasets) != 1:
-                raise ValueError(
-                    f"env-regimes-v1 requires exactly 1 spot dataset for market_id={submission.market_id}"
-                )
-            spot_ds = market_datasets[0]
-            if spot_ds.status != "ready":
-                import_dataset(session, dataset_id=spot_ds.dataset_id)
-                session.refresh(spot_ds)
-            windows = compute_regime_windows(
-                session,
-                dataset_id=spot_ds.dataset_id,
-                market_id=submission.market_id,
-                timeframe=settings.replay_prompt_timeframe,
-                window_hours=12,
-                n_windows=10,
-            )
-        elif len(market_datasets) == 10:
-            windows = []
-            for i, ds in enumerate(market_datasets):
-                scoring_start = (ds.params or {}).get("scoring_start")
-                scoring_end = (ds.params or {}).get("scoring_end")
-                if scoring_start and scoring_end:
-                    from datetime import datetime as _dt
-
-                    w_start = as_utc(_dt.fromisoformat(scoring_start.replace("Z", "+00:00")))
-                    w_end = as_utc(_dt.fromisoformat(scoring_end.replace("Z", "+00:00")))
-                else:
-                    w_start = as_utc(ds.start)
-                    w_end = as_utc(ds.end)
-                windows.append(
-                    ScenarioWindow(
-                        index=i,
-                        label=(ds.params or {}).get("event_name", f"Window {i + 1}"),
-                        start=w_start,
-                        end=w_end,
+        for market_id in market_ids:
+            market_datasets = env_set.spot_by_market.get(market_id)
+            if not market_datasets:
+                raise ValueError(f"Arena datasets missing for market_id={market_id}")
+            if mode == "env-regimes-v1":
+                if len(market_datasets) != 1:
+                    raise ValueError(
+                        f"env-regimes-v1 requires exactly 1 spot dataset for market_id={market_id}"
                     )
+                spot_ds = market_datasets[0]
+                if spot_ds.status != "ready":
+                    import_dataset(session, dataset_id=spot_ds.dataset_id)
+                    session.refresh(spot_ds)
+                windows = compute_regime_windows(
+                    session,
+                    dataset_id=spot_ds.dataset_id,
+                    market_id=market_id,
+                    timeframe=settings.replay_prompt_timeframe,
+                    window_hours=12,
+                    n_windows=10,
                 )
-        elif len(market_datasets) == 1:
-            ds = market_datasets[0]
-            windows = [
-                ScenarioWindow(
-                    index=0,
-                    label="Full Range",
-                    start=as_utc(ds.start),
-                    end=as_utc(ds.end),
+            elif mode == "crypto-benchmark-v1" and len(market_datasets) == 1:
+                spot_ds = market_datasets[0]
+                if spot_ds.status != "ready":
+                    import_dataset(session, dataset_id=spot_ds.dataset_id)
+                    session.refresh(spot_ds)
+                windows = _compute_fixed_windows(
+                    start=spot_ds.start,
+                    end=spot_ds.end,
+                    window_hours=168,
+                    n_windows=10,
                 )
-            ]
-        else:
-            raise ValueError(
-                f"Invalid arena dataset count for market_id={submission.market_id}: {len(market_datasets)}"
-            )
+            elif len(market_datasets) == 10:
+                windows = []
+                for i, ds in enumerate(market_datasets):
+                    scoring_start = (ds.params or {}).get("scoring_start")
+                    scoring_end = (ds.params or {}).get("scoring_end")
+                    if scoring_start and scoring_end:
+                        from datetime import datetime as _dt
 
-        submission.windows_total = int(len(windows))
+                        w_start = as_utc(_dt.fromisoformat(scoring_start.replace("Z", "+00:00")))
+                        w_end = as_utc(_dt.fromisoformat(scoring_end.replace("Z", "+00:00")))
+                    else:
+                        w_start = as_utc(ds.start)
+                        w_end = as_utc(ds.end)
+                    windows.append(
+                        ScenarioWindow(
+                            index=i,
+                            label=(ds.params or {}).get("event_name", f"Window {i + 1}"),
+                            start=w_start,
+                            end=w_end,
+                        )
+                    )
+            elif len(market_datasets) == 1:
+                ds = market_datasets[0]
+                windows = [
+                    ScenarioWindow(
+                        index=0,
+                        label="Full Range",
+                        start=as_utc(ds.start),
+                        end=as_utc(ds.end),
+                    )
+                ]
+            else:
+                raise ValueError(
+                    f"Invalid arena dataset count for market_id={market_id}: {len(market_datasets)}"
+                )
+            market_windows.append((market_id, market_datasets, windows))
+
+        submission.windows_total = int(sum(len(windows) for _, _, windows in market_windows))
         submission.updated_at = now()
         session.commit()
 
-        for w in windows:
-            existing = session.get(ArenaSubmissionRunRow, (submission_id, int(w.index)))
-            if existing is not None:
-                if existing.status == "finished" and existing.return_pct is not None:
-                    completed_returns.append(existing.return_pct)
-                    continue
-                raise ValueError(
-                    f"submission already has an in-progress scenario run: index={w.index}"
+        scenario_offset = 0
+        for market_id, market_datasets, windows in market_windows:
+            for w in windows:
+                scenario_index = scenario_offset + int(w.index)
+                existing = session.get(ArenaSubmissionRunRow, (submission_id, scenario_index))
+                if existing is not None:
+                    if existing.status == "finished" and existing.return_pct is not None:
+                        completed_returns.append(existing.return_pct)
+                        continue
+                    raise ValueError(
+                        f"submission already has an in-progress scenario run: index={scenario_index}"
+                    )
+
+                if len(market_datasets) == 1:
+                    spot_ds = market_datasets[0]
+                else:
+                    spot_ds = market_datasets[int(w.index)]
+                if spot_ds.status != "ready":
+                    import_dataset(session, dataset_id=spot_ds.dataset_id)
+
+                sentiment_ds_id = _find_sentiment_dataset(session, spot_ds=spot_ds)
+                scenario_window = ScenarioWindow(
+                    index=scenario_index,
+                    label=f"{market_id} - {w.label}",
+                    start=w.start,
+                    end=w.end,
                 )
 
-            if len(market_datasets) == 1:
-                spot_ds = market_datasets[0]
-            else:
-                spot_ds = market_datasets[int(w.index)]
-            if spot_ds.status != "ready":
-                import_dataset(session, dataset_id=spot_ds.dataset_id)
+                run_id = _create_scenario_run(
+                    session,
+                    submission=submission,
+                    scenario_set=scenario_set,
+                    window=scenario_window,
+                    market_id=market_id,
+                    market_dataset_id=spot_ds.dataset_id,
+                    sentiment_dataset_id=sentiment_ds_id,
+                )
 
-            run_id = _create_scenario_run(
-                session,
-                submission=submission,
-                scenario_set=scenario_set,
-                window=w,
-                market_dataset_id=spot_ds.dataset_id,
-                sentiment_dataset_id=None,
-            )
+                execute_replay_run(session, run_id=run_id, finalize_submission_report=False)
 
-            execute_replay_run(session, run_id=run_id)
+                ret = _get_run_return_pct(session, run_id=run_id)
+                if ret is None:
+                    raise ValueError(f"scenario run missing run.finished: run_id={run_id}")
 
-            ret = _get_run_return_pct(session, run_id=run_id)
-            if ret is None:
-                raise ValueError(f"scenario run missing run.finished: run_id={run_id}")
+                link = session.get(ArenaSubmissionRunRow, (submission_id, scenario_index))
+                if link is not None:
+                    run = session.get(RunRow, run_id)
+                    if link.status != "finished" or link.return_pct is None:
+                        link.status = "finished"
+                        link.return_pct = ret
+                    if link.started_at is None and run is not None:
+                        link.started_at = run.started_at
+                    if run is not None:
+                        link.ended_at = run.ended_at
+                    link.updated_at = now()
 
-            link = session.get(ArenaSubmissionRunRow, (submission_id, int(w.index)))
-            if link is not None:
-                link.status = "finished"
-                link.return_pct = ret
-                run = session.get(RunRow, run_id)
-                link.started_at = run.started_at if run is not None else None
-                link.ended_at = run.ended_at if run is not None else None
-                link.updated_at = now()
-
-            completed_returns.append(ret)
-            submission.windows_completed = int(len(completed_returns))
-            submission.updated_at = now()
-            session.commit()
+                completed_returns.append(ret)
+                submission.windows_completed = int(len(completed_returns))
+                submission.updated_at = now()
+                session.commit()
+            scenario_offset += len(windows)
 
         if not completed_returns:
             raise ValueError("tournament produced no window results")
@@ -308,6 +421,7 @@ def execute_arena_submission(session: Session, *, submission_id: UUID) -> None:
         submission.ended_at = now()
         submission.updated_at = now()
         session.commit()
+        generate_submission_report(session, submission_id=submission_id)
     except Exception as exc:  # noqa: BLE001
         try:
             session.rollback()

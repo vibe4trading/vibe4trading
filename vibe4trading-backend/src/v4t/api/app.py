@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from v4t.api.errors import http_exception_handler
+from v4t.api.routes.admin_model_access import router as admin_model_access_router
 from v4t.api.routes.admin_models import router as admin_models_router
 from v4t.api.routes.arena import router as arena_router
 from v4t.api.routes.datasets import router as datasets_router
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     app.include_router(live_router)
     app.include_router(arena_router)
     app.include_router(admin_models_router)
+    app.include_router(admin_model_access_router)
     app.include_router(datasets_router)
     app.include_router(runs_router)
 

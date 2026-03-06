@@ -6,15 +6,15 @@ from uuid import uuid4
 import pytest
 
 from v4t.contracts.events import (
-    EventEnvelopeV1,
-    make_event_v1,
+    EventEnvelope,
+    make_event,
     register_payload_upcaster,
     upcast_payload,
 )
 
 
-def test_event_envelope_v1_basic() -> None:
-    event = EventEnvelopeV1(
+def test_event_envelope_basic() -> None:
+    event = EventEnvelope(
         event_type="test.event",
         source="test",
         observed_at=datetime.now(UTC),
@@ -26,9 +26,9 @@ def test_event_envelope_v1_basic() -> None:
     assert event.schema_version == 1
 
 
-def test_make_event_v1() -> None:
+def test_make_event() -> None:
     now = datetime.now(UTC)
-    event = make_event_v1(
+    event = make_event(
         event_type="test.event",
         source="test",
         observed_at=now,
@@ -41,7 +41,7 @@ def test_make_event_v1() -> None:
 
 def test_event_with_dataset_id() -> None:
     dataset_id = uuid4()
-    event = make_event_v1(
+    event = make_event(
         event_type="test.event",
         source="test",
         observed_at=datetime.now(UTC),

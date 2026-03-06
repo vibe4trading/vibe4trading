@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal
@@ -9,20 +10,28 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from v4t.contracts.events import make_event_v1
-from v4t.contracts.numbers import decimal_to_str
+from v4t.benchmark.spec import (
+    PositionMode,
+    benchmark_system_prompt,
+    build_strategy_prompt,
+    get_risk_profile,
+)
+from v4t.contracts.events import make_event
+from v4t.contracts.numbers import decimal_to_str, parse_decimal
 from v4t.contracts.payloads import (
-    LlmScheduleRequestPayloadV1,
-    MarketOHLCVPayloadV1,
-    PortfolioSnapshotPayloadV1,
-    RunFailedPayloadV1,
-    RunFinishedPayloadV1,
-    RunStartedPayloadV1,
-    SentimentItemSummaryPayloadV1,
-    SimFillPayloadV1,
+    LlmDecisionOutputV1,
+    LlmDecisionOutputV2,
+    LlmScheduleRequestPayload,
+    MarketOHLCVPayload,
+    PortfolioSnapshotPayload,
+    RunFailedPayload,
+    RunFinishedPayload,
+    RunStartedPayload,
+    SentimentItemSummaryPayload,
+    SimFillPayload,
     SimFillSide,
 )
-from v4t.contracts.run_config import RunConfigSnapshotV1, RunMode
+from v4t.contracts.run_config import RunConfigSnapshot, RunMode
 from v4t.db.event_store import append_event
 from v4t.db.models import PortfolioSnapshotRow, RunConfigSnapshotRow, RunRow
 from v4t.orchestrator.prompt_builder import build_default_prompt_context
@@ -30,11 +39,46 @@ from v4t.utils.datetime import ceil_seconds, ceil_time, now
 
 _logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
+LEGACY_SYSTEM_PROMPT = (
     "You are a trading decision engine. "
     "Return ONLY a valid JSON object matching schema_version=1. "
     "Spot is long-only; target exposure must be between 0 and 1."
 )
+
+
+@dataclass(frozen=True)
+class ValidatedDecision:
+    accepted: bool
+    reject_reason: str | None
+    effective_target: Decimal
+    decision_schema_version: int
+    mode: PositionMode
+    leverage: int
+    stop_loss_pct: Decimal | None
+    take_profit_pct: Decimal | None
+    next_check_seconds: int | None
+    confidence: Decimal | None
+    key_signals: list[str]
+    rationale: str | None
+
+
+def get_system_prompt(cfg: RunConfigSnapshot) -> str:
+    if int(cfg.decision_schema_version) == 2:
+        return benchmark_system_prompt(cfg.prompt.system_prompt_override)
+    override = (cfg.prompt.system_prompt_override or "").strip()
+    if override:
+        return override
+    return LEGACY_SYSTEM_PROMPT
+
+
+def get_strategy_prompt(cfg: RunConfigSnapshot) -> str:
+    if int(cfg.decision_schema_version) == 2:
+        return build_strategy_prompt(
+            base_prompt=cfg.prompt.prompt_text,
+            risk_level=cfg.risk_level,
+            holding_period=cfg.holding_period,
+        )
+    return cfg.prompt.prompt_text
 
 
 def load_run_and_config(
@@ -42,7 +86,7 @@ def load_run_and_config(
     *,
     run_id: UUID,
     expected_mode: RunMode | str | None = None,
-) -> tuple[RunRow, RunConfigSnapshotV1]:
+) -> tuple[RunRow, RunConfigSnapshot]:
     run = session.get(RunRow, run_id)
     if run is None:
         raise ValueError(f"run_id not found: {run_id}")
@@ -51,7 +95,7 @@ def load_run_and_config(
     if cfg_row is None:
         raise ValueError(f"config_id not found: {run.config_id}")
 
-    cfg = RunConfigSnapshotV1.model_validate(cfg_row.config)
+    cfg = RunConfigSnapshot.model_validate(cfg_row.config)
 
     if expected_mode is not None:
         expected_value = str(expected_mode)
@@ -76,13 +120,13 @@ def mark_run_started(
 
     append_event(
         session,
-        ev=make_event_v1(
+        ev=make_event(
             event_type="run.started",
             source=source,
             observed_at=now(),
             dedupe_key="started",
             run_id=run_id,
-            payload=RunStartedPayloadV1(run_id=run_id, mode=mode).model_dump(mode="json"),
+            payload=RunStartedPayload(run_id=run_id, mode=mode).model_dump(mode="json"),
         ),
         dedupe_scope="run",
     )
@@ -104,7 +148,7 @@ def mark_run_finished(
     source: str,
     return_pct: Decimal,
     summary_call_id: UUID | None,
-    summary_text: str,
+    summary_text: str | None,
 ) -> None:
     run.status = "finished"
     run.ended_at = now()
@@ -114,13 +158,13 @@ def mark_run_finished(
 
     append_event(
         session,
-        ev=make_event_v1(
+        ev=make_event(
             event_type="run.finished",
             source=source,
             observed_at=now(),
             dedupe_key="finished",
             run_id=run_id,
-            payload=RunFinishedPayloadV1(
+            payload=RunFinishedPayload(
                 run_id=run_id,
                 return_pct=decimal_to_str(return_pct),
             ).model_dump(mode="json"),
@@ -145,13 +189,13 @@ def mark_run_failed(
 
     append_event(
         session,
-        ev=make_event_v1(
+        ev=make_event(
             event_type="run.failed",
             source=source,
             observed_at=now(),
             dedupe_key="failed",
             run_id=run_id,
-            payload=RunFailedPayloadV1(run_id=run_id, error=error).model_dump(mode="json"),
+            payload=RunFailedPayload(run_id=run_id, error=error).model_dump(mode="json"),
         ),
         dedupe_scope="run",
     )
@@ -203,12 +247,13 @@ def build_prompt_context(
     mask_offset: timedelta,
     timeframe: str | None,
     latest_price: tuple[datetime, str] | None,
-    ohlcv_bars: list[MarketOHLCVPayloadV1] | None,
+    ohlcv_bars: list[MarketOHLCVPayload] | None,
     closes: list[str],
     features: dict | None,
-    sentiment_summaries: list[SentimentItemSummaryPayloadV1],
+    sentiment_summaries: list[SentimentItemSummaryPayload],
     portfolio_view: dict[str, str],
     memory: list[dict],
+    decision_schema_version: int = 1,
 ) -> dict[str, Any]:
     prompt_tick_time = tick_time + mask_offset
     recent_summaries = [s for s in sentiment_summaries if s.item_time <= tick_time]
@@ -233,6 +278,7 @@ def build_prompt_context(
         portfolio=portfolio_view,
         memory=mask_decision_memory(memory, mask_offset),
     )
+    ctx["decision_schema_version"] = int(decision_schema_version)
 
     if timeframe:
         ctx["timeframe"] = timeframe
@@ -268,47 +314,121 @@ def build_prompt_context(
     return ctx
 
 
-def validate_decision_targets(
+def validate_decision(
     *,
-    targets: dict[str, Decimal] | None,
+    decision: LlmDecisionOutputV1 | LlmDecisionOutputV2,
     market_id: str,
     last_target: Decimal,
+    last_mode: PositionMode = PositionMode.spot,
+    last_leverage: int = 1,
     gross_leverage_cap: Decimal,
     net_exposure_cap: Decimal,
     call_error: str | None,
-) -> tuple[bool, str | None, Decimal]:
+    risk_level: int | None,
+) -> ValidatedDecision:
     accepted = True
     reject_reason: str | None = None
     effective_target = last_target
+    effective_mode = last_mode
+    effective_leverage = last_leverage
+    stop_loss_pct: Decimal | None = None
+    take_profit_pct: Decimal | None = None
 
     if call_error is not None:
         accepted = False
         reject_reason = f"llm_error: {call_error}"[:300]
 
-    if targets:
-        if set(targets.keys()) - {market_id}:
+    if int(decision.schema_version) == 2:
+        v2 = decision if isinstance(decision, LlmDecisionOutputV2) else None
+        if v2 is None:
             accepted = False
-            reject_reason = "targets contains unknown market_id"
+            reject_reason = "invalid decision schema"
         else:
-            proposed = targets.get(market_id)
-            if proposed is None:
-                effective_target = last_target
-            elif proposed < 0:
+            profile = get_risk_profile(risk_level)
+            proposed_mode = PositionMode(v2.mode)
+            proposed_target = Decimal(v2.target)
+            proposed_leverage = int(v2.leverage)
+            if profile is not None:
+                if proposed_mode not in profile.mode_allowed:
+                    accepted = False
+                    reject_reason = "mode not allowed for risk_level"
+                elif proposed_mode == PositionMode.spot and proposed_leverage != 1:
+                    accepted = False
+                    reject_reason = "spot leverage must be 1"
+                elif proposed_mode == PositionMode.spot and proposed_target < 0:
+                    accepted = False
+                    reject_reason = "spot exposure must be >= 0"
+                elif proposed_mode == PositionMode.spot and proposed_target > Decimal("1"):
+                    accepted = False
+                    reject_reason = "spot exposure must be <= 1"
+                elif abs(proposed_target) > profile.max_abs_exposure:
+                    accepted = False
+                    reject_reason = "exposure exceeds risk_level cap"
+                elif proposed_leverage > profile.max_leverage:
+                    accepted = False
+                    reject_reason = "leverage exceeds risk_level cap"
+                elif proposed_target < 0 and not profile.short_allowed:
+                    accepted = False
+                    reject_reason = "shorting not allowed for risk_level"
+                elif abs(proposed_target) > Decimal(proposed_leverage):
+                    accepted = False
+                    reject_reason = "exposure exceeds leverage"
+            if accepted:
+                if abs(proposed_target) > gross_leverage_cap:
+                    accepted = False
+                    reject_reason = "exposure exceeds gross_leverage_cap"
+                elif abs(proposed_target) > net_exposure_cap:
+                    accepted = False
+                    reject_reason = "exposure exceeds net_exposure_cap"
+                else:
+                    effective_target = proposed_target
+                    effective_mode = proposed_mode
+                    effective_leverage = proposed_leverage
+                    stop_loss_pct = v2.stop_loss_pct
+                    take_profit_pct = v2.take_profit_pct
+    else:
+        targets = decision.targets if isinstance(decision, LlmDecisionOutputV1) else None
+        if targets:
+            if set(targets.keys()) - {market_id}:
                 accepted = False
-                reject_reason = "spot exposure must be >= 0"
-            elif proposed > gross_leverage_cap:
-                accepted = False
-                reject_reason = "exposure exceeds gross_leverage_cap"
-            elif proposed > net_exposure_cap:
-                accepted = False
-                reject_reason = "exposure exceeds net_exposure_cap"
+                reject_reason = "targets contains unknown market_id"
             else:
-                effective_target = proposed
+                proposed = targets.get(market_id)
+                if proposed is None:
+                    effective_target = last_target
+                elif proposed < 0:
+                    accepted = False
+                    reject_reason = "spot exposure must be >= 0"
+                elif proposed > gross_leverage_cap:
+                    accepted = False
+                    reject_reason = "exposure exceeds gross_leverage_cap"
+                elif proposed > net_exposure_cap:
+                    accepted = False
+                    reject_reason = "exposure exceeds net_exposure_cap"
+                else:
+                    effective_target = proposed
 
     if not accepted:
         effective_target = last_target
+        effective_mode = last_mode
+        effective_leverage = last_leverage
+        stop_loss_pct = None
+        take_profit_pct = None
 
-    return accepted, reject_reason, effective_target
+    return ValidatedDecision(
+        accepted=accepted,
+        reject_reason=reject_reason,
+        effective_target=effective_target,
+        decision_schema_version=int(decision.schema_version),
+        mode=effective_mode,
+        leverage=effective_leverage,
+        stop_loss_pct=stop_loss_pct,
+        take_profit_pct=take_profit_pct,
+        next_check_seconds=decision.next_check_seconds,
+        confidence=decision.confidence,
+        key_signals=list(decision.key_signals),
+        rationale=decision.rationale,
+    )
 
 
 def choose_tick_time(next_base_tick: datetime, next_early_tick: datetime | None) -> datetime:
@@ -363,13 +483,13 @@ def append_schedule_request_event(
 ) -> None:
     append_event(
         session,
-        ev=make_event_v1(
+        ev=make_event(
             event_type="llm.schedule_request",
             source=source,
             observed_at=tick_time,
             dedupe_key=tick_time.isoformat(),
             run_id=run_id,
-            payload=LlmScheduleRequestPayloadV1(
+            payload=LlmScheduleRequestPayload(
                 tick_time=tick_time,
                 requested_seconds=requested_seconds,
                 honored_seconds=honored_seconds,
@@ -396,9 +516,10 @@ def append_sim_fill_event(
     run_id: UUID,
     market_id: str,
     fill: Any,
+    fill_index: int = 0,
 ) -> None:
     side = SimFillSide.buy if fill.qty_base > 0 else SimFillSide.sell
-    fill_payload = SimFillPayloadV1(
+    fill_payload = SimFillPayload(
         tick_time=tick_time,
         market_id=market_id,
         side=side,
@@ -406,15 +527,18 @@ def append_sim_fill_event(
         price=decimal_to_str(fill.price),
         notional_quote=decimal_to_str(fill.notional_quote),
         fee_quote=decimal_to_str(fill.fee_quote),
+        reason=getattr(fill, "reason", None),
+        position_mode=getattr(fill, "position_mode", None),
+        leverage=getattr(fill, "leverage", None),
     ).model_dump(mode="json")
 
     append_event(
         session,
-        ev=make_event_v1(
+        ev=make_event(
             event_type="sim.fill",
             source=source,
             observed_at=tick_time,
-            dedupe_key=f"{tick_time.isoformat()}:{market_id}",
+            dedupe_key=f"{tick_time.isoformat()}:{market_id}:{fill_index}",
             run_id=run_id,
             payload=fill_payload,
         ),
@@ -432,16 +556,34 @@ def write_portfolio_snapshot(
     equity: Decimal,
     cash: Decimal,
     position_base: Decimal,
+    extra_payload: dict[str, str | int | None] | None = None,
 ) -> None:
-    snap_payload = PortfolioSnapshotPayloadV1(
+    normalized_extra = dict(extra_payload or {})
+    for field in {
+        "position_qty_base",
+        "entry_price",
+        "current_price",
+        "liquidation_price",
+        "unrealized_pnl",
+        "unrealized_pnl_pct",
+        "funding_cost_accumulated",
+        "stop_loss_price",
+        "take_profit_price",
+    }:
+        value = normalized_extra.get(field)
+        if isinstance(value, str):
+            normalized_extra[field] = decimal_to_str(parse_decimal(value))
+
+    snap_payload = PortfolioSnapshotPayload(
         snapshot_time=tick_time,
         equity_quote=decimal_to_str(equity),
         cash_quote=decimal_to_str(cash),
         positions_base={market_id: decimal_to_str(position_base)},
+        **normalized_extra,
     ).model_dump(mode="json")
     append_event(
         session,
-        ev=make_event_v1(
+        ev=make_event(
             event_type="portfolio.snapshot",
             source=source,
             observed_at=tick_time,
@@ -475,12 +617,12 @@ def write_portfolio_snapshot(
 
 
 def select_usable_bars(
-    ohlcv_bars: list[MarketOHLCVPayloadV1],
+    ohlcv_bars: list[MarketOHLCVPayload],
     *,
     tick_time: datetime,
     lookback_bars: int,
     timeframe: str | None,
-) -> list[MarketOHLCVPayloadV1]:
+) -> list[MarketOHLCVPayload]:
     usable_bars = [
         b
         for b in ohlcv_bars

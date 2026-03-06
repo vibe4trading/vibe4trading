@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
 
 const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
 
@@ -19,8 +20,21 @@ async function proxy(request: NextRequest, params: { path: string[] }) {
   };
   const contentType = request.headers.get("content-type");
   if (contentType) headers["content-type"] = contentType;
-  const auth = request.headers.get("authorization");
-  if (auth) headers["authorization"] = auth;
+  
+  const jwt = await getToken({ req: request, secret: process.env.AUTH_SECRET });
+  const accessToken = typeof jwt?.accessToken === "string" ? jwt.accessToken : null;
+  const accessTokenExpires =
+    typeof jwt?.accessTokenExpires === "number" ? jwt.accessTokenExpires : null;
+  const hasSessionJwt = jwt !== null;
+  const hasFreshAccessToken =
+    !!accessToken && (!accessTokenExpires || Date.now() < accessTokenExpires - 30_000);
+
+  if (hasFreshAccessToken && accessToken) {
+    headers["authorization"] = `Bearer ${accessToken}`;
+  } else if (!hasSessionJwt) {
+    const auth = request.headers.get("authorization");
+    if (auth) headers["authorization"] = auth;
+  }
 
   const init: RequestInit = {
     method: request.method,

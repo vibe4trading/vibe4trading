@@ -8,18 +8,19 @@ from sqlalchemy.orm import Session
 from v4t.api.deps import get_db
 from v4t.api.routes.runs import to_out
 from v4t.api.schemas import LiveRunCreateRequest, LiveRunOut, RunOut
-from v4t.api.utils import assert_model_predefined, now
+from v4t.api.utils import assert_model_selectable, now
 from v4t.auth.deps import get_current_user
+from v4t.benchmark.spec import get_risk_profile
 from v4t.contracts.run_config import (
-    DatasetRefsV1,
-    ExecutionConfigV1,
-    LiveConfigV1,
-    ModelConfigV1,
-    PromptConfigV1,
-    PromptMaskingV1,
-    RunConfigSnapshotV1,
+    DatasetRefs,
+    ExecutionConfig,
+    LiveConfig,
+    ModelConfig,
+    PromptConfig,
+    PromptMasking,
+    RunConfigSnapshot,
     RunMode,
-    SchedulerConfigV1,
+    SchedulerConfig,
 )
 from v4t.db.models import RunConfigSnapshotRow, RunRow, UserRow
 from v4t.jobs.repo import dispatch_and_update_job, enqueue_job
@@ -42,7 +43,7 @@ def _find_latest_live_run(db: Session) -> RunRow | None:
     )
     for run_row, cfg_row in results:
         try:
-            cfg = RunConfigSnapshotV1.model_validate(cfg_row.config)
+            cfg = RunConfigSnapshot.model_validate(cfg_row.config)
         except Exception:
             continue
         if cfg.mode == RunMode.live:
@@ -60,10 +61,10 @@ def get_live_run(db: Session = Depends(get_db)) -> LiveRunOut:
 def start_live_run(
     req: LiveRunCreateRequest,
     db: Session = Depends(get_db),
-    _user: UserRow = Depends(get_current_user),
+    user: UserRow = Depends(get_current_user),
 ) -> RunOut:
     settings = get_settings()
-    assert_model_predefined(db, req.model_key)
+    assert_model_selectable(db, user, req.model_key)
 
     existing = _find_latest_live_run(db)
     if existing is not None and existing.status == "running" and not req.force_restart:
@@ -74,7 +75,7 @@ def start_live_run(
         existing.updated_at = now()
         db.flush()
 
-    live_cfg = LiveConfigV1(
+    live_cfg = LiveConfig(
         source=req.live_source,
         chain_id=req.chain_id,
         pair_id=req.pair_id,
@@ -83,28 +84,44 @@ def start_live_run(
     if live_cfg.source == "dexscreener" and (not live_cfg.chain_id or not live_cfg.pair_id):
         raise HTTPException(status_code=400, detail="dexscreener live requires chain_id + pair_id")
 
-    cfg = RunConfigSnapshotV1(
+    risk_profile = get_risk_profile(req.risk_level) if req.decision_schema_version == 2 else None
+    gross_leverage_cap = (
+        float(risk_profile.max_abs_exposure)
+        if risk_profile is not None
+        else settings.execution_gross_leverage_cap
+    )
+    net_exposure_cap = (
+        float(risk_profile.max_abs_exposure)
+        if risk_profile is not None
+        else settings.execution_net_exposure_cap
+    )
+
+    cfg = RunConfigSnapshot(
         mode=RunMode.live,
+        decision_schema_version=req.decision_schema_version,
         market_id=req.market_id,
-        model=ModelConfigV1(key=req.model_key),
-        datasets=DatasetRefsV1(market_dataset_id=None, sentiment_dataset_id=None),
+        risk_level=req.risk_level,
+        holding_period=req.holding_period,
+        model=ModelConfig(key=req.model_key),
+        datasets=DatasetRefs(market_dataset_id=None, sentiment_dataset_id=None),
         live=live_cfg,
-        scheduler=SchedulerConfigV1(
+        scheduler=SchedulerConfig(
             base_interval_seconds=settings.live_base_interval_seconds,
             min_interval_seconds=settings.live_min_interval_seconds,
             price_tick_seconds=settings.live_price_tick_seconds,
         ),
-        prompt=PromptConfigV1(
+        prompt=PromptConfig(
             prompt_text=req.prompt_text,
+            system_prompt_override=req.system_prompt,
             lookback_bars=settings.live_prompt_lookback_bars,
             timeframe=settings.live_prompt_timeframe,
-            masking=PromptMaskingV1(time_offset_seconds=settings.live_prompt_time_offset_seconds),
+            masking=PromptMasking(time_offset_seconds=settings.live_prompt_time_offset_seconds),
         ),
-        execution=ExecutionConfigV1(
+        execution=ExecutionConfig(
             fee_bps=settings.execution_fee_bps,
             initial_equity_quote=settings.execution_initial_equity_quote,
-            gross_leverage_cap=settings.execution_gross_leverage_cap,
-            net_exposure_cap=settings.execution_net_exposure_cap,
+            gross_leverage_cap=gross_leverage_cap,
+            net_exposure_cap=net_exposure_cap,
         ),
     )
 
@@ -117,6 +134,7 @@ def start_live_run(
         market_id=req.market_id,
         model_key=req.model_key,
         config_id=cfg_row.config_id,
+        owner_user_id=user.user_id,
         status="pending",
         created_at=timestamp,
         updated_at=timestamp,
@@ -131,6 +149,7 @@ def start_live_run(
     try:
         dispatch_and_update_job(db, job)
     except Exception:
+        db.refresh(run)
         run.status = "failed"
         db.commit()
 

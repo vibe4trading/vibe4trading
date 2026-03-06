@@ -1,22 +1,22 @@
 from __future__ import annotations
 
 import math
-import structlog
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from v4t.arena.scenario_sets import ScenarioWindow
-from v4t.contracts.payloads import MarketOHLCVPayloadV1
+from v4t.contracts.payloads import MarketOHLCVPayload
 from v4t.db.models import EventRow
+from v4t.utils.datetime import as_utc
 
 _logger = structlog.get_logger()
-from v4t.utils.datetime import as_utc
 
 
 def _parse_timeframe(timeframe: str) -> timedelta:
@@ -105,7 +105,7 @@ def _candidate_features(
 
 def _load_ohlcv_bars(
     session: Session, *, dataset_id: UUID, market_id: str, timeframe: str
-) -> list[MarketOHLCVPayloadV1]:
+) -> list[MarketOHLCVPayload]:
     rows = list(
         session.execute(
             select(EventRow)
@@ -116,10 +116,10 @@ def _load_ohlcv_bars(
         .all()
     )
 
-    out: list[MarketOHLCVPayloadV1] = []
+    out: list[MarketOHLCVPayload] = []
     for r in rows:
         try:
-            b = MarketOHLCVPayloadV1.model_validate(r.payload)
+            b = MarketOHLCVPayload.model_validate(r.payload)
         except Exception:
             _logger.warning("skipping unparseable OHLCV event", event_id=r.event_id, exc_info=True)
             continue

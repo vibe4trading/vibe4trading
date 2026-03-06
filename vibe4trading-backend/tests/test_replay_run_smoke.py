@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from v4t.contracts.run_config import (
-    DatasetRefsV1,
-    ModelConfigV1,
-    PromptConfigV1,
-    RunConfigSnapshotV1,
+    DatasetRefs,
+    ModelConfig,
+    PromptConfig,
+    RunConfigSnapshot,
     RunMode,
-    SchedulerConfigV1,
+    SchedulerConfig,
 )
 from v4t.db.models import DatasetRow, RunConfigSnapshotRow, RunRow
 from v4t.ingest.dataset_import import import_dataset
@@ -46,17 +46,17 @@ def test_execute_replay_run_finishes(db_session) -> None:
     import_dataset(db_session, dataset_id=spot.dataset_id)
     import_dataset(db_session, dataset_id=sent.dataset_id)
 
-    cfg = RunConfigSnapshotV1(
+    cfg = RunConfigSnapshot(
         mode=RunMode.replay,
         market_id="spot:demo:DEMO",
-        model=ModelConfigV1(key="stub"),
-        datasets=DatasetRefsV1(
+        model=ModelConfig(key="stub"),
+        datasets=DatasetRefs(
             market_dataset_id=spot.dataset_id, sentiment_dataset_id=sent.dataset_id
         ),
-        scheduler=SchedulerConfigV1(
+        scheduler=SchedulerConfig(
             base_interval_seconds=3600, min_interval_seconds=60, price_tick_seconds=60
         ),
-        prompt=PromptConfigV1(
+        prompt=PromptConfig(
             prompt_text="Analyze the market and output JSON.",
             lookback_bars=72,
             timeframe="1h",

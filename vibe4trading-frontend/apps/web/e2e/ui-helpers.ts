@@ -205,7 +205,10 @@ export async function createArenaSubmission(
   const body = (await resp.json()) as { submission_id: string };
   expect(body.submission_id).toBeTruthy();
 
-  await expect(page).toHaveURL(new RegExp(`/arena/submissions/${body.submission_id}(/)?$`));
+  await expect(page).toHaveURL(new RegExp(`/arena/submissions/${body.submission_id}/loading(/)?$`));
+  await expect(page).toHaveURL(new RegExp(`/arena/submissions/${body.submission_id}(/)?$`), {
+    timeout: 180_000,
+  });
   const statusValue = page.getByTestId("tournament-run-status");
   await expect(statusValue).toContainText(/finished|failed|cancelled/i, { timeout: 180_000 });
   return body.submission_id;
@@ -225,7 +228,10 @@ export async function summonDemoArenaSubmission(page: Page) {
   const body = (await resp.json()) as { submission_id: string };
   expect(body.submission_id).toBeTruthy();
 
-  await expect(page).toHaveURL(new RegExp(`/arena/submissions/${body.submission_id}(/)?$`));
+  await expect(page).toHaveURL(new RegExp(`/arena/submissions/${body.submission_id}/loading(/)?$`));
+  await expect(page).toHaveURL(new RegExp(`/arena/submissions/${body.submission_id}(/)?$`), {
+    timeout: 180_000,
+  });
   const statusValue = page.getByTestId("tournament-run-status");
   await expect(statusValue).toContainText(/finished|failed|cancelled/i, { timeout: 180_000 });
   return body.submission_id;

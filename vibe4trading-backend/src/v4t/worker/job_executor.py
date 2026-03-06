@@ -12,8 +12,8 @@ import structlog
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from v4t.contracts.events import make_event_v1
-from v4t.contracts.payloads import RunFailedPayloadV1
+from v4t.contracts.events import make_event
+from v4t.contracts.payloads import RunFailedPayload
 from v4t.db.engine import new_session
 from v4t.db.event_store import append_event
 from v4t.db.models import (
@@ -317,13 +317,13 @@ def execute_job_or_raise(job_id: UUID, *, celery_task_id: str | None = None) -> 
                     if terminal:
                         append_event(
                             session,
-                            ev=make_event_v1(
+                            ev=make_event(
                                 event_type="run.failed",
                                 source="worker.celery",
                                 observed_at=_now(),
                                 dedupe_key="failed",
                                 run_id=job2.run_id,
-                                payload=RunFailedPayloadV1(
+                                payload=RunFailedPayload(
                                     run_id=job2.run_id,
                                     error=repr(exc),
                                 ).model_dump(mode="json"),

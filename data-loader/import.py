@@ -9,13 +9,16 @@ BACKEND_URL = "http://localhost:8000"
 
 def import_dataset(feather_path: str, market_id: str, start: str, end: str):
     response = requests.post(
-        f"{BACKEND_URL}/api/datasets",
+        f"{BACKEND_URL}/datasets",
         json={
             "category": "spot",
             "source": "freqtrade",
             "start": start,
             "end": end,
-            "params": {"market_id": market_id, "feather_path": str(Path(feather_path).absolute())},
+            "params": {
+                "market_id": market_id,
+                "feather_path": str(Path(feather_path).absolute()),
+            },
         },
     )
 
@@ -30,7 +33,9 @@ def import_dataset(feather_path: str, market_id: str, start: str, end: str):
 
 if __name__ == "__main__":
     if len(sys.argv) < 5:
-        print("Usage: python import.py <feather_path> <market_id> <start_date> <end_date>")
+        print(
+            "Usage: python import.py <feather_path> <market_id> <start_date> <end_date>"
+        )
         print(
             "Example: python import.py ./data/binance/BTC_USDT-1h.feather spot:binance:BTC/USDT 2024-01-01T00:00:00Z 2024-12-31T23:59:59Z"
         )

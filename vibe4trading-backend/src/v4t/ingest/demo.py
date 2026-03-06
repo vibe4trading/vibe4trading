@@ -7,14 +7,14 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
-from v4t.contracts.events import EventEnvelopeV1, make_event_v1
+from v4t.contracts.events import EventEnvelope, make_event
 from v4t.contracts.numbers import decimal_to_str
 from v4t.contracts.payloads import (
-    MarketOHLCVPayloadV1,
-    MarketPricePayloadV1,
+    MarketOHLCVPayload,
+    MarketPricePayload,
     SentimentItemKind,
-    SentimentItemPayloadV1,
-    SentimentItemSummaryPayloadV1,
+    SentimentItemPayload,
+    SentimentItemSummaryPayload,
 )
 
 
@@ -56,7 +56,7 @@ def generate_demo_spot_events(
     params: DemoSpotParams,
     price_tick_seconds: int = 60,
     ohlcv_timeframe: str = "1h",
-) -> Iterable[EventEnvelopeV1]:
+) -> Iterable[EventEnvelope]:
     """Deterministic synthetic spot dataset for end-to-end demos.
 
     Emits:
@@ -89,11 +89,11 @@ def generate_demo_spot_events(
         t = t + tick
 
     for ts, px in prices_by_minute:
-        payload = MarketPricePayloadV1(
+        payload = MarketPricePayload(
             market_id=params.market_id,
             price=decimal_to_str(px),
         ).model_dump(mode="json")
-        yield make_event_v1(
+        yield make_event(
             event_type="market.price",
             source="ingest.demo",
             observed_at=ts,
@@ -124,7 +124,7 @@ def generate_demo_spot_events(
         volume_base = Decimal(rng.randint(50, 500)) / Decimal(10)
         volume_quote = (volume_base * c).quantize(Decimal("0.01"))
 
-        payload = MarketOHLCVPayloadV1(
+        payload = MarketOHLCVPayload(
             market_id=params.market_id,
             timeframe=ohlcv_timeframe,
             bar_start=bar_start,
@@ -136,7 +136,7 @@ def generate_demo_spot_events(
             volume_base=decimal_to_str(volume_base),
             volume_quote=decimal_to_str(volume_quote),
         ).model_dump(mode="json")
-        yield make_event_v1(
+        yield make_event(
             event_type="market.ohlcv",
             source="ingest.demo",
             observed_at=bar_end,
@@ -156,7 +156,7 @@ def generate_demo_sentiment_events(
     end: datetime,
     market_id: str,
     max_items: int = 12,
-) -> Iterable[EventEnvelopeV1]:
+) -> Iterable[EventEnvelope]:
     """Deterministic synthetic sentiment dataset.
 
     The MVP allows empty sentiment datasets; this generator emits a small number of
@@ -186,7 +186,7 @@ def generate_demo_sentiment_events(
         text = f"{kind}: chatter about {market_id} (demo item {i})"
         url = f"https://example.invalid/{external_id}"
 
-        item_payload = SentimentItemPayloadV1(
+        item_payload = SentimentItemPayload(
             source="demo",
             external_id=external_id,
             item_time=ts,
@@ -194,7 +194,7 @@ def generate_demo_sentiment_events(
             text=text,
             url=url,
         ).model_dump(mode="json")
-        yield make_event_v1(
+        yield make_event(
             event_type="sentiment.item",
             source="ingest.demo",
             observed_at=ts,
@@ -207,7 +207,7 @@ def generate_demo_sentiment_events(
         summary_text = (
             f"Summary: {market_id} mentioned; tone={rng.choice(['bullish', 'neutral', 'bearish'])}."
         )
-        summary_payload = SentimentItemSummaryPayloadV1(
+        summary_payload = SentimentItemSummaryPayload(
             source="demo",
             external_id=external_id,
             item_time=ts,
@@ -215,7 +215,7 @@ def generate_demo_sentiment_events(
             summary_text=summary_text,
             tags=["demo"],
         ).model_dump(mode="json")
-        yield make_event_v1(
+        yield make_event(
             event_type="sentiment.item_summary",
             source="ingest.demo",
             observed_at=ts,

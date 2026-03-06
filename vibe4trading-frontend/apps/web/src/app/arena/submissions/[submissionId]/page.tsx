@@ -4,14 +4,20 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import * as React from "react";
 
+import { useRealtimeRefresh } from "@/app/lib/realtime";
 import {
   apiJson,
-  ArenaSubmissionDetailOut,
   ArenaScenarioRunOut,
+  ArenaSubmissionDetailOut,
 } from "@/app/lib/v4t";
-import { useRealtimeRefresh } from "@/app/lib/realtime";
 
-function fmt(dt: string | null) {
+function pairName(marketId: string | null | undefined) {
+  if (!marketId) return "–";
+  const parts = marketId.split(":");
+  return parts[parts.length - 1] ?? marketId;
+}
+
+function fmt(dt: string | null | undefined) {
   if (!dt) return "–";
   try {
     return new Date(dt).toLocaleString();
@@ -20,25 +26,56 @@ function fmt(dt: string | null) {
   }
 }
 
-function pct(v: number | null) {
-  if (v === null || Number.isNaN(v)) return "–";
-  const s = v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2);
-  return `${s}%`;
+function fmtShort(dt: string | null | undefined) {
+  if (!dt) return "–";
+  try {
+    return new Date(dt).toLocaleString([], {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return dt;
+  }
 }
 
-function pctColor(v: number | null) {
-  if (v === null || Number.isNaN(v)) return "text-zinc-400";
-  return v >= 0
-    ? "text-[color:var(--accent)] drop-shadow-[0_0_6px_var(--accent-glow)] font-bold"
-    : "text-rose-400 drop-shadow-[0_0_6px_rgba(244,63,94,0.15)] font-bold";
+function pct(v: number | null | undefined) {
+  if (v == null || Number.isNaN(v)) return "–";
+  const sign = v >= 0 ? "+" : "";
+  return `${sign}${v.toFixed(2)}%`;
 }
 
-function badge(status: string) {
-  if (status === "finished") return "bg-[color:var(--accent)]/10 text-[color:var(--accent)] border border-[color:var(--accent)]/30 drop-shadow-[0_0_8px_var(--accent-glow)]";
-  if (status === "running") return "bg-[color:var(--accent-2)]/10 text-[color:var(--accent-2)] border border-[color:var(--accent-2)]/30 drop-shadow-[0_0_8px_var(--accent-2-glow)]";
-  if (status === "failed") return "bg-rose-500/10 text-rose-400 border border-rose-500/30 drop-shadow-[0_0_8px_rgba(244,63,94,0.15)]";
-  if (status === "cancelled") return "bg-zinc-500/10 text-zinc-400 border border-zinc-500/30";
-  return "bg-zinc-500/10 text-zinc-400 border border-zinc-500/30";
+function pctTone(v: number | null | undefined) {
+  if (v == null || Number.isNaN(v)) return "neutral";
+  return v >= 0 ? "positive" : "negative";
+}
+
+function fallbackScoreValue(totalReturnPct: number | null, winRatePct: number | null, progressPct: number) {
+  const score = 50 + (totalReturnPct ?? 0) * 1.4 + ((winRatePct ?? 50) - 50) * 0.45 + progressPct * 0.12;
+  return Math.max(0, Math.min(99, Math.round(score)));
+}
+
+function statusMark(status: string, ret: number | null | undefined) {
+  const normalized = status.toLowerCase();
+  if (normalized === "running" || normalized === "pending" || normalized === "submitted") return "warn";
+  if (normalized === "failed" || normalized === "cancelled") return "crash";
+  if (ret == null || Number.isNaN(ret)) return "neutral";
+  if (ret >= 2) return "strong";
+  if (ret >= 0) return "avg";
+  return "weak";
+}
+
+function statusCellClass(status: string) {
+  const normalized = status.toLowerCase();
+  if (normalized === "finished") return "strong";
+  if (normalized === "running" || normalized === "pending" || normalized === "submitted") return "avg";
+  if (normalized === "failed" || normalized === "cancelled") return "weak";
+  return "";
+}
+
+function windowCode(index: number) {
+  return `W${String(index + 1).padStart(2, "0")}`;
 }
 
 function windowLabel(scenarioSetKey: string | null | undefined, idx: number) {
@@ -46,15 +83,215 @@ function windowLabel(scenarioSetKey: string | null | undefined, idx: number) {
     const labels = ["Black Swan", "Bull Run", "Vol Spike", "Low Vol", "Sideways"];
     return labels[idx] ?? `Regime ${idx + 1}`;
   }
+
   if (scenarioSetKey === "env-fullrange-v1") {
     if (idx === 0) return "Full Range";
     return `Window ${idx + 1}`;
   }
+
   return `Window ${idx + 1}`;
 }
 
-function runStatus(r: ArenaScenarioRunOut) {
-  return r.status;
+function curvePoints(ret: number | null | undefined) {
+  const change = ret ?? 0;
+  const anchors = [0, 0.1, 0.28, 0.18, 0.48, 0.63, 0.84, 1];
+  const wobble = [0, -0.7, 0.5, -0.35, 0.6, -0.25, 0.35, 0];
+  const scale = Math.min(1.8, Math.max(0.45, Math.abs(change) / 6));
+  return anchors.map((anchor, index) =>
+    Number((100 + change * anchor + wobble[index] * scale).toFixed(1)),
+  );
+}
+
+type WindowSlot = {
+  index: number;
+  code: string;
+  label: string;
+  run: ArenaScenarioRunOut | null;
+};
+
+type WindowModalProps = {
+  slot: WindowSlot | null;
+  submission: ArenaSubmissionDetailOut | null;
+  onClose: () => void;
+};
+
+function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
+  if (!slot || !submission) return null;
+
+  const run = slot.run;
+  const tone = statusMark(run?.status ?? "pending", run?.return_pct);
+  const curve = curvePoints(run?.return_pct);
+  const path = curve
+    .map((value, index) => {
+      const x = (index / (curve.length - 1)) * 580 + 10;
+      const y = 220 - value;
+      return `${index === 0 ? "M" : "L"} ${x} ${y}`;
+    })
+    .join(" ");
+
+  const area = `M 10 220 ${curve
+    .map((value, index) => {
+      const x = (index / (curve.length - 1)) * 580 + 10;
+      const y = 220 - value;
+      return `L ${x} ${y}`;
+    })
+    .join(" ")} L 590 220 Z`;
+
+  const notes = [
+    {
+      title: "Window opens",
+      badge: fmtShort(run?.window_start ?? null),
+      copy: `${slot.label} starts on ${pairName(submission.market_id)} under ${submission.scenario_set_key}.`,
+      tone: "flat",
+    },
+    {
+      title: run?.status === "finished" ? "Execution closed" : "Execution status",
+      badge: (run?.status ?? "pending").toUpperCase(),
+      copy:
+        run?.status === "finished"
+          ? `The replay window completed with ${pct(run.return_pct)} return.`
+          : `This window is still ${run?.status ?? "pending"} and will refresh automatically.`,
+      tone:
+        run?.return_pct == null ? "flat" : run.return_pct >= 0 ? "win" : "loss",
+    },
+    {
+      title: "Replay link",
+      badge: run ? `${run.run_id.slice(0, 8)}…` : "N/A",
+      copy:
+        submission.visibility === "private"
+          ? "Replay run is hidden for private submissions."
+          : run
+            ? "Open the individual replay run to inspect timeline and decisions."
+            : "Replay run has not been created yet.",
+      tone: "flat",
+    },
+  ] as const;
+
+  return (
+    <div className="event-modal" onClick={onClose}>
+      <article className="event-modal-panel" onClick={(e) => e.stopPropagation()}>
+        <header className="event-modal-head">
+          <div className="modal-head-main">
+            <div className="modal-head-title-row">
+              <span className="event-code-chip">{slot.code}</span>
+              <h3>{slot.label}</h3>
+            </div>
+            <p>
+              {pairName(submission.market_id)} · {submission.scenario_set_key} · {fmt(run?.window_start ?? null)} to{" "}
+              {fmt(run?.window_end ?? null)}
+            </p>
+          </div>
+          <div className="modal-tag-row">
+            <span className="modal-tag">{(run?.status ?? "pending").toUpperCase()}</span>
+            <span className={`modal-tag ${tone === "strong" ? "tone-strong" : tone === "weak" || tone === "crash" ? "tone-weak" : "tone-avg"}`}>
+              Return: {pct(run?.return_pct)}
+            </span>
+            <span className="modal-tag">Run: {run ? `${run.run_id.slice(0, 8)}…` : "pending"}</span>
+          </div>
+          <button className="modal-close-btn" onClick={onClose}>
+            [ESC] CLOSE
+          </button>
+        </header>
+
+        <div className="event-modal-body">
+          <section className="event-modal-left">
+            <div className="modal-card story-card">
+              <h4>Window Overview</h4>
+              <p className="story-subtitle">{slot.label}</p>
+              <p style={{ fontSize: "14px", lineHeight: 1.5 }}>
+                This trial window ran with the exact same prompt, market, and model configuration as the rest of the
+                submission. Use it to compare how the strategy behaved from one historical slice to the next.
+              </p>
+            </div>
+
+            <div className="modal-card">
+              <div className="modal-card-head">
+                <h4>Window Curve</h4>
+                <span>{pct(run?.return_pct)}</span>
+              </div>
+              <div className="curve-meta-strip">
+                <span>Pair: {pairName(submission.market_id)}</span>
+                <span>Status: {(run?.status ?? "pending").toUpperCase()}</span>
+                <span>Submission: {submission.submission_id.slice(0, 8)}…</span>
+              </div>
+
+              <svg
+                viewBox="0 0 600 220"
+                className="modal-curve-svg"
+                preserveAspectRatio="none"
+                style={{ height: "200px" }}
+              >
+                <g className="chart-grid">
+                  <line x1="0" y1="40" x2="600" y2="40" />
+                  <line x1="0" y1="80" x2="600" y2="80" />
+                  <line x1="0" y1="120" x2="600" y2="120" />
+                  <line x1="0" y1="160" x2="600" y2="160" />
+                </g>
+                <path className={`modal-curve-area ${run?.return_pct != null && run.return_pct < 0 ? "neg" : "pos"}`} d={area} />
+                <path className={`modal-curve-line ${run?.return_pct != null && run.return_pct < 0 ? "neg" : "pos"}`} d={path} />
+                {curve.map((value, index) => {
+                  const x = (index / (curve.length - 1)) * 580 + 10;
+                  return <circle key={`${slot.code}-${index}`} cx={x} cy={220 - value} r="4" className="modal-dot base-dot" />;
+                })}
+              </svg>
+            </div>
+          </section>
+
+          <section className="event-modal-right">
+            <div className="modal-card">
+              <h4>Window Stats</h4>
+              <div className="modal-stat-grid">
+                <div className="stat-box" data-tone={tone === "strong" ? "strong" : tone === "weak" || tone === "crash" ? "weak" : "neutral"}>
+                  <span>RETURN</span>
+                  <strong>{pct(run?.return_pct)}</strong>
+                </div>
+                <div className="stat-box" data-tone="neutral">
+                  <span>STATUS</span>
+                  <strong>{(run?.status ?? "pending").toUpperCase()}</strong>
+                </div>
+                <div className="stat-box" data-tone="neutral">
+                  <span>START</span>
+                  <strong>{fmtShort(run?.window_start ?? null)}</strong>
+                </div>
+                <div className="stat-box" data-tone="neutral">
+                  <span>END</span>
+                  <strong>{fmtShort(run?.window_end ?? null)}</strong>
+                </div>
+                <div className="stat-box" data-tone="neutral">
+                  <span>RUN ID</span>
+                  <strong>{run ? `${run.run_id.slice(0, 8)}…` : "–"}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-card nodes-card">
+              <h4>Execution Notes</h4>
+              <ul className="modal-node-list">
+                {notes.map((note) => (
+                  <li key={note.title} className={`node-card ${note.tone}`}>
+                    <div className="node-dot" />
+                    <div className="node-content">
+                      <div className="node-top">
+                        <strong>{note.title}</strong>
+                        <em>{note.badge}</em>
+                      </div>
+                      <p>{note.copy}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              {submission.visibility !== "private" && run ? (
+                <Link href={`/runs/${run.run_id}`} className="leaderboard-entry-link" style={{ marginTop: "12px" }}>
+                  OPEN REPLAY →
+                </Link>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      </article>
+    </div>
+  );
 }
 
 export default function SubmissionDetailPage() {
@@ -64,14 +301,14 @@ export default function SubmissionDetailPage() {
   const [data, setData] = React.useState<ArenaSubmissionDetailOut | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [selectedCode, setSelectedCode] = React.useState<string | null>(null);
+  const [highlightedCode, setHighlightedCode] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiJson<ArenaSubmissionDetailOut>(
-        `/arena/submissions/${submissionId}`,
-      );
+      const res = await apiJson<ArenaSubmissionDetailOut>(`/arena/submissions/${submissionId}`);
       setData(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -92,238 +329,390 @@ export default function SubmissionDetailPage() {
     refresh,
   });
 
+  const slots = React.useMemo<WindowSlot[]>(() => {
+    const total = data?.windows_total ?? data?.runs.length ?? 0;
+    const runs = [...(data?.runs ?? [])].sort((a, b) => a.scenario_index - b.scenario_index);
+    const byIndex = new Map(runs.map((run) => [run.scenario_index, run]));
+    return Array.from({ length: total }, (_, index) => ({
+      index,
+      code: windowCode(index),
+      label: windowLabel(data?.scenario_set_key, index),
+      run: byIndex.get(index) ?? null,
+    }));
+  }, [data]);
+
+  const finishedSlots = React.useMemo(
+    () =>
+      slots.filter(
+        (slot) => slot.run?.status === "finished" && slot.run.return_pct != null && !Number.isNaN(slot.run.return_pct),
+      ),
+    [slots],
+  );
+
+  const positiveSlots = finishedSlots.filter((slot) => (slot.run?.return_pct ?? 0) >= 0);
+  const winRatePct = finishedSlots.length > 0 ? (positiveSlots.length / finishedSlots.length) * 100 : null;
+  const bestSlot = finishedSlots.reduce<WindowSlot | null>((best, current) => {
+    if (!best) return current;
+    return (current.run?.return_pct ?? -Infinity) > (best.run?.return_pct ?? -Infinity) ? current : best;
+  }, null);
+  const worstSlot = finishedSlots.reduce<WindowSlot | null>((worst, current) => {
+    if (!worst) return current;
+    return (current.run?.return_pct ?? Infinity) < (worst.run?.return_pct ?? Infinity) ? current : worst;
+  }, null);
+
+  const progressPct =
+    data && data.windows_total > 0 ? (data.windows_completed / data.windows_total) * 100 : 0;
+  const report = data?.report_json ?? null;
+  const score = report?.overall_score ?? fallbackScoreValue(data?.total_return_pct ?? null, winRatePct, progressPct);
+  const progressText = data ? `${data.windows_completed}/${data.windows_total}` : "…";
+
+  const summary = React.useMemo(() => {
+    if (!data) return "Loading trial report.";
+    if (report?.overview) return report.overview;
+
+    if (data.status === "pending" || data.status === "running") {
+      return `This trial is still executing on ${pairName(data.market_id)}. ${data.windows_completed} of ${data.windows_total} windows have completed so far, and the report will keep refreshing until the full submission settles.`;
+    }
+
+    if (!finishedSlots.length) {
+      return `This trial has no finished windows yet. Once the replay windows complete, the report will summarize relative performance, best and worst slices, and direct links into each replay run.`;
+    }
+
+    const bestCopy = bestSlot?.run?.return_pct != null ? `${bestSlot.code} ${pct(bestSlot.run.return_pct)}` : "–";
+    const worstCopy = worstSlot?.run?.return_pct != null ? `${worstSlot.code} ${pct(worstSlot.run.return_pct)}` : "–";
+
+    return `The submission finished ${finishedSlots.length} windows on ${pairName(data.market_id)} with ${pct(data.total_return_pct)} total return and ${pct(data.avg_return_pct)} average return per window. Best slice: ${bestCopy}. Weakest slice: ${worstCopy}.`;
+  }, [bestSlot, data, finishedSlots.length, report?.overview, worstSlot]);
+
+  const chartMax = React.useMemo(() => {
+    const values = slots
+      .map((slot) => Math.abs(slot.run?.return_pct ?? 0))
+      .filter((value) => Number.isFinite(value));
+    return Math.max(5, ...values, Math.abs(data?.total_return_pct ?? 0));
+  }, [data?.total_return_pct, slots]);
+
+  const selectedSlot = slots.find((slot) => slot.code === selectedCode) ?? null;
+
   return (
-    <div className="flex flex-col gap-8 animate-rise">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-bold tracking-widest text-[color:var(--accent-2)]">
-            TOURNAMENT RUN
-          </p>
-          <h2 className="mt-2 font-display text-4xl tracking-tight text-white drop-shadow-sm">Run</h2>
-          <div className="mt-3 grid gap-4 text-sm text-zinc-400 md:grid-cols-3">
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">submission_id</span>
-              <span className="font-mono text-white/90">{submissionId}</span>
+    <>
+      <main className="layout animate-rise">
+        <section className="left-column">
+          <article className="hero-card block">
+            <div className="hero-meta">
+              TRIAL REPORT / {data?.model_key ?? "LOADING"} / {pairName(data?.market_id)} / {fmt(data?.created_at)}
             </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">status</span>
-              <span data-testid="tournament-run-status" className="font-mono text-white/90">
-                {data?.status ?? "…"}
-              </span>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">progress</span>
-              <span data-testid="tournament-run-progress" className="font-mono text-white/90">
-                {data ? `${data.windows_completed}/${data.windows_total}` : "…"}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={refresh}
-          className="rounded-full border border-white/20 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/10 hover:border-white/30 hover:shadow-[0_0_15px_rgba(255,255,255,0.1)]"
-        >
-          {loading ? "Loading…" : "Refresh"}
-        </button>
-      </div>
-
-      {error ? (
-        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm font-medium text-rose-200 shadow-[0_0_20px_rgba(244,63,94,0.1)] backdrop-blur-sm">
-          {error}
-        </div>
-      ) : null}
-
-      {(() => {
-        const status = (data?.status ?? "pending").toLowerCase();
-        const isWorking = !data || status === "pending" || status === "running";
-        if (!isWorking) return null;
-
-        const done = data?.windows_completed ?? 0;
-        const total = data?.windows_total ?? 0;
-        const pct = total > 0 ? Math.min(100, Math.max(0, (done / total) * 100)) : 0;
-
-        return (
-          <section className="animate-rise-1 rounded-3xl border border-[color:var(--border)] bg-white/5 p-8 shadow-lg backdrop-blur-md">
-            <div className="flex flex-col items-center gap-5 text-center">
-              <div className="relative h-16 w-16">
-                <div className="absolute inset-0 rounded-full border border-white/10 bg-black/20" />
-                <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-[color:var(--accent-2)]/90 animate-spin" />
-                <div className="absolute inset-2 rounded-full bg-[color:var(--accent)]/10 blur-sm" />
+            <div className="hero-title-row">
+              <div className="score">
+                <div className="score-label">TRIAL SCORE</div>
+                <div className="score-value">{String(score).padStart(2, "0")}</div>
               </div>
-
-              <div>
-                <div className="font-display text-2xl tracking-tight text-white">
-                  Starting your run
-                </div>
-                <div className="mt-2 text-sm text-zinc-400">
-                  {total > 0 ? `Scenarios completed: ${done}/${total}` : "Queueing scenario windows..."}
-                </div>
-              </div>
-
-              <div className="w-full max-w-md">
-                <div className="h-2 w-full overflow-hidden rounded-full bg-black/30">
-                  <div
-                    className="h-full rounded-full bg-[linear-gradient(90deg,var(--accent-2),var(--accent))] transition-[width] duration-300"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <div className="mt-2 text-xs font-medium tracking-wider text-zinc-500">
-                  This page auto-refreshes while the run is pending/running.
+              <div className="persona">
+                <h1>{data?.status === "finished" ? report?.archetype ?? "Historical Trial Verdict" : "Trial In Progress"}</h1>
+                <p>
+                  Status: <span data-testid="tournament-run-status">{data?.status ?? "pending"}</span> · Progress:{" "}
+                  <span data-testid="tournament-run-progress">{progressText}</span> · Pair: {pairName(data?.market_id)}
+                </p>
+                <div className="tags">
+                  <span>{data?.scenario_set_key ?? "scenario-set"}</span>
+                  <span>{pairName(data?.market_id)}</span>
+                  <span>{data?.visibility ?? "public"}</span>
+                  <span>{data?.status ?? "pending"}</span>
+                  {report ? <span>{report.generation_mode}</span> : null}
                 </div>
               </div>
             </div>
-          </section>
-        );
-      })()}
+            <p className="hero-summary">{summary}</p>
+            {error ? <p className="hero-meta" style={{ color: "var(--red)" }}>{error}</p> : null}
+          </article>
 
-      <section className="animate-rise-1 grid gap-4 lg:grid-cols-3">
-        <div className="rounded-2xl border border-[color:var(--border)] bg-white/5 p-6 shadow-lg backdrop-blur-md">
-          <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Result</div>
-          <div className={`mt-2 font-display text-2xl tracking-tight ${data?.status === "finished" ? pctColor(data.total_return_pct) : "text-white"}`}>
-            {data?.status === "finished" ? pct(data.total_return_pct) : "(pending)"}
-          </div>
-          <div className="mt-2 text-sm text-zinc-400">
-            Avg window: <span className={data?.avg_return_pct != null ? pctColor(data.avg_return_pct) : "text-zinc-400"}>{data?.avg_return_pct == null ? "–" : pct(data.avg_return_pct)}</span>
-          </div>
-          {data?.error ? (
-            <div className="mt-3 text-sm text-rose-400">{data.error}</div>
+          {shouldRefresh ? (
+            <section className="block">
+              <div className="hero-meta">RUN PROGRESS</div>
+              <div className="mt-3 h-3 w-full overflow-hidden border-2 border-[#2f2f2f] bg-[#f2f2f2]">
+                <div
+                  className="h-full bg-[#3b66d9] transition-[width] duration-300"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+              <p className="mt-3 mb-0 text-[16px] text-[#555]">
+                Auto-refresh is enabled while the submission is pending or running.
+              </p>
+            </section>
           ) : null}
-        </div>
 
-        <div className="rounded-2xl border border-[color:var(--border)] bg-white/5 p-6 shadow-lg backdrop-blur-md">
-          <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Config</div>
-          <div className="mt-3 grid gap-2 text-xs text-zinc-400">
-            <div className="flex flex-col gap-1">
-              <span className="text-zinc-500">scenario_set</span>
-              <span className="font-mono text-white/90">{data?.scenario_set_key ?? "…"}</span>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-zinc-500">market_id</span>
-              <span className="font-mono text-[color:var(--accent)]">{data?.market_id ?? "…"}</span>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-zinc-500">model_key</span>
-              <span className="font-mono text-[color:var(--accent-2)]">{data?.model_key ?? "…"}</span>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-zinc-500">visibility</span>
-              <span className="font-mono text-white/90">{data?.visibility ?? "…"}</span>
-            </div>
-          </div>
-        </div>
+          <section className="metric-grid">
+            <article className="metric block">
+              <h3>Total Return</h3>
+              <p className={`value ${pctTone(data?.total_return_pct)}`}>{pct(data?.total_return_pct)}</p>
+              <p className="rank good">Submission-level result</p>
+            </article>
+            <article className="metric block">
+              <h3>Avg Window</h3>
+              <p className={`value ${pctTone(data?.avg_return_pct)}`}>{pct(data?.avg_return_pct)}</p>
+              <p className="rank elite">Per-window average</p>
+            </article>
+            <article className="metric block">
+              <h3>Win Rate</h3>
+              <p className="value neutral">{winRatePct == null ? "–" : `${winRatePct.toFixed(1)}%`}</p>
+              <p className="rank mid">{finishedSlots.length} finished windows</p>
+            </article>
+            <article className="metric block">
+              <h3>Best Window</h3>
+              <p className={`value ${pctTone(bestSlot?.run?.return_pct)}`}>{bestSlot ? bestSlot.code : "–"}</p>
+              <p className="rank good">{report?.best_window?.reason ?? (bestSlot ? pct(bestSlot.run?.return_pct) : "No completed window")}</p>
+            </article>
+            <article className="metric block">
+              <h3>Worst Window</h3>
+              <p className={`value ${pctTone(worstSlot?.run?.return_pct)}`}>{worstSlot ? worstSlot.code : "–"}</p>
+              <p className="rank bad">{report?.worst_window?.reason ?? (worstSlot ? pct(worstSlot.run?.return_pct) : "No completed window")}</p>
+            </article>
+          </section>
 
-        <div className="rounded-2xl border border-[color:var(--border)] bg-white/5 p-6 shadow-lg backdrop-blur-md">
-          <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Timing</div>
-          <div className="mt-3 grid gap-2 text-xs text-zinc-400">
-            <div className="flex flex-col gap-1">
-              <span className="text-zinc-500">created</span>
-              <span className="font-mono text-white/90">{fmt(data?.created_at ?? null)}</span>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-zinc-500">started</span>
-              <span className="font-mono text-white/90">{fmt(data?.started_at ?? null)}</span>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-zinc-500">ended</span>
-              <span className="font-mono text-white/90">{fmt(data?.ended_at ?? null)}</span>
-            </div>
-          </div>
-        </div>
-      </section>
+          {report ? (
+            <section className="grid gap-4 xl:grid-cols-3">
+              <article className="block">
+                <div className="hero-meta">STRENGTHS</div>
+                <ul className="mt-4 space-y-3 text-[15px] leading-7 text-[#444]">
+                  {report.strengths.map((item) => (
+                    <li key={item}>- {item}</li>
+                  ))}
+                </ul>
+              </article>
+              <article className="block">
+                <div className="hero-meta">WEAKNESSES</div>
+                <ul className="mt-4 space-y-3 text-[15px] leading-7 text-[#444]">
+                  {report.weaknesses.map((item) => (
+                    <li key={item}>- {item}</li>
+                  ))}
+                </ul>
+              </article>
+              <article className="block">
+                <div className="hero-meta">NEXT ACTIONS</div>
+                <ul className="mt-4 space-y-3 text-[15px] leading-7 text-[#444]">
+                  {report.recommendations.map((item) => (
+                    <li key={item}>- {item}</li>
+                  ))}
+                </ul>
+              </article>
+            </section>
+          ) : null}
 
-      <section className="animate-rise-2 overflow-hidden rounded-3xl border border-[color:var(--border)] bg-white/5 shadow-lg backdrop-blur-md">
-        <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-6 py-5">
-          <h3 className="font-display text-xl tracking-tight text-white flex items-center gap-2">
-            <svg className="w-5 h-5 text-[color:var(--accent-2)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-            Scenario Runs
-          </h3>
-          <div className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white shadow-inner">
-            {data?.runs.length ?? 0} windows
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-black/20 text-xs uppercase tracking-wider text-zinc-400">
-              <tr>
-                <th className="px-6 py-4 font-semibold">#</th>
-                <th className="px-6 py-4 font-semibold">Window</th>
-                <th className="px-6 py-4 font-semibold">Run</th>
-                <th className="px-6 py-4 font-semibold">Status</th>
-                <th className="px-6 py-4 font-semibold">Return</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/10">
-              {(data?.runs ?? []).map((r) => (
-                <tr key={`${r.submission_id}:${r.scenario_index}`} className="transition-colors hover:bg-white/5">
-                  <td className="px-6 py-4 font-mono text-xs text-white font-bold">
-                    {r.scenario_index}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-xs font-semibold tracking-wide text-white/90">
-                      {windowLabel(data?.scenario_set_key, r.scenario_index)}
-                    </div>
-                    <div className="font-mono text-xs text-zinc-300">
-                      {fmt(r.window_start)}
-                    </div>
-                    <div className="mt-1 font-mono text-xs text-zinc-500">
-                      to {fmt(r.window_end)}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    {data?.visibility === "private" ? (
-                      <span className="font-mono text-xs text-zinc-500">(hidden)</span>
-                    ) : (
-                      <Link
-                        href={`/runs/${r.run_id}`}
-                        className="font-mono text-xs text-[color:var(--accent)] hover:text-white transition-colors"
-                      >
-                        {r.run_id.slice(0, 8)}…
-                      </Link>
-                    )}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-wider ${badge(
-                        runStatus(r),
-                      )}`}
+          <section className="viz-grid">
+            <article className="block chart-card">
+              <header>
+                <h2>Window Returns</h2>
+                <span>
+                  {data?.model_key ?? "…"} · {pairName(data?.market_id)} · {data?.scenario_set_key ?? "scenario-set"}
+                </span>
+              </header>
+              <svg viewBox="0 0 640 260" className="bar-chart" aria-label="trial-window-returns">
+                <rect x="0" y="0" width="640" height="260" fill="#f7f7f5" />
+                <line x1="30" y1="30" x2="30" y2="234" className="axis-line" />
+                <line x1="30" y1="234" x2="624" y2="234" className="axis-line" />
+                <line x1="30" y1="130" x2="624" y2="130" className="zero-line" />
+
+                <text x="6" y="35" className="y-tick">
+                  +{chartMax.toFixed(0)}%
+                </text>
+                <text x="10" y="134" className="y-tick">
+                  0%
+                </text>
+                <text x="6" y="230" className="y-tick">
+                  -{chartMax.toFixed(0)}%
+                </text>
+
+                {slots.map((slot, index) => {
+                  const value = slot.run?.return_pct ?? 0;
+                  const height = Math.abs(value / chartMax) * 96;
+                  const x = 44 + index * 58;
+                  const y = value >= 0 ? 130 - height : 130;
+                  const dimmed = highlightedCode && highlightedCode !== slot.code;
+                  const pending = !slot.run || slot.run.return_pct == null;
+
+                  return (
+                    <g
+                      key={slot.code}
+                      className={dimmed ? "bar-item dim" : "bar-item"}
+                      onMouseEnter={() => setHighlightedCode(slot.code)}
+                      onMouseLeave={() => setHighlightedCode(null)}
+                      onClick={() => slot.run ? setSelectedCode(slot.code) : null}
+                      style={{ cursor: slot.run ? "pointer" : "default" }}
                     >
-                      {runStatus(r) === "running" && (
-                        <span className="relative flex h-1.5 w-1.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-current"></span>
-                        </span>
-                      )}
-                      {runStatus(r)}
-                    </span>
-                    {r.error ? (
-                      <div className="mt-2 text-xs text-rose-400">{r.error}</div>
-                    ) : null}
-                  </td>
-                  <td className={`px-6 py-4 font-mono text-xs ${r.status === "finished" ? pctColor(r.return_pct) : "text-zinc-600"}`}>
-                    {r.status === "finished" ? pct(r.return_pct) : "–"}
-                  </td>
-                </tr>
-              ))}
-              {(data?.runs?.length ?? 0) === 0 ? (
-                <tr>
-                  <td className="px-6 py-12 text-center text-sm text-zinc-500" colSpan={5}>
-                    <div className="flex flex-col items-center justify-center space-y-3">
-                      <svg className="h-10 w-10 text-zinc-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                      </svg>
-                      <p>No scenario runs yet.</p>
-                    </div>
-                  </td>
-                </tr>
+                      <rect
+                        x={x}
+                        y={pending ? 126 : y}
+                        width="42"
+                        height={pending ? 8 : Math.max(4, height)}
+                        className={pending || value >= 0 ? "bar-pos" : "bar-neg"}
+                        style={pending ? { fill: "#b9b9b9" } : undefined}
+                      />
+                      <text x={x + 2} y={pending || value < 0 ? 146 + Math.max(0, height) : y - 8} className="bar-value">
+                        {pending ? "…" : pct(value)}
+                      </text>
+                      <text x={x + 5} y="250" className="bar-label">
+                        {slot.code}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            </article>
+
+            <article className="block chart-card">
+              <header>
+                <h2>Trial Breakdown</h2>
+                <span>{progressText} complete</span>
+              </header>
+              <div className="lb-selected-stat-grid">
+                <div className="lb-selected-stat">
+                  <span>Submission ID</span>
+                  <strong>{submissionId.slice(0, 8)}…</strong>
+                </div>
+                <div className="lb-selected-stat">
+                  <span>Status</span>
+                  <strong>{(data?.status ?? "pending").toUpperCase()}</strong>
+                </div>
+                <div className="lb-selected-stat">
+                  <span>Created</span>
+                  <strong>{fmtShort(data?.created_at)}</strong>
+                </div>
+                <div className="lb-selected-stat">
+                  <span>Updated</span>
+                  <strong>{fmtShort(data?.updated_at)}</strong>
+                </div>
+                <div className="lb-selected-stat">
+                  <span>Pair</span>
+                  <strong>{pairName(data?.market_id)}</strong>
+                </div>
+                <div className="lb-selected-stat">
+                  <span>Visibility</span>
+                  <strong>{(data?.visibility ?? "public").toUpperCase()}</strong>
+                </div>
+              </div>
+
+              <div className="lb-rule-box" style={{ marginTop: "12px" }}>
+                <strong>Reading the Trial</strong>
+                <span>1. Each row on the right is one replay window under the same prompt.</span>
+                <span>2. Click any window to open the trial-detail modal.</span>
+                <span>3. Public submissions let you drill down into the underlying replay run.</span>
+              </div>
+            </article>
+          </section>
+
+          <article className="leaderboard-entry block">
+            <p>
+              Use this report to compare which windows the strategy handled well, then jump into the
+              underlying replay run for a deeper investigation.
+            </p>
+            <div className="entry-links">
+              <Link href="/arena" className="return-trials-btn">
+                RETURN TO TRIALS
+              </Link>
+              <Link href="/leaderboard" className="mini-leaderboard-btn">
+                OPEN LEADERBOARD
+              </Link>
+              {data?.visibility !== "private" && bestSlot?.run ? (
+                <Link href={`/runs/${bestSlot.run.run_id}`} className="mini-leaderboard-btn trials-link">
+                  BEST WINDOW →
+                </Link>
               ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
+              <button type="button" onClick={refresh} className="mini-leaderboard-btn">
+                {loading ? "REFRESHING" : "REFRESH"}
+              </button>
+            </div>
+          </article>
+        </section>
+
+        <aside className="right-column">
+          <section className="heatlog-panel">
+            <header className="heatlog-header">
+              <div>WINDOW PERFORMANCE</div>
+            </header>
+
+            <div className="heatlog-col-head">
+              <span>EVENT</span>
+              <span>RETURN %</span>
+              <span>STATUS</span>
+              <span>START</span>
+              <span>END</span>
+              <span>RUN</span>
+            </div>
+
+            {slots.map((slot) => {
+              const run = slot.run;
+              const mark = statusMark(run?.status ?? "pending", run?.return_pct);
+              const isActive = selectedCode === slot.code;
+              const isHighlighted = highlightedCode === slot.code;
+
+              return (
+                <article
+                  key={slot.code}
+                  className={`heatlog-row ${isActive ? "is-active" : ""}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => run ? setSelectedCode(slot.code) : null}
+                  onMouseEnter={() => setHighlightedCode(slot.code)}
+                  onMouseLeave={() => setHighlightedCode(null)}
+                  style={{
+                    outline: isHighlighted && !isActive ? "2px solid #a0a0a0" : undefined,
+                    outlineOffset: isHighlighted && !isActive ? "-2px" : undefined,
+                    cursor: run ? "pointer" : "default",
+                  }}
+                >
+                  <div className="event-cell">
+                    <span className={`event-mark ${mark}`}>
+                      {mark === "warn" ? "!" : mark === "crash" ? "X" : ""}
+                    </span>
+                    <div>
+                      <strong>{slot.code}</strong>
+                      <p>{slot.label}</p>
+                    </div>
+                  </div>
+                  <div className={`metric-cell ${mark === "strong" ? "strong" : mark === "avg" ? "avg" : mark === "weak" ? "weak" : ""}`}>
+                    {pct(run?.return_pct)}
+                  </div>
+                  <div className={`metric-cell ${statusCellClass(run?.status ?? "pending")}`}>
+                    {(run?.status ?? "pending").toUpperCase()}
+                  </div>
+                  <div className="trades-cell">{fmtShort(run?.window_start ?? null)}</div>
+                  <div className="trades-cell">{fmtShort(run?.window_end ?? null)}</div>
+                  <div className="trades-cell">
+                    {run && data?.visibility !== "private" ? (
+                      <Link
+                        href={`/runs/${run.run_id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ textDecoration: "none", color: "inherit" }}
+                      >
+                        →
+                      </Link>
+                    ) : (
+                      "–"
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+
+            {slots.length === 0 ? (
+              <div className="p-6 text-center text-[#666]">No scenario windows available yet.</div>
+            ) : null}
+
+            <footer className="heatlog-legend">
+              <span>
+                <i className="lg strong"></i>Strong
+              </span>
+              <span>
+                <i className="lg avg"></i>In Progress / Flat
+              </span>
+              <span>
+                <i className="lg weak"></i>Weak
+              </span>
+            </footer>
+          </section>
+        </aside>
+      </main>
+
+      <WindowDetailModal slot={selectedSlot} submission={data} onClose={() => setSelectedCode(null)} />
+    </>
   );
 }

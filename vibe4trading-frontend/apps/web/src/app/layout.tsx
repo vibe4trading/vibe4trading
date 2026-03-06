@@ -3,6 +3,7 @@ import { DotGothic16 } from "next/font/google";
 import "./globals.css";
 
 import { RouteWrapper } from "@/app/components/RouteWrapper";
+import { SessionProvider } from "next-auth/react";
 
 const dotGothic = DotGothic16({
   weight: "400",
@@ -23,9 +24,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={dotGothic.variable}>
-        <RouteWrapper>
-          {children}
-        </RouteWrapper>
+        <SessionProvider>
+          <RouteWrapper>
+            {children}
+          </RouteWrapper>
+        </SessionProvider>
       </body>
     </html>
   );

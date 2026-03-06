@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from v4t.contracts.events import make_event_v1
+from v4t.contracts.events import make_event
 from v4t.db.event_store import append_event
 from v4t.db.models import EventRow
 
@@ -15,7 +15,7 @@ def test_append_event_dataset_dedupe_is_idempotent(db_session) -> None:
     ds_id = uuid4()
     t0 = datetime(2026, 3, 1, 0, 0, tzinfo=UTC)
 
-    ev1 = make_event_v1(
+    ev1 = make_event(
         event_type="market.price",
         source="t",
         observed_at=t0,
@@ -24,7 +24,7 @@ def test_append_event_dataset_dedupe_is_idempotent(db_session) -> None:
         dataset_id=ds_id,
         payload={"market_id": "m", "price": "1", "price_type": "mid"},
     )
-    ev2 = make_event_v1(
+    ev2 = make_event(
         event_type="market.price",
         source="t2",
         observed_at=t0,
@@ -54,7 +54,7 @@ def test_append_event_run_dedupe_is_idempotent(db_session) -> None:
     run_id = uuid4()
     t0 = datetime(2026, 3, 1, 0, 0, tzinfo=UTC)
 
-    ev1 = make_event_v1(
+    ev1 = make_event(
         event_type="llm.decision",
         source="t",
         observed_at=t0,
@@ -63,7 +63,7 @@ def test_append_event_run_dedupe_is_idempotent(db_session) -> None:
         run_id=run_id,
         payload={"tick_time": t0.isoformat(), "market_id": "m", "targets": {}, "accepted": True},
     )
-    ev2 = make_event_v1(
+    ev2 = make_event(
         event_type="llm.decision",
         source="t2",
         observed_at=t0,
@@ -92,7 +92,7 @@ def test_append_event_run_dedupe_is_idempotent(db_session) -> None:
 def test_append_event_validates_dedupe_scope_ids(db_session) -> None:
     t0 = datetime(2026, 3, 1, 0, 0, tzinfo=UTC)
 
-    ev_missing_ds = make_event_v1(
+    ev_missing_ds = make_event(
         event_type="market.price",
         source="t",
         observed_at=t0,
@@ -102,7 +102,7 @@ def test_append_event_validates_dedupe_scope_ids(db_session) -> None:
     with pytest.raises(ValueError, match="requires ev.dataset_id"):
         append_event(db_session, ev=ev_missing_ds, dedupe_scope="dataset")
 
-    ev_missing_run = make_event_v1(
+    ev_missing_run = make_event(
         event_type="llm.decision",
         source="t",
         observed_at=t0,

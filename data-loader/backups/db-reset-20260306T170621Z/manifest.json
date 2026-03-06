@@ -1,0 +1,24 @@
+{
+    "created_at": "2026-03-06T17:06:37.444648+00:00",
+    "database_url_redacted": "postgresql+psycopg://***@localhost:5433/v4t",
+    "dataset_counts_by_category": {
+        "spot": 100,
+        "sentiment": 10
+    },
+    "event_counts_by_type": {
+        "market.ohlcv": 720,
+        "market.price": 720,
+        "sentiment.item": 14567
+    },
+    "datasets_count": 110,
+    "events_count": 16007,
+    "files": {
+        "datasets": "datasets.jsonl",
+        "events": "events.jsonl",
+        "arena_dataset_ids": "arena_dataset_ids.txt"
+    },
+    "categories_exported": [
+        "sentiment",
+        "spot"
+    ]
+}

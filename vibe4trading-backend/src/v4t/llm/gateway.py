@@ -15,81 +15,113 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from v4t.contracts.payloads import LlmDecisionOutputV1
+from v4t.contracts.payloads import LlmDecisionOutputV1, LlmDecisionOutputV2
 from v4t.db.models import LlmCallRow, LlmModelRow
 from v4t.llm.budget import LlmBudgetTracker
 from v4t.llm.json_extract import extract_first_json_object_text
-from v4t.llm.retry import call_with_retry, compute_backoff_seconds, is_retryable
-from v4t.settings import get_settings, parse_csv_set
+from v4t.llm.retry import (
+    call_with_retry,
+    compute_backoff_seconds,
+    is_retryable,
+    post_json_request,
+)
+from v4t.settings import get_settings, is_env_model_key
 from v4t.utils.datetime import now
 
 _LOG: Final = structlog.get_logger("llm.gateway")
 
 
+def _extract_usage(data: dict[str, Any]) -> dict[str, Any] | None:
+    usage_any = data.get("usage")
+    return cast(dict[str, Any], usage_any) if isinstance(usage_any, dict) else None
+
+
+def _extract_message_content(data: dict[str, Any]) -> str:
+    choices_any = data.get("choices")
+    if not isinstance(choices_any, list) or not choices_any:
+        raise ValueError("LLM response missing 'choices'")
+    choices = cast(list[object], choices_any)
+
+    first_any = choices[0]
+    if not isinstance(first_any, dict):
+        raise ValueError("LLM response has invalid 'choices' entry")
+    first = cast(dict[str, Any], first_any)
+
+    msg_any = first.get("message")
+    if not isinstance(msg_any, dict):
+        raise ValueError("LLM response missing 'message'")
+    message = cast(dict[str, Any], msg_any)
+
+    content_any = message.get("content")
+    if not isinstance(content_any, str):
+        raise ValueError("LLM response missing text content")
+    return content_any
+
+
 class StubDecisionFeatures(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    decision_schema_version: int = 1
     market_id: str
     closes: list[str]  # decimal strings
+    risk_level: int | None = None
 
 
 @dataclass
 class LlmCallResult:
     call_id: UUID | None
-    decision: LlmDecisionOutputV1
+    decision: LlmDecisionOutputV1 | LlmDecisionOutputV2
     error: str | None = None
 
 
 class LlmGateway:
     def __init__(self) -> None:
         self.settings = get_settings()
-        self._allowed_models = parse_csv_set(self.settings.llm_model_allowlist)
         self._budget = LlmBudgetTracker()
+
+    def _get_enabled_model_row(self, session: Session, model_key: str) -> LlmModelRow | None:
+        return (
+            session.execute(
+                select(LlmModelRow)
+                .where(LlmModelRow.model_key == model_key, LlmModelRow.enabled.is_(True))
+                .limit(1)
+            )
+            .scalars()
+            .one_or_none()
+        )
 
     def _model_allowed(self, session: Session, model_key: str) -> bool:
         if model_key == "stub":
             return True
-        if self._allowed_models is not None and model_key not in self._allowed_models:
-            return False
+        if is_env_model_key(model_key):
+            return True
 
-        row = (
-            session.execute(
-                select(LlmModelRow)
-                .where(LlmModelRow.model_key == model_key, LlmModelRow.enabled.is_(True))
-                .limit(1)
-            )
-            .scalars()
-            .one_or_none()
-        )
-        return row is not None
+        return self._get_enabled_model_row(session, model_key) is not None
 
-    def _resolve_base_url(self, session: Session, model_key: str) -> str | None:
+    def _resolve_transport(self, session: Session, model_key: str) -> tuple[str | None, str | None]:
         if model_key == "stub":
-            return None
-        row = (
-            session.execute(
-                select(LlmModelRow)
-                .where(LlmModelRow.model_key == model_key, LlmModelRow.enabled.is_(True))
-                .limit(1)
-            )
-            .scalars()
-            .one_or_none()
-        )
+            return None, None
+        if is_env_model_key(model_key):
+            return self.settings.llm_base_url, self.settings.llm_api_key
+
+        row = self._get_enabled_model_row(session, model_key)
+        base_url = self.settings.llm_base_url
+        api_key = self.settings.llm_api_key
 
         if row is not None and row.api_base_url:
-            return row.api_base_url
+            base_url = row.api_base_url
+        if row is not None and row.api_key:
+            api_key = row.api_key
 
-        return self.settings.llm_base_url
+        return base_url, api_key
 
     def _use_stub(self, session: Session, model_key: str) -> bool:
         return model_key == "stub"
 
-    def _api_url_and_headers(self, base_url: str) -> tuple[str, dict[str, str]]:
-        if self.settings.llm_api_key is None:
-            raise ValueError("llm_api_key must not be None")
+    def _api_url_and_headers(self, base_url: str, api_key: str) -> tuple[str, dict[str, str]]:
         base_url = base_url.rstrip("/")
         url = f"{base_url}/chat/completions"
-        headers = {"Authorization": f"Bearer {self.settings.llm_api_key}"}
+        headers = {"Authorization": f"Bearer {api_key}"}
         return url, headers
 
     def _missing_config_result(
@@ -105,6 +137,7 @@ class LlmGateway:
         user_prompt: str,
         temperature: float,
         max_output_tokens: int,
+        decision_schema_version: int = 1,
     ) -> LlmCallResult | tuple[UUID | None, str]:
         err = "llm_not_configured"
         req = self._build_request(
@@ -131,7 +164,7 @@ class LlmGateway:
         if purpose == "decision":
             return LlmCallResult(
                 call_id=call.call_id,
-                decision=LlmDecisionOutputV1(schema_version=1, targets={}),
+                decision=self._empty_decision(decision_schema_version),
                 error=err,
             )
         return call.call_id, f"(error) {err}"
@@ -197,6 +230,7 @@ class LlmGateway:
         system_prompt: str,
         user_prompt: str,
         stub_features: StubDecisionFeatures,
+        decision_schema_version: int = 1,
         temperature: float = 0.0,
         max_output_tokens: int = 800,
     ) -> LlmCallResult:
@@ -227,7 +261,7 @@ class LlmGateway:
         if not self._model_allowed(session, model_key):
             return LlmCallResult(
                 call_id=None,
-                decision=LlmDecisionOutputV1(schema_version=1, targets={}),
+                decision=self._empty_decision(decision_schema_version),
                 error=f"model_not_allowed: {model_key}",
             )
 
@@ -239,12 +273,12 @@ class LlmGateway:
         ):
             return LlmCallResult(
                 call_id=None,
-                decision=LlmDecisionOutputV1(schema_version=1, targets={}),
+                decision=self._empty_decision(decision_schema_version),
                 error="budget_exceeded: max decision calls per run",
             )
 
-        base_url = self._resolve_base_url(session, model_key)
-        if base_url is None or not self.settings.llm_api_key:
+        base_url, api_key = self._resolve_transport(session, model_key)
+        if base_url is None or not api_key:
             res = self._missing_config_result(
                 session,
                 run_id=run_id,
@@ -256,11 +290,12 @@ class LlmGateway:
                 user_prompt=user_prompt,
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
+                decision_schema_version=decision_schema_version,
             )
             if not isinstance(res, LlmCallResult):
                 raise ValueError("unexpected _missing_config_result return type")
             return res
-        url, headers = self._api_url_and_headers(base_url)
+        url, headers = self._api_url_and_headers(base_url, api_key)
         max_attempts = max(1, int(self.settings.llm_max_retries) + 1)
         attempt_user_prompt = user_prompt
 
@@ -283,40 +318,25 @@ class LlmGateway:
                 resp_parsed: dict[str, Any] | None = None
                 usage: dict[str, Any] | None = None
                 error: str | None = None
-                decision: LlmDecisionOutputV1 | None = None
+                decision: LlmDecisionOutputV1 | LlmDecisionOutputV2 | None = None
 
                 try:
-                    r = client.post(url, headers=headers, json=req_attempt)
-                    r.raise_for_status()
-                    data_any = r.json()
-                    if not isinstance(data_any, dict):
-                        raise ValueError("LLM response is not a JSON object")
+                    data = post_json_request(
+                        url=url,
+                        headers=headers,
+                        req=req_attempt,
+                        timeout_seconds=float(self.settings.llm_timeout_seconds),
+                        client=client,
+                        queue_priority=-1 if attempt > 1 else 0,
+                    )
 
-                    data = cast(dict[str, Any], data_any)
-
-                    usage_any = data.get("usage")
-                    usage = usage_any if isinstance(usage_any, dict) else None
-
-                    choices = data.get("choices")
-                    if not isinstance(choices, list) or not choices:
-                        raise ValueError("LLM response missing 'choices'")
-
-                    first = choices[0]
-                    if not isinstance(first, dict):
-                        raise ValueError("LLM response has invalid 'choices' entry")
-                    msg_any = first.get("message")
-                    if not isinstance(msg_any, dict):
-                        raise ValueError("LLM response missing 'message'")
-                    content_any = msg_any.get("content")
-                    if not isinstance(content_any, str):
-                        raise ValueError("LLM response missing text content")
-
-                    content = content_any
+                    usage = _extract_usage(data)
+                    content = _extract_message_content(data)
 
                     resp_raw = content
                     obj, _candidate = extract_first_json_object_text(content)
                     resp_parsed = obj
-                    decision = LlmDecisionOutputV1.model_validate(obj)
+                    decision = self._parse_decision_output(obj)
                 except Exception as exc:  # noqa: BLE001
                     last_exc = exc
                     error = repr(exc)
@@ -379,7 +399,7 @@ class LlmGateway:
 
         return LlmCallResult(
             call_id=last_call_id,
-            decision=LlmDecisionOutputV1(schema_version=1, targets={}),
+            decision=self._empty_decision(decision_schema_version),
             error=last_error,
         )
 
@@ -394,6 +414,7 @@ class LlmGateway:
         user_prompt: str,
         stub_features: StubDecisionFeatures,
         on_delta: Callable[[str], None],
+        decision_schema_version: int = 1,
         temperature: float = 0.0,
         max_output_tokens: int = 800,
     ) -> LlmCallResult:
@@ -432,6 +453,7 @@ class LlmGateway:
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             stub_features=stub_features,
+            decision_schema_version=decision_schema_version,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
         )
@@ -490,8 +512,8 @@ class LlmGateway:
         ):
             return None, "(error) budget_exceeded: max summary calls per run"
 
-        base_url = self._resolve_base_url(session, model_key)
-        if base_url is None or not self.settings.llm_api_key:
+        base_url, api_key = self._resolve_transport(session, model_key)
+        if base_url is None or not api_key:
             res = self._missing_config_result(
                 session,
                 run_id=run_id,
@@ -508,7 +530,7 @@ class LlmGateway:
                 raise ValueError("unexpected _missing_config_result return type")
             return res
 
-        url, headers = self._api_url_and_headers(base_url)
+        url, headers = self._api_url_and_headers(base_url, api_key)
         req = self._build_request(
             model_key=model_key,
             system_prompt=system_prompt,
@@ -530,15 +552,8 @@ class LlmGateway:
                 timeout_seconds=float(self.settings.llm_timeout_seconds),
                 max_retries=int(self.settings.llm_max_retries),
             )
-            usage_any = data.get("usage")
-            usage = usage_any if isinstance(usage_any, dict) else None
-            choices = data.get("choices")
-            if not isinstance(choices, list) or not choices:
-                raise ValueError("LLM response missing 'choices'")
-            msg = choices[0].get("message") if isinstance(choices[0], dict) else None
-            content = msg.get("content") if isinstance(msg, dict) else None
-            if not isinstance(content, str):
-                raise ValueError("LLM response missing text content")
+            usage = _extract_usage(data)
+            content = _extract_message_content(data)
             resp_raw = content
             text = content
         except Exception as exc:  # noqa: BLE001
@@ -561,6 +576,121 @@ class LlmGateway:
             )
 
         return call.call_id, text
+
+    def call_submission_report(
+        self,
+        session: Session,
+        *,
+        submission_id: UUID,
+        observed_at: datetime,
+        model_key: str,
+        system_prompt: str,
+        user_prompt: str,
+        fallback_report: dict[str, Any],
+        temperature: float = 0.0,
+        max_output_tokens: int = 900,
+    ) -> tuple[UUID | None, dict[str, Any], bool]:
+        req = self._build_request(
+            model_key=model_key,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+        fallback_raw = json.dumps(fallback_report, separators=(",", ":"))
+
+        if self._use_stub(session, model_key):
+            call = self._record_call(
+                session,
+                run_id=None,
+                dataset_id=None,
+                purpose="submission_report",
+                observed_at=observed_at,
+                prompt=req,
+                response_raw=fallback_raw,
+                response_parsed=fallback_report,
+                usage=None,
+                latency_ms=0,
+                error="stub_submission_report",
+            )
+            return call.call_id, fallback_report, True
+
+        if not self._model_allowed(session, model_key):
+            call = self._record_call(
+                session,
+                run_id=None,
+                dataset_id=None,
+                purpose="submission_report",
+                observed_at=observed_at,
+                prompt=req,
+                response_raw=fallback_raw,
+                response_parsed=fallback_report,
+                usage=None,
+                latency_ms=0,
+                error=f"model_not_allowed: {model_key}",
+            )
+            return call.call_id, fallback_report, True
+
+        base_url, api_key = self._resolve_transport(session, model_key)
+        if base_url is None or not api_key:
+            call = self._record_call(
+                session,
+                run_id=None,
+                dataset_id=None,
+                purpose="submission_report",
+                observed_at=observed_at,
+                prompt=req,
+                response_raw=fallback_raw,
+                response_parsed=fallback_report,
+                usage=None,
+                latency_ms=0,
+                error="llm_not_configured",
+            )
+            return call.call_id, fallback_report, True
+
+        url, headers = self._api_url_and_headers(base_url, api_key)
+
+        started = time.perf_counter()
+        resp_raw: str | None = None
+        resp_parsed: dict[str, Any] | None = None
+        usage: dict[str, Any] | None = None
+        error: str | None = None
+        used_fallback = False
+        try:
+            data = call_with_retry(
+                url=url,
+                headers=headers,
+                req=req,
+                timeout_seconds=float(self.settings.llm_timeout_seconds),
+                max_retries=int(self.settings.llm_max_retries),
+            )
+            usage = _extract_usage(data)
+            content_any = _extract_message_content(data)
+            resp_raw = content_any
+            obj, _candidate = extract_first_json_object_text(content_any)
+            resp_parsed = obj
+        except Exception as exc:  # noqa: BLE001
+            error = repr(exc)
+            resp_raw = fallback_raw
+            resp_parsed = fallback_report
+            used_fallback = True
+        finally:
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            call = self._record_call(
+                session,
+                run_id=None,
+                dataset_id=None,
+                purpose="submission_report",
+                observed_at=observed_at,
+                prompt=req,
+                response_raw=resp_raw,
+                response_parsed=resp_parsed,
+                usage=usage,
+                latency_ms=latency_ms,
+                error=error,
+            )
+
+        return call.call_id, resp_parsed or fallback_report, used_fallback
 
     def call_sentiment_item_summary(
         self,
@@ -625,8 +755,8 @@ class LlmGateway:
             text = f"(guardrail) Summary: {snippet}" if snippet else "(guardrail) Summary: (empty)"
             return None, text
 
-        base_url = self._resolve_base_url(session, model_key)
-        if base_url is None or not self.settings.llm_api_key:
+        base_url, api_key = self._resolve_transport(session, model_key)
+        if base_url is None or not api_key:
             res = self._missing_config_result(
                 session,
                 run_id=None,
@@ -642,7 +772,7 @@ class LlmGateway:
             if not isinstance(res, tuple):
                 raise ValueError("unexpected _missing_config_result return type")
             return res
-        url, headers = self._api_url_and_headers(base_url)
+        url, headers = self._api_url_and_headers(base_url, api_key)
         req = self._build_request(
             model_key=model_key,
             system_prompt=system_prompt,
@@ -664,20 +794,8 @@ class LlmGateway:
                 timeout_seconds=float(self.settings.llm_timeout_seconds),
                 max_retries=int(self.settings.llm_max_retries),
             )
-            usage_any = data.get("usage")
-            usage = usage_any if isinstance(usage_any, dict) else None
-            choices = data.get("choices")
-            if not isinstance(choices, list) or not choices:
-                raise ValueError("LLM response missing 'choices'")
-            first = choices[0]
-            if not isinstance(first, dict):
-                raise ValueError("LLM response has invalid 'choices' entry")
-            msg_any = first.get("message")
-            if not isinstance(msg_any, dict):
-                raise ValueError("LLM response missing 'message'")
-            content_any = msg_any.get("content")
-            if not isinstance(content_any, str):
-                raise ValueError("LLM response missing text content")
+            usage = _extract_usage(data)
+            content_any = _extract_message_content(data)
             resp_raw = content_any
             return_text = content_any
         except Exception as exc:  # noqa: BLE001
@@ -707,7 +825,9 @@ class LlmGateway:
 
         return call.call_id, return_text
 
-    def _stub_decision(self, features: StubDecisionFeatures) -> LlmDecisionOutputV1:
+    def _stub_decision(
+        self, features: StubDecisionFeatures
+    ) -> LlmDecisionOutputV1 | LlmDecisionOutputV2:
         closes = [Decimal(c) for c in features.closes if c]
         if len(closes) < 2:
             target = Decimal("0")
@@ -724,6 +844,26 @@ class LlmGateway:
                 rationale = "Momentum flat/down; reduce exposure."
                 confidence = Decimal("0.45")
 
+        if int(features.decision_schema_version) == 2:
+            leverage = 1
+            mode = "spot"
+            if features.risk_level is not None and int(features.risk_level) >= 3 and target > 0:
+                mode = "futures"
+                leverage = 2
+                target = Decimal("2.0")
+            return LlmDecisionOutputV2(
+                schema_version=2,
+                target=target,
+                mode=mode,
+                leverage=leverage,
+                stop_loss_pct=Decimal("5.0") if target != 0 else None,
+                take_profit_pct=Decimal("10.0") if target != 0 else None,
+                next_check_seconds=3600,
+                confidence=confidence,
+                key_signals=["stub_momentum"],
+                rationale=rationale,
+            )
+
         return LlmDecisionOutputV1(
             schema_version=1,
             targets={features.market_id: target},
@@ -732,6 +872,32 @@ class LlmGateway:
             key_signals=["stub_momentum"],
             rationale=rationale,
         )
+
+    def _empty_decision(
+        self, decision_schema_version: int
+    ) -> LlmDecisionOutputV1 | LlmDecisionOutputV2:
+        if int(decision_schema_version) == 2:
+            return LlmDecisionOutputV2(
+                schema_version=2,
+                target=Decimal("0"),
+                mode="spot",
+                leverage=1,
+                stop_loss_pct=None,
+                take_profit_pct=None,
+                next_check_seconds=3600,
+                confidence=Decimal("0"),
+                key_signals=["llm_unavailable"],
+                rationale="No decision available.",
+            )
+        return LlmDecisionOutputV1(schema_version=1, targets={})
+
+    def _parse_decision_output(
+        self, obj: dict[str, Any]
+    ) -> LlmDecisionOutputV1 | LlmDecisionOutputV2:
+        schema_version = int(obj.get("schema_version", 1))
+        if schema_version == 2:
+            return LlmDecisionOutputV2.model_validate(obj)
+        return LlmDecisionOutputV1.model_validate(obj)
 
 
 def _retry_prompt(user_prompt: str, err: str | None) -> str:

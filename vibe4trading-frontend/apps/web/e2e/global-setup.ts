@@ -33,6 +33,18 @@ function repoRootFromProject(projectDir: string) {
   return path.resolve(projectDir, "..", "..", "..");
 }
 
+function resolveFeatherPath(repoRoot: string) {
+  const candidates = [
+    path.join(repoRoot, "user_data", "data", "binance", "BTC_USDT-1h.feather"),
+    path.join(repoRoot, "vibe4trading-backend", "data-loader", "data", "W10", "binance", "BTC_USDT-1h.feather"),
+  ];
+
+  const existing = candidates.find((candidate) => fs.existsSync(candidate));
+  if (existing) return existing;
+
+  throw new Error(`freqtrade feather file missing: ${candidates.join(" or ")}`);
+}
+
 function killQuiet(pid: number, signal: NodeJS.Signals = "SIGTERM") {
   try {
     process.kill(pid, signal);
@@ -256,10 +268,7 @@ export default async function globalSetup() {
     backendPid = await startBackend({ repoRoot, port: backendPort, dbPath, llmOrigin });
     const backendOrigin = `http://127.0.0.1:${backendPort}`;
 
-    const featherPath = path.join(repoRoot, "user_data", "data", "binance", "BTC_USDT-1h.feather");
-    if (!fs.existsSync(featherPath)) {
-      throw new Error(`freqtrade feather file missing: ${featherPath}`);
-    }
+    const featherPath = resolveFeatherPath(repoRoot);
 
     const marketId = "spot:demo:DEMO";
     const runStartIso = new Date("2026-03-01T00:00:00.000Z").toISOString();

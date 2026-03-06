@@ -8,9 +8,9 @@ from uuid import UUID
 
 import pandas as pd
 
-from v4t.contracts.events import EventEnvelopeV1, make_event_v1
+from v4t.contracts.events import EventEnvelope, make_event
 from v4t.contracts.numbers import decimal_to_str
-from v4t.contracts.payloads import MarketOHLCVPayloadV1, MarketPricePayloadV1
+from v4t.contracts.payloads import MarketOHLCVPayload, MarketPricePayload
 
 
 def _ensure_aware_utc(dt: datetime) -> datetime:
@@ -27,7 +27,7 @@ def generate_freqtrade_ohlcv_events(
     start: datetime,
     end: datetime,
     timeframe: str = "1h",
-) -> Iterable[EventEnvelopeV1]:
+) -> Iterable[EventEnvelope]:
     start = _ensure_aware_utc(start)
     end = _ensure_aware_utc(end)
 
@@ -43,11 +43,11 @@ def generate_freqtrade_ohlcv_events(
 
         close = Decimal(str(row["close"]))
 
-        price_payload = MarketPricePayloadV1(
+        price_payload = MarketPricePayload(
             market_id=market_id,
             price=decimal_to_str(close),
         ).model_dump(mode="json")
-        yield make_event_v1(
+        yield make_event(
             event_type="market.price",
             source="ingest.freqtrade",
             observed_at=bar_end,
@@ -57,7 +57,7 @@ def generate_freqtrade_ohlcv_events(
             payload=price_payload,
         )
 
-        payload = MarketOHLCVPayloadV1(
+        payload = MarketOHLCVPayload(
             market_id=market_id,
             timeframe=timeframe,
             bar_start=bar_start,
@@ -70,7 +70,7 @@ def generate_freqtrade_ohlcv_events(
             volume_quote=None,
         ).model_dump(mode="json")
 
-        yield make_event_v1(
+        yield make_event(
             event_type="market.ohlcv",
             source="ingest.freqtrade",
             observed_at=bar_end,

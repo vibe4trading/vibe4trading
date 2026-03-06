@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_MODEL_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9._:-]{0,127}$")
 
 
 class Settings(BaseSettings):
@@ -12,6 +15,15 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="postgresql+psycopg://postgres:postgres@localhost:5432/v4t",
         description="SQLAlchemy database URL.",
+    )
+    db_pool_size: int = Field(default=20, description="SQLAlchemy pool size for non-SQLite DBs.")
+    db_max_overflow: int = Field(
+        default=30,
+        description="Additional DB connections allowed above the base pool size.",
+    )
+    db_pool_timeout_seconds: float = Field(
+        default=30.0,
+        description="Seconds to wait for a pooled DB connection before failing.",
     )
 
     # Celery broker/result backend.
@@ -44,6 +56,17 @@ class Settings(BaseSettings):
     # LLM reliability knobs.
     llm_timeout_seconds: float = 60.0
     llm_max_retries: int = 2
+    llm_max_concurrent_requests: int = Field(
+        default=3,
+        description="Maximum concurrent outbound LLM HTTP requests per process.",
+    )
+    llm_max_queued_requests: int | None = Field(
+        default=None,
+        description=(
+            "Maximum number of queued outbound LLM requests per process. "
+            "Defaults to 3x llm_max_concurrent_requests when unset."
+        ),
+    )
 
     # LLM budgets / guardrails (0 disables that budget).
     # These are best-effort caps to avoid runaway spend in MVP.
@@ -152,6 +175,14 @@ class Settings(BaseSettings):
         ),
     )
 
+    admin_groups: str | None = Field(
+        default=None,
+        description=(
+            "Comma-separated list of OIDC group names that grant admin access. "
+            "Users whose oidc_groups contain any of these groups are considered admins."
+        ),
+    )
+
     arena_dataset_ids: str | None = Field(
         default=None,
         description=(
@@ -167,6 +198,22 @@ def get_settings() -> Settings:
     return Settings()
 
 
+def get_env_model_key() -> str | None:
+    """Return the env-configured LLM model key, or None when it's the default 'stub'."""
+    s = get_settings()
+    key = (s.llm_model or "").strip()
+    base_url = (s.llm_base_url or "").strip()
+    if key in {"", "stub"} or not base_url:
+        return None
+    return key
+
+
+def is_env_model_key(model_key: str) -> bool:
+    """Check whether *model_key* matches the env-configured LLM model."""
+    env_key = get_env_model_key()
+    return env_key is not None and model_key == env_key
+
+
 def parse_csv_set(raw: str | None) -> set[str] | None:
     """Parse a comma-separated string into a set.
 
@@ -177,3 +224,40 @@ def parse_csv_set(raw: str | None) -> set[str] | None:
         return None
     items = {s.strip() for s in raw.split(",") if s.strip()}
     return items or None
+
+
+def parse_model_allowlist_override(
+    raw: str | None, *, strict: bool = False
+) -> tuple[set[str], set[str]]:
+    additions: set[str] = set()
+    removals: set[str] = set()
+
+    if raw is None:
+        return additions, removals
+
+    for token in raw.split(","):
+        value = token.strip()
+        if not value:
+            continue
+
+        op = value[0]
+        model_key = value[1:].strip()
+        if op not in {"+", "-"} or not model_key:
+            if strict:
+                raise ValueError(f"Invalid allowlist override token: {value}")
+            continue
+        if model_key == "stub":
+            continue
+        if not _MODEL_KEY_RE.match(model_key):
+            if strict:
+                raise ValueError(f"Invalid model key in allowlist override: {model_key}")
+            continue
+
+        if op == "+":
+            additions.add(model_key)
+            removals.discard(model_key)
+        else:
+            removals.add(model_key)
+            additions.discard(model_key)
+
+    return additions, removals
