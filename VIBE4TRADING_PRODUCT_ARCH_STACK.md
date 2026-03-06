@@ -41,8 +41,8 @@ The landing experience positions the product as a trial ground for AI trading ag
 
 Evidence:
 
-- `vibe4trading-frontend/apps/web/src/app/page.tsx`
-- `vibe4trading-frontend/apps/web/src/app/components/landing/LandingPage.tsx`
+- `vibe4trading-frontend/src/app/page.tsx`
+- `vibe4trading-frontend/src/app/components/landing/LandingPage.tsx`
 
 The landing page messaging centers on:
 
@@ -67,9 +67,9 @@ The backend replays historical events, reconstructs context at each tick, calls 
 
 Evidence:
 
-- frontend create/list page: `vibe4trading-frontend/apps/web/src/app/runs/page.tsx`
-- run detail page: `vibe4trading-frontend/apps/web/src/app/runs/[runId]/page.tsx`
-- watch mode: `vibe4trading-frontend/apps/web/src/app/runs/[runId]/watch/page.tsx`
+- frontend create/list page: `vibe4trading-frontend/src/app/runs/page.tsx`
+- run detail page: `vibe4trading-frontend/src/app/runs/[runId]/page.tsx`
+- watch mode: `vibe4trading-frontend/src/app/runs/[runId]/watch/page.tsx`
 - API route: `vibe4trading-backend/src/v4t/api/routes/runs.py`
 - replay engine: `vibe4trading-backend/src/v4t/orchestrator/replay_run.py`
 
@@ -92,8 +92,8 @@ This means users are not only asking whether a prompt made money once, but wheth
 
 Evidence:
 
-- arena page: `vibe4trading-frontend/apps/web/src/app/arena/page.tsx`
-- submission detail page: `vibe4trading-frontend/apps/web/src/app/arena/submissions/[submissionId]/page.tsx`
+- arena page: `vibe4trading-frontend/src/app/arena/page.tsx`
+- submission detail page: `vibe4trading-frontend/src/app/arena/submissions/[submissionId]/page.tsx`
 - arena API: `vibe4trading-backend/src/v4t/api/routes/arena.py`
 - arena runner: `vibe4trading-backend/src/v4t/arena/runner.py`
 - arena reporting: `vibe4trading-backend/src/v4t/arena/reporting.py`
@@ -123,7 +123,7 @@ The leaderboard turns the system from a private testing tool into a competitive 
 
 Evidence:
 
-- leaderboard UI: `vibe4trading-frontend/apps/web/src/app/leaderboard/page.tsx`
+- leaderboard UI: `vibe4trading-frontend/src/app/leaderboard/page.tsx`
 - backend endpoint: `vibe4trading-backend/src/v4t/api/routes/arena.py`
 
 It exposes:
@@ -141,7 +141,7 @@ Evidence:
 
 - backend live routes: `vibe4trading-backend/src/v4t/api/routes/live.py`
 - backend live orchestrator: `vibe4trading-backend/src/v4t/orchestrator/live_run.py`
-- frontend `/live`: `vibe4trading-frontend/apps/web/src/app/live/page.tsx`
+- frontend `/live`: `vibe4trading-frontend/src/app/live/page.tsx`
 
 Important product truth:
 
@@ -160,7 +160,7 @@ The product includes internal controls for model onboarding and per-user model a
 
 Evidence:
 
-- admin model page: `vibe4trading-frontend/apps/web/src/app/admin/models/page.tsx`
+- admin model page: `vibe4trading-frontend/src/app/admin/models/page.tsx`
 - admin model routes: `vibe4trading-backend/src/v4t/api/routes/admin_models.py`
 - per-user model access: `vibe4trading-backend/src/v4t/api/routes/admin_model_access.py`
 
@@ -257,9 +257,9 @@ Responsibilities:
 
 Evidence:
 
-- `vibe4trading-frontend/apps/web/src/app/layout.tsx`
-- `vibe4trading-frontend/apps/web/src/app/api/v4t/[...path]/route.ts`
-- `vibe4trading-frontend/apps/web/src/app/lib/realtime.ts`
+- `vibe4trading-frontend/src/app/layout.tsx`
+- `vibe4trading-frontend/src/app/api/v4t/[...path]/route.ts`
+- `vibe4trading-frontend/src/app/lib/realtime.ts`
 
 #### API layer
 
@@ -497,10 +497,10 @@ These are not fatal issues, but they should not be pitched as finished product c
 
 Evidence:
 
-- `vibe4trading-frontend/apps/web/package.json`
-- `vibe4trading-frontend/apps/web/vitest.config.ts`
-- `vibe4trading-frontend/apps/web/playwright.config.ts`
-- `vibe4trading-frontend/apps/web/eslint.config.mjs`
+- `vibe4trading-frontend/package.json`
+- `vibe4trading-frontend/vitest.config.ts`
+- `vibe4trading-frontend/playwright.config.ts`
+- `vibe4trading-frontend/eslint.config.mjs`
 
 ### Backend stack
 
@@ -542,7 +542,7 @@ Evidence:
 
 Evidence:
 
-- `vibe4trading-frontend/apps/web/src/auth.ts`
+- `vibe4trading-frontend/src/auth.ts`
 - `vibe4trading-backend/src/v4t/auth/deps.py`
 - `vibe4trading-backend/src/v4t/api/routes/me.py`
 
@@ -573,7 +573,7 @@ Evidence:
 - `vibe4trading-backend/pyproject.toml`
 - `vibe4trading-backend/pyrightconfig.json`
 - `vibe4trading-backend/tests/`
-- `vibe4trading-frontend/apps/web/e2e/`
+- `vibe4trading-frontend/e2e/`
 
 ## Architecture diagram ingredients
 

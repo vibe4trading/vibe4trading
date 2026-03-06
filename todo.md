@@ -320,10 +320,10 @@ Goal: one always-on live run for the main dashboard.
 
 ```text
 vibe4trading-frontend/
-├─ apps/web/                 # Next.js (App Router)
-├─ packages/ui/              # optional shared components
-├─ pnpm-workspace.yaml
-├─ turbo.json                # optional; or keep it simple with plain scripts
+├─ src/                      # Next.js (App Router)
+│  └─ app/                   # App Router pages & components
+├─ public/                   # Static assets
+├─ e2e/                      # Playwright tests
 ├─ package.json
 └─ README.md
 ```
