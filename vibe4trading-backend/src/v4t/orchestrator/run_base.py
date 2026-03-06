@@ -19,9 +19,7 @@ from v4t.benchmark.spec import (
 from v4t.contracts.events import make_event
 from v4t.contracts.numbers import decimal_to_str, parse_decimal
 from v4t.contracts.payloads import (
-    LlmDecisionOutputV1,
-    LlmDecisionOutputV2,
-    LlmScheduleRequestPayload,
+    LlmDecisionOutput,
     MarketOHLCVPayload,
     PortfolioSnapshotPayload,
     RunFailedPayload,
@@ -35,15 +33,9 @@ from v4t.contracts.run_config import RunConfigSnapshot, RunMode
 from v4t.db.event_store import append_event
 from v4t.db.models import PortfolioSnapshotRow, RunConfigSnapshotRow, RunRow
 from v4t.orchestrator.prompt_builder import build_default_prompt_context
-from v4t.utils.datetime import ceil_seconds, ceil_time, now
+from v4t.utils.datetime import now
 
 _logger = logging.getLogger(__name__)
-
-LEGACY_SYSTEM_PROMPT = (
-    "You are a trading decision engine. "
-    "Return ONLY a valid JSON object matching schema_version=1. "
-    "Spot is long-only; target exposure must be between 0 and 1."
-)
 
 
 @dataclass(frozen=True)
@@ -51,34 +43,25 @@ class ValidatedDecision:
     accepted: bool
     reject_reason: str | None
     effective_target: Decimal
-    decision_schema_version: int
     mode: PositionMode
     leverage: int
     stop_loss_pct: Decimal | None
     take_profit_pct: Decimal | None
-    next_check_seconds: int | None
     confidence: Decimal | None
     key_signals: list[str]
     rationale: str | None
 
 
 def get_system_prompt(cfg: RunConfigSnapshot) -> str:
-    if int(cfg.decision_schema_version) == 2:
-        return benchmark_system_prompt(cfg.prompt.system_prompt_override)
-    override = (cfg.prompt.system_prompt_override or "").strip()
-    if override:
-        return override
-    return LEGACY_SYSTEM_PROMPT
+    return benchmark_system_prompt(cfg.prompt.system_prompt_override)
 
 
 def get_strategy_prompt(cfg: RunConfigSnapshot) -> str:
-    if int(cfg.decision_schema_version) == 2:
-        return build_strategy_prompt(
-            base_prompt=cfg.prompt.prompt_text,
-            risk_level=cfg.risk_level,
-            holding_period=cfg.holding_period,
-        )
-    return cfg.prompt.prompt_text
+    return build_strategy_prompt(
+        base_prompt=cfg.prompt.prompt_text,
+        risk_level=cfg.risk_level,
+        holding_period=cfg.holding_period,
+    )
 
 
 def load_run_and_config(
@@ -203,7 +186,7 @@ def mark_run_failed(
     session.commit()
 
 
-def compute_features(closes: list[str]) -> dict | None:
+def compute_features(closes: list[str]) -> dict[str, Any] | None:
     if len(closes) < 2:
         return None
     try:
@@ -220,11 +203,13 @@ def compute_features(closes: list[str]) -> dict | None:
         return None
 
 
-def mask_decision_memory(memory: list[dict], mask_offset: timedelta) -> list[dict]:
+def mask_decision_memory(
+    memory: list[dict[str, Any]], mask_offset: timedelta
+) -> list[dict[str, Any]]:
     if mask_offset.total_seconds() == 0:
         return memory[-3:]
 
-    masked_memory: list[dict] = []
+    masked_memory: list[dict[str, Any]] = []
     for m in memory[-3:]:
         mm = dict(m)
         tt = mm.get("tick_time")
@@ -249,11 +234,10 @@ def build_prompt_context(
     latest_price: tuple[datetime, str] | None,
     ohlcv_bars: list[MarketOHLCVPayload] | None,
     closes: list[str],
-    features: dict | None,
+    features: dict[str, Any] | None,
     sentiment_summaries: list[SentimentItemSummaryPayload],
     portfolio_view: dict[str, str],
-    memory: list[dict],
-    decision_schema_version: int = 1,
+    memory: list[dict[str, Any]],
 ) -> dict[str, Any]:
     prompt_tick_time = tick_time + mask_offset
     recent_summaries = [s for s in sentiment_summaries if s.item_time <= tick_time]
@@ -278,7 +262,6 @@ def build_prompt_context(
         portfolio=portfolio_view,
         memory=mask_decision_memory(memory, mask_offset),
     )
-    ctx["decision_schema_version"] = int(decision_schema_version)
 
     if timeframe:
         ctx["timeframe"] = timeframe
@@ -316,7 +299,7 @@ def build_prompt_context(
 
 def validate_decision(
     *,
-    decision: LlmDecisionOutputV1 | LlmDecisionOutputV2,
+    decision: LlmDecisionOutput,
     market_id: str,
     last_target: Decimal,
     last_mode: PositionMode = PositionMode.spot,
@@ -338,75 +321,49 @@ def validate_decision(
         accepted = False
         reject_reason = f"llm_error: {call_error}"[:300]
 
-    if int(decision.schema_version) == 2:
-        v2 = decision if isinstance(decision, LlmDecisionOutputV2) else None
-        if v2 is None:
-            accepted = False
-            reject_reason = "invalid decision schema"
-        else:
-            profile = get_risk_profile(risk_level)
-            proposed_mode = PositionMode(v2.mode)
-            proposed_target = Decimal(v2.target)
-            proposed_leverage = int(v2.leverage)
-            if profile is not None:
-                if proposed_mode not in profile.mode_allowed:
-                    accepted = False
-                    reject_reason = "mode not allowed for risk_level"
-                elif proposed_mode == PositionMode.spot and proposed_leverage != 1:
-                    accepted = False
-                    reject_reason = "spot leverage must be 1"
-                elif proposed_mode == PositionMode.spot and proposed_target < 0:
-                    accepted = False
-                    reject_reason = "spot exposure must be >= 0"
-                elif proposed_mode == PositionMode.spot and proposed_target > Decimal("1"):
-                    accepted = False
-                    reject_reason = "spot exposure must be <= 1"
-                elif abs(proposed_target) > profile.max_abs_exposure:
-                    accepted = False
-                    reject_reason = "exposure exceeds risk_level cap"
-                elif proposed_leverage > profile.max_leverage:
-                    accepted = False
-                    reject_reason = "leverage exceeds risk_level cap"
-                elif proposed_target < 0 and not profile.short_allowed:
-                    accepted = False
-                    reject_reason = "shorting not allowed for risk_level"
-                elif abs(proposed_target) > Decimal(proposed_leverage):
-                    accepted = False
-                    reject_reason = "exposure exceeds leverage"
-            if accepted:
-                if abs(proposed_target) > gross_leverage_cap:
-                    accepted = False
-                    reject_reason = "exposure exceeds gross_leverage_cap"
-                elif abs(proposed_target) > net_exposure_cap:
-                    accepted = False
-                    reject_reason = "exposure exceeds net_exposure_cap"
-                else:
-                    effective_target = proposed_target
-                    effective_mode = proposed_mode
-                    effective_leverage = proposed_leverage
-                    stop_loss_pct = v2.stop_loss_pct
-                    take_profit_pct = v2.take_profit_pct
-    else:
-        targets = decision.targets if isinstance(decision, LlmDecisionOutputV1) else None
-        if targets:
-            if set(targets.keys()) - {market_id}:
+    if accepted:
+        profile = get_risk_profile(risk_level)
+        proposed_mode = PositionMode(decision.mode)
+        proposed_target = Decimal(decision.target)
+        proposed_leverage = int(decision.leverage)
+        if profile is not None:
+            if proposed_mode not in profile.mode_allowed:
                 accepted = False
-                reject_reason = "targets contains unknown market_id"
+                reject_reason = "mode not allowed for risk_level"
+            elif proposed_mode == PositionMode.spot and proposed_leverage != 1:
+                accepted = False
+                reject_reason = "spot leverage must be 1"
+            elif proposed_mode == PositionMode.spot and proposed_target < 0:
+                accepted = False
+                reject_reason = "spot exposure must be >= 0"
+            elif proposed_mode == PositionMode.spot and proposed_target > Decimal("1"):
+                accepted = False
+                reject_reason = "spot exposure must be <= 1"
+            elif abs(proposed_target) > profile.max_abs_exposure:
+                accepted = False
+                reject_reason = "exposure exceeds risk_level cap"
+            elif proposed_leverage > profile.max_leverage:
+                accepted = False
+                reject_reason = "leverage exceeds risk_level cap"
+            elif proposed_target < 0 and not profile.short_allowed:
+                accepted = False
+                reject_reason = "shorting not allowed for risk_level"
+            elif abs(proposed_target) > Decimal(proposed_leverage):
+                accepted = False
+                reject_reason = "exposure exceeds leverage"
+        if accepted:
+            if abs(proposed_target) > gross_leverage_cap:
+                accepted = False
+                reject_reason = "exposure exceeds gross_leverage_cap"
+            elif abs(proposed_target) > net_exposure_cap:
+                accepted = False
+                reject_reason = "exposure exceeds net_exposure_cap"
             else:
-                proposed = targets.get(market_id)
-                if proposed is None:
-                    effective_target = last_target
-                elif proposed < 0:
-                    accepted = False
-                    reject_reason = "spot exposure must be >= 0"
-                elif proposed > gross_leverage_cap:
-                    accepted = False
-                    reject_reason = "exposure exceeds gross_leverage_cap"
-                elif proposed > net_exposure_cap:
-                    accepted = False
-                    reject_reason = "exposure exceeds net_exposure_cap"
-                else:
-                    effective_target = proposed
+                effective_target = proposed_target
+                effective_mode = proposed_mode
+                effective_leverage = proposed_leverage
+                stop_loss_pct = decision.stop_loss_pct
+                take_profit_pct = decision.take_profit_pct
 
     if not accepted:
         effective_target = last_target
@@ -419,89 +376,29 @@ def validate_decision(
         accepted=accepted,
         reject_reason=reject_reason,
         effective_target=effective_target,
-        decision_schema_version=int(decision.schema_version),
         mode=effective_mode,
         leverage=effective_leverage,
         stop_loss_pct=stop_loss_pct,
         take_profit_pct=take_profit_pct,
-        next_check_seconds=decision.next_check_seconds,
         confidence=decision.confidence,
         key_signals=list(decision.key_signals),
         rationale=decision.rationale,
     )
 
 
-def choose_tick_time(next_base_tick: datetime, next_early_tick: datetime | None) -> datetime:
-    tick_time = next_base_tick
-    if next_early_tick is not None and next_early_tick < tick_time:
-        tick_time = next_early_tick
-    return tick_time
-
-
-def advance_schedule(
+def advance_base_tick(
     *,
-    tick_time: datetime,
     next_base_tick: datetime,
-    next_early_tick: datetime | None,
     base_interval: timedelta,
-) -> tuple[datetime, datetime | None]:
-    if next_early_tick is not None and tick_time == next_early_tick:
-        next_early_tick = None
-    if tick_time == next_base_tick:
-        next_base_tick = next_base_tick + base_interval
-    return next_base_tick, next_early_tick
-
-
-def compute_early_tick(
-    *,
-    requested_seconds: int,
-    min_interval_seconds: int,
-    base_interval_seconds: int,
-    step_seconds: int,
-    tick_time: datetime,
-    next_base_tick: datetime,
-    align_to_step: bool,
-) -> tuple[int | None, datetime | None]:
-    honored_raw = max(min_interval_seconds, min(requested_seconds, base_interval_seconds))
-    honored = ceil_seconds(honored_raw, step=step_seconds)
-    candidate = tick_time + timedelta(seconds=honored)
-    if align_to_step:
-        candidate = ceil_time(candidate, step_seconds=step_seconds)
-    if candidate < next_base_tick:
-        return honored, candidate
-    return None, None
-
-
-def append_schedule_request_event(
-    session: Session,
-    *,
-    source: str,
-    tick_time: datetime,
-    run_id: UUID,
-    requested_seconds: int,
-    honored_seconds: int | None,
-) -> None:
-    append_event(
-        session,
-        ev=make_event(
-            event_type="llm.schedule_request",
-            source=source,
-            observed_at=tick_time,
-            dedupe_key=tick_time.isoformat(),
-            run_id=run_id,
-            payload=LlmScheduleRequestPayload(
-                tick_time=tick_time,
-                requested_seconds=requested_seconds,
-                honored_seconds=honored_seconds,
-            ).model_dump(mode="json"),
-        ),
-        dedupe_scope="run",
-    )
+) -> datetime:
+    return next_base_tick + base_interval
 
 
 def append_decision_memory(
-    memory: list[dict], decision_payload: dict, max_items: int | None = 50
-) -> list[dict]:
+    memory: list[dict[str, Any]],
+    decision_payload: dict[str, Any],
+    max_items: int | None = 50,
+) -> list[dict[str, Any]]:
     memory.append(decision_payload)
     if max_items is None:
         return memory

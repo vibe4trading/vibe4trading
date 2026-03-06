@@ -134,7 +134,6 @@ class RunCreateRequest(BaseModel):
     model_token_pairs: list[ModelTokenPair] | None = None
 
     prompt_text: str = "Analyze the market data and decide target exposure."
-    decision_schema_version: Literal[1, 2] = 1
     risk_level: int | None = Field(default=None, ge=1, le=5)
     holding_period: HoldingPeriod | None = None
     system_prompt: str | None = None
@@ -220,7 +219,6 @@ class LiveRunCreateRequest(BaseModel):
     model_key: str = "stub"
 
     prompt_text: str = "You are a trading assistant. Analyze the market and make decisions."
-    decision_schema_version: Literal[1, 2] = 1
     risk_level: int | None = Field(default=None, ge=1, le=5)
     holding_period: HoldingPeriod | None = None
     system_prompt: str | None = None
@@ -260,7 +258,6 @@ class ScenarioSetOut(BaseModel):
 
     # Fixed knobs for comparability/cost.
     base_interval_seconds: int
-    min_interval_seconds: int
     price_tick_seconds: int
     lookback_bars: int
     timeframe: str
@@ -276,7 +273,6 @@ class ArenaSubmissionCreateRequest(BaseModel):
     model_key: str = "stub"
 
     prompt_text: str = "Analyze the market data and decide target exposure."
-    decision_schema_version: Literal[1, 2] = 2
     risk_level: int = Field(default=3, ge=1, le=5)
     holding_period: HoldingPeriod = HoldingPeriod.swing
     system_prompt: str | None = None
@@ -296,6 +292,7 @@ class ArenaSubmissionOut(BaseModel):
 
     windows_total: int
     windows_completed: int
+    llm_calls_completed: int = 0
 
     total_return_pct: float | None
     avg_return_pct: float | None

@@ -47,8 +47,6 @@ DECISION FRAMEWORK:
 - Use portfolio state to understand current exposure and P&L.
 - Use your recent decisions to maintain consistency and avoid flip-flopping.
 - The confidence field (0.0 to 1.0) reflects how sure you are. Low confidence means smaller position changes.
-- The next_check_seconds field tells the engine when to ask you again. Default to 3600 seconds (1 hour) for normal conditions.
-- Only choose a shorter interval when there is a specific reason to check earlier, such as extreme volatility, a likely breakout, fast-changing sentiment, or a position sitting close to stop-loss/take-profit levels.
 
 EXPOSURE RULES:
 - mode=spot: target value must be 0.0 to 1.0. No leverage. Long only.
@@ -70,7 +68,6 @@ OUTPUT FORMAT - return ONLY this JSON:
   "leverage": <int 1-100>,
   "stop_loss_pct": <float or null>,
   "take_profit_pct": <float or null>,
-  "next_check_seconds": <int 300-7200>,
   "confidence": <float 0.0-1.0>,
   "key_signals": ["signal_1", "signal_2"],
   "rationale": "<1-2 sentence explanation, under 50 words>"
@@ -157,15 +154,15 @@ RISK_LEVEL_PROMPTS: dict[int, str] = {
 HOLDING_PERIOD_PROMPTS: dict[HoldingPeriod, str] = {
     HoldingPeriod.intraday: (
         "Trading style: intraday. React quickly to price changes. If a position is not working "
-        "within 2-4 hours, reduce or exit. Set next_check_seconds to 600-1800."
+        "within 2-4 hours, reduce or exit."
     ),
     HoldingPeriod.swing: (
         "Trading style: swing. Hold positions for 4-24 hours if thesis is intact. Do not "
-        "overreact to hourly noise. Set next_check_seconds to 1800-3600."
+        "overreact to hourly noise."
     ),
     HoldingPeriod.position: (
         "Trading style: position. Hold through multi-day moves. Only adjust on significant trend "
-        "changes or major sentiment shifts. Set next_check_seconds to 3600-7200."
+        "changes or major sentiment shifts."
     ),
 }
 

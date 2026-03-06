@@ -52,9 +52,7 @@ class SchedulerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     base_interval_seconds: int = 3600
-    min_interval_seconds: int = 60
     price_tick_seconds: int = 60
-    early_check_alignment: Literal["ceil_to_price_tick"] = "ceil_to_price_tick"
 
 
 class DecisionConfig(BaseModel):
@@ -140,7 +138,6 @@ class RunConfigSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[1] = 1
-    decision_schema_version: Literal[1, 2] = 1
     mode: RunMode
     run_kind: RunKind = RunKind.single_window
     visibility: RunVisibility = RunVisibility.private

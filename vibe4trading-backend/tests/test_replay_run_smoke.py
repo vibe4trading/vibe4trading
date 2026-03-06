@@ -53,9 +53,7 @@ def test_execute_replay_run_finishes(db_session) -> None:
         datasets=DatasetRefs(
             market_dataset_id=spot.dataset_id, sentiment_dataset_id=sent.dataset_id
         ),
-        scheduler=SchedulerConfig(
-            base_interval_seconds=3600, min_interval_seconds=60, price_tick_seconds=60
-        ),
+        scheduler=SchedulerConfig(base_interval_seconds=3600, price_tick_seconds=60),
         prompt=PromptConfig(
             prompt_text="Analyze the market and output JSON.",
             lookback_bars=72,

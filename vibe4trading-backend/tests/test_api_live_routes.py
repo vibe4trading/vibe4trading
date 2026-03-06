@@ -18,7 +18,6 @@ def _make_live_cfg(*, market_id: str) -> dict:
         "live": {"source": "demo", "chain_id": None, "pair_id": None, "base_price": 1.0},
         "scheduler": {
             "base_interval_seconds": 60,
-            "min_interval_seconds": 30,
             "price_tick_seconds": 60,
         },
         "prompt": {

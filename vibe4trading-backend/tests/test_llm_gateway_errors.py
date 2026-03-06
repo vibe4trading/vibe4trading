@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import httpx
 
-from v4t.contracts.payloads import LlmDecisionOutputV1
+from v4t.contracts.payloads import LlmDecisionOutput
 from v4t.db.models import LlmCallRow, LlmModelRow
 from v4t.llm.concurrency import QueueFullError
 from v4t.llm.gateway import LlmGateway, StubDecisionFeatures
@@ -65,8 +65,8 @@ def test_llm_gateway_returns_fallback_on_transport_error(db_session: Any, monkey
     )
 
     assert result.error is not None
-    assert isinstance(result.decision, LlmDecisionOutputV1)
-    assert result.decision.targets == {}
+    assert isinstance(result.decision, LlmDecisionOutput)
+    assert str(result.decision.target) == "0"
 
     row = db_session.get(LlmCallRow, result.call_id)
     assert row is not None

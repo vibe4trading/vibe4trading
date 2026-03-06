@@ -45,7 +45,6 @@ def test_arena_submission_benchmark_all_markets_creates_100_runs(db_session, mon
         prompt_template_id=None,
         prompt_vars={
             "prompt_text": "Trade the benchmark.",
-            "decision_schema_version": 2,
             "risk_level": 3,
             "holding_period": "swing",
             "system_prompt": None,

@@ -8,8 +8,8 @@ export default function ContactPage() {
         <div className="contact-grid">
           <article className="contact-item">
             <span>Business</span>
-            <strong>partnership@vibe4trading.ai</strong>
-            <a className="contact-link" href="mailto:partnership@vibe4trading.ai">SEND EMAIL</a>
+            <strong>info@vibe4trading.ai</strong>
+            <a className="contact-link" href="mailto:info@vibe4trading.ai">SEND EMAIL</a>
           </article>
           <article className="contact-item">
             <span>Support</span>

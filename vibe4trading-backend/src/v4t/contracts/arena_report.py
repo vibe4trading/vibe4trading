@@ -54,13 +54,9 @@ class ArenaSubmissionReportWindowHighlight(BaseModel):
 class ArenaSubmissionReportNarrative(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    archetype: str
-    overview: str
-    strengths: list[str] = Field(default_factory=list)
-    weaknesses: list[str] = Field(default_factory=list)
-    recommendations: list[str] = Field(default_factory=list)
-    best_window_reason: str | None = None
-    worst_window_reason: str | None = None
+    Score: int = Field(ge=0, le=100)
+    Style: str
+    Description: str
 
 
 class ArenaSubmissionReport(BaseModel):
@@ -70,6 +66,7 @@ class ArenaSubmissionReport(BaseModel):
     generation_mode: Literal["llm", "fallback"] = "fallback"
     overall_score: int = Field(ge=0, le=100)
     archetype: str
+    representative: str | None = None
     overview: str
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)

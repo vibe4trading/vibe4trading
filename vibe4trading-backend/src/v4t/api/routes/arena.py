@@ -6,7 +6,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from v4t.api.deps import get_db
@@ -28,7 +28,7 @@ from v4t.arena.runner import ALL_MARKETS_SENTINEL
 from v4t.arena.scenario_sets import list_scenario_sets
 from v4t.auth.deps import get_current_user
 from v4t.contracts.arena_report import ArenaSubmissionReport
-from v4t.db.models import ArenaSubmissionRow, ArenaSubmissionRunRow, UserRow
+from v4t.db.models import ArenaSubmissionRow, ArenaSubmissionRunRow, LlmCallRow, UserRow
 from v4t.jobs.repo import dispatch_and_update_job, enqueue_job
 from v4t.jobs.types import JOB_TYPE_ARENA_EXECUTE_SUBMISSION
 from v4t.settings import get_settings
@@ -47,7 +47,9 @@ def list_markets(db: Session = Depends(get_db)) -> list[str]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-def _to_submission_out(row: ArenaSubmissionRow) -> ArenaSubmissionOut:
+def _to_submission_out(
+    row: ArenaSubmissionRow, *, llm_calls_completed: int = 0
+) -> ArenaSubmissionOut:
     return ArenaSubmissionOut(
         submission_id=row.submission_id,
         scenario_set_key=row.scenario_set_key,
@@ -57,6 +59,7 @@ def _to_submission_out(row: ArenaSubmissionRow) -> ArenaSubmissionOut:
         status=row.status,
         windows_total=row.windows_total,
         windows_completed=row.windows_completed,
+        llm_calls_completed=llm_calls_completed,
         total_return_pct=float(row.total_return_pct) if row.total_return_pct is not None else None,
         avg_return_pct=float(row.avg_return_pct) if row.avg_return_pct is not None else None,
         report_json=_parse_submission_report(row.report_json),
@@ -211,7 +214,6 @@ def get_scenario_sets(db: Session = Depends(get_db)) -> list[ScenarioSetOut]:
                     for w in s.windows
                 ],
                 base_interval_seconds=settings.replay_base_interval_seconds,
-                min_interval_seconds=settings.replay_min_interval_seconds,
                 price_tick_seconds=settings.replay_price_tick_seconds,
                 lookback_bars=settings.replay_prompt_lookback_bars,
                 timeframe=settings.replay_prompt_timeframe,
@@ -271,7 +273,6 @@ def get_scenario_sets(db: Session = Depends(get_db)) -> list[ScenarioSetOut]:
                     description="Run each configured dataset window end-to-end (no slicing).",
                     windows=fullrange_windows,
                     base_interval_seconds=settings.replay_base_interval_seconds,
-                    min_interval_seconds=settings.replay_min_interval_seconds,
                     price_tick_seconds=settings.replay_price_tick_seconds,
                     lookback_bars=settings.replay_prompt_lookback_bars,
                     timeframe=settings.replay_prompt_timeframe,
@@ -292,7 +293,6 @@ def get_scenario_sets(db: Session = Depends(get_db)) -> list[ScenarioSetOut]:
                     ),
                     windows=regime_windows,
                     base_interval_seconds=settings.replay_base_interval_seconds,
-                    min_interval_seconds=settings.replay_min_interval_seconds,
                     price_tick_seconds=settings.replay_price_tick_seconds,
                     lookback_bars=settings.replay_prompt_lookback_bars,
                     timeframe=settings.replay_prompt_timeframe,
@@ -316,7 +316,6 @@ def get_scenario_sets(db: Session = Depends(get_db)) -> list[ScenarioSetOut]:
                         for i, (st, en) in enumerate(env_set.windows)
                     ],
                     base_interval_seconds=settings.replay_base_interval_seconds,
-                    min_interval_seconds=settings.replay_min_interval_seconds,
                     price_tick_seconds=settings.replay_price_tick_seconds,
                     lookback_bars=settings.replay_prompt_lookback_bars,
                     timeframe=settings.replay_prompt_timeframe,
@@ -354,22 +353,19 @@ def create_submission(
         if len(market_datasets) == 10:
             windows_total += 10
         elif len(market_datasets) == 1:
-            windows_total += 10 if req.decision_schema_version == 2 else 1
+            windows_total += 10
         else:
             raise HTTPException(status_code=500, detail="Arena datasets misconfigured")
 
     timestamp = now()
     row = ArenaSubmissionRow(
         owner_user_id=user.user_id,
-        scenario_set_key="crypto-benchmark-v1"
-        if req.decision_schema_version == 2
-        else "env-fullrange-v1",
+        scenario_set_key="crypto-benchmark-v1",
         market_id=req.market_id,
         model_key=req.model_key,
         prompt_template_id=None,
         prompt_vars={
             "prompt_text": req.prompt_text,
-            "decision_schema_version": req.decision_schema_version,
             "risk_level": req.risk_level,
             "holding_period": req.holding_period.value,
             "system_prompt": req.system_prompt,
@@ -490,7 +486,21 @@ def get_submission(submission_id: UUID, db: Session = Depends(get_db)) -> ArenaS
         )
         for row in run_rows.values()
     ]
-    base = _to_submission_out(row)
+    run_ids = set(run_rows.keys())
+    llm_call_count = 0
+    if run_ids:
+        llm_call_count = (
+            db.scalar(
+                select(func.count())
+                .select_from(LlmCallRow)
+                .where(
+                    LlmCallRow.run_id.in_(run_ids),
+                    LlmCallRow.purpose == "decision",
+                )
+            )
+            or 0
+        )
+    base = _to_submission_out(row, llm_calls_completed=llm_call_count)
     return ArenaSubmissionDetailOut(**base.model_dump(), runs=runs)
 
 

@@ -11,6 +11,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from v4t.benchmark.spec import PositionMode
 from v4t.contracts.events import make_event
 from v4t.contracts.numbers import decimal_to_str
 from v4t.contracts.payloads import (
@@ -29,13 +30,10 @@ from v4t.ingest.dexscreener import resolve_spot_market
 from v4t.llm.gateway import LlmGateway, StubDecisionFeatures
 from v4t.orchestrator.prompt_builder import render_user_prompt
 from v4t.orchestrator.run_base import (
-    advance_schedule,
+    advance_base_tick,
     append_decision_memory,
-    append_schedule_request_event,
     append_sim_fill_event,
     build_prompt_context,
-    choose_tick_time,
-    compute_early_tick,
     compute_features,
     get_strategy_prompt,
     get_system_prompt,
@@ -47,8 +45,6 @@ from v4t.orchestrator.run_base import (
     write_portfolio_snapshot,
 )
 from v4t.sim.benchmark_sim import BenchmarkPaperSim
-from v4t.benchmark.spec import PositionMode
-from v4t.sim.nautilus_sim import NautilusPaperSim
 from v4t.utils.datetime import as_utc, ceil_time, floor_time, now
 
 _logger = logging.getLogger(__name__)
@@ -187,19 +183,11 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
     gateway = LlmGateway()
 
     fee_bps = Decimal(str(cfg.execution.fee_bps))
-    benchmark_enabled = int(cfg.decision_schema_version) == 2
-    if benchmark_enabled:
-        sim = BenchmarkPaperSim(
-            market_id=cfg.market_id,
-            initial_equity_quote=Decimal(str(cfg.execution.initial_equity_quote)),
-            fee_bps=fee_bps,
-        )
-    else:
-        sim = NautilusPaperSim(
-            market_id=cfg.market_id,
-            initial_equity_quote=Decimal(str(cfg.execution.initial_equity_quote)),
-            fee_bps=fee_bps,
-        )
+    sim = BenchmarkPaperSim(
+        market_id=cfg.market_id,
+        initial_equity_quote=Decimal(str(cfg.execution.initial_equity_quote)),
+        fee_bps=fee_bps,
+    )
     last_target = Decimal("0")
     last_mode = PositionMode.spot
     last_leverage = 1
@@ -218,7 +206,6 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
 
     start_tick = ceil_time(now(), step_seconds=price_step)
     next_base_tick = start_tick
-    next_early_tick: datetime | None = None
 
     last_price_tick: datetime | None = None
     demo_price: Decimal | None = None
@@ -233,22 +220,21 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
                 return
 
             current_time = now()
-            if benchmark_enabled:
-                sentiment_rows = list(
-                    session.execute(
-                        select(EventRow)
-                        .where(EventRow.event_type == "sentiment.item_summary")
-                        .where(EventRow.run_id == run_id)
-                        .order_by(EventRow.observed_at.desc())
-                        .limit(20)
-                    )
-                    .scalars()
-                    .all()
+            sentiment_rows = list(
+                session.execute(
+                    select(EventRow)
+                    .where(EventRow.event_type == "sentiment.item_summary")
+                    .where(EventRow.run_id == run_id)
+                    .order_by(EventRow.observed_at.desc())
+                    .limit(20)
                 )
-                sentiment_summaries = [
-                    SentimentItemSummaryPayload.model_validate(r.payload)
-                    for r in reversed(sentiment_rows)
-                ]
+                .scalars()
+                .all()
+            )
+            sentiment_summaries = [
+                SentimentItemSummaryPayload.model_validate(r.payload)
+                for r in reversed(sentiment_rows)
+            ]
 
             # Emit price ticks on a stable cadence (bucketed).
             price_tick_time = floor_time(current_time, step_seconds=price_step)
@@ -261,22 +247,21 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
                 )
                 last_price_tick = price_tick_time
                 latest_price = (price_tick_time, price)
-                if benchmark_enabled:
-                    trigger_fill = sim.process_price_update(tick_time=price_tick_time, price=price)
-                    if trigger_fill is not None:
-                        append_sim_fill_event(
-                            session,
-                            source="orchestrator.live",
-                            tick_time=price_tick_time,
-                            run_id=run_id,
-                            market_id=cfg.market_id,
-                            fill=trigger_fill,
-                        )
-                    sim.maybe_apply_default_funding(
+                trigger_fill = sim.process_price_update(tick_time=price_tick_time, price=price)
+                if trigger_fill is not None:
+                    append_sim_fill_event(
+                        session,
+                        source="orchestrator.live",
                         tick_time=price_tick_time,
-                        price=price,
-                        funding_rate=Decimal(str(cfg.execution.funding_rate_per_8h)),
+                        run_id=run_id,
+                        market_id=cfg.market_id,
+                        fill=trigger_fill,
                     )
+                sim.maybe_apply_default_funding(
+                    tick_time=price_tick_time,
+                    price=price,
+                    funding_rate=Decimal(str(cfg.execution.funding_rate_per_8h)),
+                )
 
                 append_event(
                     session,
@@ -317,7 +302,7 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
                 session.commit()
 
             # Decide whether we have a scheduled tick to run.
-            tick_time = choose_tick_time(next_base_tick, next_early_tick)
+            tick_time = next_base_tick
 
             current_time = now()
             if current_time < tick_time:
@@ -330,11 +315,8 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
                 time.sleep(sleep_s)
                 continue
 
-            # If we just consumed an early tick, clear it; base ticks remain anchored.
-            next_base_tick, next_early_tick = advance_schedule(
-                tick_time=tick_time,
+            next_base_tick = advance_base_tick(
                 next_base_tick=next_base_tick,
-                next_early_tick=next_early_tick,
                 base_interval=base_interval,
             )
 
@@ -354,15 +336,7 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
             closes = [b.c for b in usable_bars]
             features = compute_features(closes)
 
-            if benchmark_enabled:
-                portfolio_view = sim.portfolio_view(price=price)
-            else:
-                portfolio_view = {
-                    "equity_quote": decimal_to_str(sim.equity_quote(price=price)),
-                    "cash_quote": decimal_to_str(sim.cash_quote()),
-                    "position_qty_base": decimal_to_str(sim.position_qty_base()),
-                    "price": decimal_to_str(price),
-                }
+            portfolio_view = sim.portfolio_view(price=price)
 
             mask_offset = timedelta(seconds=int(cfg.prompt.masking.time_offset_seconds))
             prompt_ctx = build_prompt_context(
@@ -377,7 +351,6 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
                 sentiment_summaries=sentiment_summaries,
                 portfolio_view=portfolio_view,
                 memory=memory,
-                decision_schema_version=int(cfg.decision_schema_version),
             )
 
             user_prompt = render_user_prompt(
@@ -438,13 +411,11 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
                 system_prompt=get_system_prompt(cfg),
                 user_prompt=user_prompt,
                 stub_features=StubDecisionFeatures(
-                    decision_schema_version=int(cfg.decision_schema_version),
                     market_id=cfg.market_id,
                     closes=closes,
                     risk_level=cfg.risk_level,
                 ),
                 on_delta=_on_delta,
-                decision_schema_version=int(cfg.decision_schema_version),
                 temperature=cfg.model.temperature,
                 max_output_tokens=cfg.model.max_output_tokens,
             )
@@ -477,34 +448,9 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
                 risk_level=cfg.risk_level,
             )
 
-            requested = validated.next_check_seconds
-            honored: int | None = None
-            if requested is not None:
-                honored, candidate = compute_early_tick(
-                    requested_seconds=int(requested),
-                    min_interval_seconds=int(cfg.scheduler.min_interval_seconds),
-                    base_interval_seconds=int(cfg.scheduler.base_interval_seconds),
-                    step_seconds=price_step,
-                    tick_time=tick_time,
-                    next_base_tick=next_base_tick,
-                    align_to_step=True,
-                )
-                if candidate is not None:
-                    next_early_tick = candidate
-
-                append_schedule_request_event(
-                    session,
-                    source="orchestrator.live",
-                    tick_time=tick_time,
-                    run_id=run_id,
-                    requested_seconds=int(requested),
-                    honored_seconds=honored,
-                )
-
             decision_payload = LlmDecisionPayload(
                 tick_time=tick_time,
                 market_id=cfg.market_id,
-                decision_schema_version=validated.decision_schema_version,
                 targets={cfg.market_id: decimal_to_str(validated.effective_target)},
                 target=decimal_to_str(validated.effective_target),
                 mode=validated.mode.value,
@@ -518,7 +464,6 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
                 llm_call_id=call.call_id,
                 accepted=validated.accepted,
                 reject_reason=validated.reject_reason,
-                next_check_seconds=requested,
                 confidence=decimal_to_str(validated.confidence)
                 if validated.confidence is not None
                 else None,
@@ -540,71 +485,53 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
 
             memory = append_decision_memory(memory, decision_payload.model_dump(mode="json"))
 
-            if benchmark_enabled:
-                fills = sim.rebalance_to_target(
+            fills = sim.rebalance_to_target(
+                tick_time=tick_time,
+                price=price,
+                target_exposure=validated.effective_target,
+                mode=validated.mode,
+                leverage=validated.leverage,
+                stop_loss_pct=validated.stop_loss_pct,
+                take_profit_pct=validated.take_profit_pct,
+                reason="rebalance",
+            )
+            for fill_index, fill in enumerate(fills):
+                append_sim_fill_event(
+                    session,
+                    source="orchestrator.live",
                     tick_time=tick_time,
-                    price=price,
-                    target_exposure=validated.effective_target,
-                    mode=validated.mode,
-                    leverage=validated.leverage,
-                    stop_loss_pct=validated.stop_loss_pct,
-                    take_profit_pct=validated.take_profit_pct,
-                    reason="rebalance",
+                    run_id=run_id,
+                    market_id=cfg.market_id,
+                    fill=fill,
+                    fill_index=fill_index,
                 )
-                for fill_index, fill in enumerate(fills):
-                    append_sim_fill_event(
-                        session,
-                        source="orchestrator.live",
-                        tick_time=tick_time,
-                        run_id=run_id,
-                        market_id=cfg.market_id,
-                        fill=fill,
-                        fill_index=fill_index,
-                    )
-            else:
-                fill = sim.rebalance_to_target_exposure(
-                    tick_time=tick_time,
-                    price=price,
-                    target_exposure=validated.effective_target,
-                )
-                if fill is not None:
-                    append_sim_fill_event(
-                        session,
-                        source="orchestrator.live",
-                        tick_time=tick_time,
-                        run_id=run_id,
-                        market_id=cfg.market_id,
-                        fill=fill,
-                    )
 
             equity = sim.equity_quote(price=price)
             cash = sim.cash_quote()
             pos = sim.position_qty_base()
-            extra_payload: dict[str, str | int | None] | None = None
-            if benchmark_enabled:
-                portfolio_view = sim.portfolio_view(price=price)
-                extra_payload = {
-                    "position_mode": portfolio_view.get("position_mode"),
-                    "position_direction": portfolio_view.get("position_direction"),
-                    "position_qty_base": portfolio_view.get("position_qty_base"),
-                    "position_leverage": int(portfolio_view.get("position_leverage", "1")),
-                    "entry_price": None
-                    if portfolio_view.get("entry_price") == "n/a"
-                    else portfolio_view.get("entry_price"),
-                    "current_price": portfolio_view.get("current_price"),
-                    "liquidation_price": None
-                    if portfolio_view.get("liquidation_price") == "n/a"
-                    else portfolio_view.get("liquidation_price"),
-                    "unrealized_pnl": portfolio_view.get("unrealized_pnl"),
-                    "unrealized_pnl_pct": portfolio_view.get("unrealized_pnl_pct"),
-                    "funding_cost_accumulated": portfolio_view.get("funding_cost_accumulated"),
-                    "stop_loss_price": None
-                    if portfolio_view.get("stop_loss_price") == "n/a"
-                    else portfolio_view.get("stop_loss_price"),
-                    "take_profit_price": None
-                    if portfolio_view.get("take_profit_price") == "n/a"
-                    else portfolio_view.get("take_profit_price"),
-                }
+            portfolio_view = sim.portfolio_view(price=price)
+            extra_payload: dict[str, str | int | None] = {
+                "position_mode": portfolio_view.get("position_mode"),
+                "position_direction": portfolio_view.get("position_direction"),
+                "position_qty_base": portfolio_view.get("position_qty_base"),
+                "position_leverage": int(portfolio_view.get("position_leverage", "1")),
+                "entry_price": None
+                if portfolio_view.get("entry_price") == "n/a"
+                else portfolio_view.get("entry_price"),
+                "current_price": portfolio_view.get("current_price"),
+                "liquidation_price": None
+                if portfolio_view.get("liquidation_price") == "n/a"
+                else portfolio_view.get("liquidation_price"),
+                "unrealized_pnl": portfolio_view.get("unrealized_pnl"),
+                "unrealized_pnl_pct": portfolio_view.get("unrealized_pnl_pct"),
+                "funding_cost_accumulated": portfolio_view.get("funding_cost_accumulated"),
+                "stop_loss_price": None
+                if portfolio_view.get("stop_loss_price") == "n/a"
+                else portfolio_view.get("stop_loss_price"),
+                "take_profit_price": None
+                if portfolio_view.get("take_profit_price") == "n/a"
+                else portfolio_view.get("take_profit_price"),
+            }
             write_portfolio_snapshot(
                 session,
                 source="orchestrator.live",

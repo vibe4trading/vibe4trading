@@ -160,7 +160,6 @@ def _create_run(session, *, market_dataset_id, sentiment_dataset_id):
         ),
         scheduler=SchedulerConfig(
             base_interval_seconds=3600,
-            min_interval_seconds=60,
             price_tick_seconds=60,
         ),
         execution=ExecutionConfig(
@@ -342,8 +341,8 @@ def test_e2e_replay_llm_receives_correct_data(db_session) -> None:
         assert call.error is None, f"Call {idx} has error: {call.error}"
         parsed = call.response_parsed
         assert parsed is not None, f"Call {idx} has no parsed response"
-        assert parsed.get("schema_version") == 1
-        assert MARKET_ID in parsed.get("targets", {}), f"Call {idx}: target missing for market"
+        assert parsed.get("schema_version") == 2
+        assert "target" in parsed, f"Call {idx}: target field missing"
 
     # --- Verify run completed successfully ---
     run = session.get(RunRow, run_id)
@@ -424,7 +423,6 @@ def test_e2e_replay_no_sentiment_dataset(db_session) -> None:
         ),
         scheduler=SchedulerConfig(
             base_interval_seconds=3600,
-            min_interval_seconds=60,
             price_tick_seconds=60,
         ),
         execution=ExecutionConfig(initial_equity_quote=5000.0),
@@ -523,7 +521,6 @@ def test_e2e_replay_prices_accumulate_correctly(db_session) -> None:
         ),
         scheduler=SchedulerConfig(
             base_interval_seconds=3600,
-            min_interval_seconds=60,
             price_tick_seconds=60,
         ),
     )

@@ -408,6 +408,9 @@ export default function SubmissionDetailPage() {
               </div>
               <div className="persona">
                 <h1>{data?.status === "finished" ? report?.archetype ?? "Historical Trial Verdict" : "Trial In Progress"}</h1>
+                {report?.representative ? (
+                  <p className="representative">Archetype: {report.representative}</p>
+                ) : null}
                 <p>
                   Status: <span data-testid="tournament-run-status">{data?.status ?? "pending"}</span> · Progress:{" "}
                   <span data-testid="tournament-run-progress">{progressText}</span> · Pair: {pairName(data?.market_id)}

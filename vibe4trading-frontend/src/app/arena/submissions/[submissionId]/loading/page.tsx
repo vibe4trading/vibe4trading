@@ -80,34 +80,40 @@ export default function SubmissionLoadingPage() {
     return () => window.clearTimeout(timeoutId);
   }, [reportReady, viewReport]);
 
+  const totalLlmCalls = data ? 7 * 24 * data.windows_total : 0;
   const progressPercent =
-    data && data.windows_total > 0 ? (data.windows_completed / data.windows_total) * 100 : initialLoading ? 5 : 0;
+    data && totalLlmCalls > 0
+      ? Math.min((data.llm_calls_completed / totalLlmCalls) * 100, 100)
+      : initialLoading
+        ? 5
+        : 0;
 
   if (error && !data && !initialLoading) {
     return (
-      <main className="submission-loading-shell flex min-h-screen items-center justify-center px-6 py-12 text-[#f4eee0]">
-        <div className="w-full max-w-2xl border border-[#b86048] bg-[#1b0d0b]/92 p-8 shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-md">
-          <p className="text-[12px] uppercase tracking-[0.32em] text-[#ffb39b]">Submission uplink failed</p>
-          <h1 className="mt-4 text-[34px] uppercase tracking-[0.08em] text-[#fff0ea]">Unable to load the run state</h1>
-          <p className="mt-4 text-[15px] leading-7 text-[#f8cec3]">{error}</p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                void refresh();
-              }}
-              className="border border-[#ffb39b] bg-[#ffb39b] px-5 py-3 text-[12px] uppercase tracking-[0.24em] text-[#1a0e0d]"
-            >
-              Retry
-            </button>
-            <button
-              type="button"
-              onClick={viewReport}
-              className="border border-[#6d88a6] bg-transparent px-5 py-3 text-[12px] uppercase tracking-[0.24em] text-[#d5dfec]"
-            >
-              Open report
-            </button>
-          </div>
+      <main className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-[#0a0a0a] px-6">
+        <p className="mb-6 text-[11px] uppercase tracking-[0.3em] text-[#ababab]">
+          Connection failed
+        </p>
+        <p className="mb-10 max-w-md text-center text-[16px] leading-relaxed text-white md:text-[20px]">
+          {error}
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              void refresh();
+            }}
+            className="border-2 border-white bg-white px-8 py-4 text-[14px] uppercase tracking-[2px] text-[#0a0a0a] transition-all duration-150 hover:bg-transparent hover:text-white"
+          >
+            Retry
+          </button>
+          <button
+            type="button"
+            onClick={viewReport}
+            className="border-2 border-white bg-transparent px-8 py-4 text-[14px] uppercase tracking-[2px] text-white transition-all duration-150 hover:bg-white hover:text-[#0a0a0a]"
+          >
+            Open report
+          </button>
         </div>
       </main>
     );

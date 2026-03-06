@@ -1,9 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 
-import { useNewRunModal } from "@/app/components/NewRunProvider";
+import { AsciiDitherAnimation } from "./AsciiDitherAnimation";
 import { Typewriter } from "./Typewriter";
 import { useScrollReveal } from "./useScrollReveal";
 
@@ -57,25 +56,51 @@ const steps = [
 
 const archetypes = [
   {
-    title: "CONTRACT KING",
-    name: "PickleCat / Binance Futures #1",
-    copy: '"When others got liquidated, your margin was still deep."',
+    title: "MEME HUNTER",
+    name: "Ansem",
+    copy: '"High-frequency short-term narrative chaser. Aggressive position sizing."',
+  },
+  {
+    title: "DIAMOND HANDS",
+    name: "Michael Saylor",
+    copy: '"Low-frequency long holder. Disciplined and steady."',
+  },
+  {
+    title: "MACRO SPECULATOR",
+    name: "Arthur Hayes",
+    copy: '"Bidirectional swing trader driven by macro rhythms."',
   },
   {
     title: "THE CONTRARIAN",
-    name: "GCR / Macro short bias",
-    copy: '"When everyone was bullish, you were already fading the move."',
+    name: "DonAlt",
+    copy: '"Counter-consensus bottom fisher. Swing-oriented and patient."',
+  },
+  {
+    title: "CONTRACT KING",
+    name: "PickleCat (0xPickleCat)",
+    copy: '"Futures-dominant medium-frequency trader. High leverage, high conviction."',
+  },
+  {
+    title: "ON-CHAIN DETECTIVE",
+    name: "ZachXBT",
+    copy: '"Low leverage, risk-first approach. Defense over offense."',
   },
   {
     title: "FOMO WARRIOR",
-    name: "Anti-pattern",
-    copy: '"Buys the breakout late, sells the wick low, and calls it bad luck."',
+    name: "Typical Retail",
+    copy: '"Emotional buy-high sell-low pattern. Overtrades consistently."',
     dashed: true,
   },
   {
     title: "SUPERCYCLE BELIEVER",
-    name: "Anti-pattern",
-    copy: '"This time is different, right up until it is not."',
+    name: "Su Zhu (3AC)",
+    copy: '"Perma-long with high leverage. Weak downside protection."',
+    dashed: true,
+  },
+  {
+    title: "DEGEN WHALE",
+    name: "James Wynn",
+    copy: '"Extreme leverage, concentrated bets. Massive volatility."',
     dashed: true,
   },
 ];
@@ -87,8 +112,6 @@ function fadeInClasses(visible: boolean) {
 }
 
 function HeroSection() {
-  const { openNewRun } = useNewRunModal();
-
   return (
     <section className="snap-start relative flex min-h-[calc(100vh-76px)] items-center justify-center overflow-hidden px-6 py-10">
       <div className="pointer-events-none absolute inset-0">
@@ -98,21 +121,7 @@ function HeroSection() {
 
       <div className="relative z-10 mx-auto flex w-full max-w-[1480px] flex-col items-center justify-center">
         <div className="relative flex min-h-[520px] w-full items-center justify-center md:min-h-[640px]">
-          <div className="relative h-[260px] w-[260px] md:h-[470px] md:w-[470px]">
-            <Image
-              src="/helmet.png"
-              alt="Spartan helmet"
-              fill
-              priority
-              className="object-contain drop-shadow-[0_20px_70px_rgba(255,255,255,0.08)]"
-              style={{
-                WebkitMaskImage:
-                  "radial-gradient(ellipse 67% 72% at 50% 44%, black 46%, transparent 82%)",
-                maskImage:
-                  "radial-gradient(ellipse 67% 72% at 50% 44%, black 46%, transparent 82%)",
-              }}
-            />
-          </div>
+          <AsciiDitherAnimation className="pointer-events-auto" />
 
           {heroLabels.map((label) => (
             <div
@@ -141,22 +150,6 @@ function HeroSection() {
           <p className="mt-5 text-xs tracking-[0.32em] text-zinc-400 md:text-sm">
             10 EVENTS | 10 TOKENS | 1 SCORE | FREE
           </p>
-
-          <div className="mt-8 grid w-full gap-3 md:grid-cols-2">
-            <Link
-              href="/live"
-              className="border border-white/35 bg-white/5 px-5 py-4 text-sm tracking-[0.22em] text-zinc-100 transition-colors hover:bg-white/10 md:text-base"
-            >
-              LIVE DASHBOARD
-            </Link>
-            <button
-              type="button"
-              onClick={openNewRun}
-              className="border border-white bg-white px-5 py-4 text-sm tracking-[0.22em] text-black transition-colors hover:bg-zinc-200 md:text-base"
-            >
-              NEW RUN
-            </button>
-          </div>
         </div>
       </div>
     </section>

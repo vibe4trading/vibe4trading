@@ -111,7 +111,6 @@ export type RunConfigSnapshot = {
   scheduler?: {
     base_interval_seconds?: number;
     price_tick_seconds?: number;
-    min_interval_seconds?: number;
   };
 
   replay?: {
@@ -151,7 +150,6 @@ export type LlmDecision = {
   llm_call_id?: string | null;
   accepted: boolean;
   reject_reason?: string | null;
-  next_check_seconds?: number | null;
   confidence?: string | null;
   key_signals?: string[];
   rationale?: string | null;
@@ -190,7 +188,6 @@ export type ScenarioSetOut = {
   windows: ScenarioWindowOut[];
 
   base_interval_seconds: number;
-  min_interval_seconds: number;
   price_tick_seconds: number;
   lookback_bars: number;
   timeframe: string;
@@ -209,6 +206,7 @@ export type ArenaSubmissionOut = {
 
   windows_total: number;
   windows_completed: number;
+  llm_calls_completed: number;
 
   total_return_pct: number | null;
   avg_return_pct: number | null;
@@ -291,6 +289,7 @@ export type ArenaSubmissionReport = {
   generation_mode: "llm" | "fallback";
   overall_score: number;
   archetype: string;
+  representative: string | null;
   overview: string;
   strengths: string[];
   weaknesses: string[];

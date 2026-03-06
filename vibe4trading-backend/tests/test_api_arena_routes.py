@@ -355,7 +355,8 @@ def test_submission_detail_includes_report_json(db_session, client) -> None:  # 
             "schema_version": 1,
             "generation_mode": "fallback",
             "overall_score": 72,
-            "archetype": "Adaptive Swing Trader",
+            "archetype": "On-chain Detective",
+            "representative": "ZachXBT",
             "overview": "Finished one window with positive return.",
             "strengths": ["Positive total return.", "Limited drawdown.", "Finished all windows."],
             "weaknesses": ["Only one window completed.", "Low sample size.", "Fallback narrative."],
@@ -406,4 +407,4 @@ def test_submission_detail_includes_report_json(db_session, client) -> None:  # 
     payload = res.json()
     assert payload["report_json"] is not None
     assert payload["report_json"]["overall_score"] == 72
-    assert payload["report_json"]["archetype"] == "Adaptive Swing Trader"
+    assert payload["report_json"]["archetype"] == "On-chain Detective"

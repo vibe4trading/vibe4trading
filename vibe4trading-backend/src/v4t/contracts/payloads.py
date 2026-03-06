@@ -70,20 +70,7 @@ class SentimentItemSummaryPayload(BaseModel):
     llm_call_id: UUID | None = None
 
 
-class LlmDecisionOutputV1(BaseModel):
-    """The strict JSON object the model must output (parsed from chat content)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    schema_version: Literal[1] = 1
-    targets: dict[str, Decimal] = Field(default_factory=dict)
-    next_check_seconds: int | None = None
-    confidence: Decimal | None = None
-    key_signals: list[str] = Field(default_factory=list)
-    rationale: str | None = None
-
-
-class LlmDecisionOutputV2(BaseModel):
+class LlmDecisionOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[2] = 2
@@ -92,7 +79,6 @@ class LlmDecisionOutputV2(BaseModel):
     leverage: int = Field(default=1, ge=1, le=100)
     stop_loss_pct: Decimal | None = None
     take_profit_pct: Decimal | None = None
-    next_check_seconds: int
     confidence: Decimal
     key_signals: list[str] = Field(default_factory=list, min_length=1, max_length=5)
     rationale: str
@@ -105,7 +91,6 @@ class LlmDecisionPayload(BaseModel):
 
     tick_time: datetime
     market_id: str
-    decision_schema_version: int = 1
     targets: dict[str, str] = Field(default_factory=dict)
     target: str | None = Field(default=None, pattern=DECIMAL_STR_RE)
     mode: Literal["spot", "futures"] | None = None
@@ -117,18 +102,9 @@ class LlmDecisionPayload(BaseModel):
     accepted: bool = True
     reject_reason: str | None = None
 
-    next_check_seconds: int | None = None
     confidence: str | None = Field(default=None, pattern=DECIMAL_STR_RE)
     key_signals: list[str] = Field(default_factory=list)
     rationale: str | None = None
-
-
-class LlmScheduleRequestPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    tick_time: datetime
-    requested_seconds: int
-    honored_seconds: int | None = None
 
 
 class LlmStreamStartPayload(BaseModel):

@@ -6,7 +6,7 @@ The vibe4trading backend currently supports:
 - **Replay mode**: Historical backtesting with spot-only, long-only positions
 - **Live mode**: Real-time paper trading with demo/DexScreener price feeds
 - **Decision schema v1**: Simple spot exposure targets (0.0-1.0), no leverage, no shorts
-- **Variable tick scheduling**: LLM can request earlier checks via `next_check_seconds`
+- **Fixed tick scheduling**: 1-hour base cadence, no LLM-controlled tick scheduling
 - **Sentiment integration**: Works in replay, empty in live
 
 The system uses:
@@ -22,9 +22,8 @@ Extend the engine to support a **crypto trading benchmark** where:
 2. Each run lasts 168 hours (7 days) with hourly base ticks
 3. LLMs can trade SPOT (long-only) or FUTURES (long/short with leverage up to 100x)
 4. LLMs specify stop-loss and take-profit levels that execute automatically
-5. LLMs request variable recheck intervals (5min - 2h) based on volatility
-6. Risk levels 1-5 control max leverage, shorting permissions, and exposure caps
-7. Holding periods (intraday/swing/position) influence recheck frequency
+5. Risk levels 1-5 control max leverage, shorting permissions, and exposure caps
+6. Holding periods (intraday/swing/position) influence trading style
 
 ## Target Schema
 
@@ -47,7 +46,6 @@ DECISION FRAMEWORK:
 - Use portfolio state to understand current exposure and P&L.
 - Use your recent decisions to maintain consistency and avoid flip-flopping.
 - The "confidence" field (0.0 to 1.0) reflects how sure you are. Low confidence = smaller position changes.
-- The "next_check_seconds" field tells the engine when to ask you again. Use 3600 (1 hour) for normal conditions, shorter (300-1800) when volatility is high.
 
 EXPOSURE RULES:
 - mode="spot": target value must be 0.0 to 1.0. No leverage. Long only.
@@ -75,7 +73,6 @@ OUTPUT FORMAT — return ONLY this JSON:
   "leverage": <int 1-100>,
   "stop_loss_pct": <float or null>,
   "take_profit_pct": <float or null>,
-  "next_check_seconds": <int 300-7200>,
   "confidence": <float 0.0-1.0>,
   "key_signals": ["signal_1", "signal_2"],
   "rationale": "<1-2 sentence explanation, under 50 words>"
@@ -128,7 +125,7 @@ Recent decisions:
 {PAST_DECISIONS}
 
 Return ONLY a JSON object like:
-{"schema_version":2,"target":0.5,"mode":"spot","leverage":1,"stop_loss_pct":5.0,"take_profit_pct":10.0,"next_check_seconds":3600,"confidence":0.6,"key_signals":["..."],"rationale":"..."}
+{"schema_version":2,"target":0.5,"mode":"spot","leverage":1,"stop_loss_pct":5.0,"take_profit_pct":10.0,"confidence":0.6,"key_signals":["..."],"rationale":"..."}
 ```
 
 ### Decision Output Schema v2
@@ -137,7 +134,7 @@ Return ONLY a JSON object like:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["schema_version", "target", "mode", "next_check_seconds", "confidence", "key_signals", "rationale"],
+  "required": ["schema_version", "target", "mode", "confidence", "key_signals", "rationale"],
   "properties": {
     "schema_version": {
       "type": "integer",
@@ -167,11 +164,6 @@ Return ONLY a JSON object like:
       "type": ["number", "null"],
       "minimum": 0.0,
       "maximum": 200.0
-    },
-    "next_check_seconds": {
-      "type": "integer",
-      "minimum": 300,
-      "maximum": 7200
     },
     "confidence": {
       "type": "number",
@@ -234,17 +226,17 @@ You are a maximum aggression crypto trader. You can use FUTURES with leverage up
 
 **INTRADAY (1-4H):**
 ```
-Trading style: intraday. React quickly to price changes. If a position isn't working within 2-4 hours, reduce or exit. Set next_check_seconds to 600-1800.
+Trading style: intraday. React quickly to price changes. If a position isn't working within 2-4 hours, reduce or exit.
 ```
 
 **SWING (4-24H):**
 ```
-Trading style: swing. Hold positions for 4-24 hours if thesis is intact. Don't overreact to hourly noise. Set next_check_seconds to 1800-3600.
+Trading style: swing. Hold positions for 4-24 hours if thesis is intact. Don't overreact to hourly noise.
 ```
 
 **POSITION (1-7D):**
 ```
-Trading style: position. Hold through multi-day moves. Only adjust on significant trend changes or major sentiment shifts. Set next_check_seconds to 3600-7200.
+Trading style: position. Hold through multi-day moves. Only adjust on significant trend changes or major sentiment shifts.
 ```
 
 ## Implementation Roadmap

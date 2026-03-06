@@ -13,11 +13,11 @@ from sqlalchemy.orm import Session
 
 from v4t.arena.metrics import compute_run_metrics
 from v4t.contracts.arena_report import (
+    ArenaSubmissionReport,
     ArenaSubmissionReportKeyMetrics,
     ArenaSubmissionReportNarrative,
-    ArenaSubmissionReport,
-    ArenaSubmissionReportWindowHighlight,
     ArenaSubmissionReportWindow,
+    ArenaSubmissionReportWindowHighlight,
 )
 from v4t.contracts.payloads import (
     LlmDecisionPayload,
@@ -26,6 +26,7 @@ from v4t.contracts.payloads import (
 )
 from v4t.db.models import ArenaSubmissionRow, ArenaSubmissionRunRow, EventRow, RunRow
 from v4t.llm.gateway import LlmGateway
+from v4t.settings import get_settings
 from v4t.utils.datetime import now
 
 
@@ -174,20 +175,23 @@ def generate_submission_report(
         default=None,
     )
 
-    deterministic_score = _compute_submission_score(key_metrics)
-    fallback = _build_fallback_report(
-        score=deterministic_score,
-        key_metrics=key_metrics,
-        windows=windows,
-        best_window=best_window,
-        worst_window=worst_window,
-    )
     style_context = _build_submission_style_context(
         session,
         submission=submission,
         links=links,
         run_ids=run_ids,
         key_metrics=key_metrics,
+    )
+    style_metrics = style_context["style_metrics"]
+
+    deterministic_score = _compute_submission_score(key_metrics, style_metrics=style_metrics)
+    fallback = _build_fallback_report(
+        score=deterministic_score,
+        key_metrics=key_metrics,
+        windows=windows,
+        best_window=best_window,
+        worst_window=worst_window,
+        style_metrics=style_metrics,
     )
     report = _generate_llm_report(
         session,
@@ -295,6 +299,63 @@ def _decision_exposure_pct(decision: LlmDecisionPayload, *, market_id: str) -> f
     return abs(float(Decimal(target))) * 100.0
 
 
+_TRADE_STYLE_JUDGE_PROMPT = (
+    'You are a "Freqtrade Trading Style Judge." '
+    "You may only use raw fields from the input JSON. Do not infer or fabricate data.\n\n"
+    "## Input Structure\n"
+    '{"summary":{"Total profit %":number,"Sharpe":number,"Profit factor":number,'
+    '"Max % of account underwater":number},'
+    '"trades":[{"pair":string,"open_date_utc":string,"close_date_utc":string,'
+    '"leverage":number,"is_short":boolean,"exit_reason":string,'
+    '"profit_ratio":number,"profit_abs":number}]}\n\n'
+    "If any field is missing, treat missing numeric fields as 0 and missing booleans as false. "
+    "Still produce a best-effort classification.\n\n"
+    "## Derived Metrics (from trades array)\n"
+    "total_trades = number of trades; "
+    "backtest_days = (max(close_date_utc) - min(open_date_utc)) / 86400, minimum 1; "
+    "trades_per_day = total_trades / backtest_days; "
+    "median_hold_hours = median of (close_date - open_date) in hours; "
+    "short_ratio_pct = percentage of trades where is_short = true; "
+    "avg_leverage = mean of leverage across all trades; "
+    "top1_position_pct = percentage of trades in the most frequently traded pair; "
+    "stoploss_exit_ratio_pct = percentage of trades where exit_reason contains 'stop'; "
+    "win_rate_pct = percentage of trades where profit_ratio > 0; "
+    "pnl_dispersion = standard deviation of profit_ratio.\n\n"
+    "## Scoring\n"
+    "norm(x, a, b) = clamp((x - a) / (b - a), 0, 1) * 100\n"
+    "P = 0.40 * norm(Total profit %, -20, 120) + 0.25 * norm(Sharpe, -0.5, 2.5) "
+    "+ 0.20 * norm(Profit factor, 0.8, 2.0) + 0.15 * norm(win_rate_pct, 25, 70)\n"
+    "R = 0.50 * (100 - norm(Max % of account underwater, 5, 60)) "
+    "+ 0.30 * (100 - norm(avg_leverage, 1, 20)) "
+    "+ 0.20 * (100 - norm(pnl_dispersion, 0.01, 0.15))\n"
+    "score = round(0.60 * P + 0.40 * R)\n\n"
+    "## Style Matching (9 archetypes)\n"
+    "Each style has 4 conditions. Each condition met = +25 points (max 100). "
+    "Assign the style with the highest match score.\n\n"
+    "Meme Hunter: trades_per_day>=5, median_hold_hours<=24, avg_leverage>=3, top1_position_pct>=25\n"
+    "Diamond Hands: trades_per_day<=0.8, median_hold_hours>=168, avg_leverage<=2, short_ratio_pct<=15\n"
+    "Macro Speculator: trades_per_day in [1,5], median_hold_hours in [24,240], "
+    "short_ratio_pct in [20,70], avg_leverage in [2,8]\n"
+    "FOMO Warrior: trades_per_day>=8, median_hold_hours<=12, stoploss_exit_ratio_pct>=25, Profit factor<1.0\n"
+    "The Contrarian: trades_per_day in [1,5], median_hold_hours in [24,336], "
+    "short_ratio_pct in [10,50], Profit factor>=1.1\n"
+    "Contract King: avg_leverage in [3,10], short_ratio_pct in [20,60], "
+    "trades_per_day in [1,6], Sharpe>=1.0\n"
+    "On-chain Detective: avg_leverage<=2, Max % of account underwater<=15, "
+    "trades_per_day<=2, Profit factor>=1.1\n"
+    "SuperCycle Believer: short_ratio_pct<=10, median_hold_hours>=120, "
+    "avg_leverage>=5, stoploss_exit_ratio_pct<=10\n"
+    "Degen Whale: avg_leverage>=12, top1_position_pct>=45, "
+    "Max % of account underwater>=40, pnl_dispersion>=0.08\n\n"
+    "Tiebreak: pick the style whose leverage center is closest to avg_leverage. "
+    "Centers: Meme Hunter=4, Diamond Hands=1, Macro Speculator=5, FOMO Warrior=3, "
+    "The Contrarian=3, Contract King=6, On-chain Detective=1.5, SuperCycle Believer=8, Degen Whale=15.\n\n"
+    "## Output\n"
+    "Return ONLY a valid JSON object: "
+    '{"Score":<integer 0-100>,"Style":"<exact archetype name>","Description":"<15 words or fewer>"}.'
+)
+
+
 def _generate_llm_report(
     session: Session,
     *,
@@ -308,62 +369,27 @@ def _generate_llm_report(
 ) -> ArenaSubmissionReport:
     gateway = LlmGateway()
     report_input: dict[str, Any] = {
-        "submission": {
-            "submission_id": str(submission.submission_id),
-            "scenario_set_key": submission.scenario_set_key,
-            "market_id": submission.market_id,
-            "model_key": submission.model_key,
-            "windows_total": submission.windows_total,
-            "windows_completed": submission.windows_completed,
+        "summary": {
+            "Total profit %": key_metrics.total_return_pct or 0.0,
+            "Sharpe": key_metrics.sharpe_ratio or 0.0,
+            "Profit factor": key_metrics.profit_factor or 0.0,
+            "Max % of account underwater": key_metrics.max_drawdown_pct or 0.0,
         },
-        "key_metrics": key_metrics.model_dump(mode="json"),
-        "best_window": best_window.model_dump(mode="json") if best_window is not None else None,
-        "worst_window": worst_window.model_dump(mode="json") if worst_window is not None else None,
-        "windows": [
-            {
-                "window_code": window.window_code,
-                "label": window.label,
-                "status": window.status,
-                "return_pct": window.return_pct,
-                "sharpe_ratio": window.sharpe_ratio,
-                "max_drawdown_pct": window.max_drawdown_pct,
-                "win_rate_pct": window.win_rate_pct,
-                "profit_factor": window.profit_factor,
-                "num_trades": window.num_trades,
-                "decision_count": window.decision_count,
-                "acceptance_rate_pct": window.acceptance_rate_pct,
-                "avg_confidence": window.avg_confidence,
-                "avg_target_exposure_pct": window.avg_target_exposure_pct,
-            }
-            for window in windows
-        ],
-        "style_metrics": style_context["style_metrics"],
-        "trade_samples": style_context["trade_samples"],
-        "trade_sample_truncated_count": style_context["trade_sample_truncated_count"],
+        "trades": style_context["trade_samples"],
     }
 
-    system_prompt = (
-        "You are a trading style reviewer for a single-market arena submission. "
-        "Use only the input JSON. Do not invent missing data. "
-        "Treat the repository's summary_prompt.md as a style-classification reference only: use cadence, hold time, leverage, "
-        "exit behavior, and performance versus risk, but adapt those ideas to a single-coin product. "
-        "Do not use multi-pair concepts like BTC exposure, pair concentration, or pair diversity. "
-        "The style_metrics section is computed by concatenating all underlying run details across the full submission. "
-        "Reason from submission-wide and per-window metrics such as return, drawdown, profit factor, win rate, decision acceptance, "
-        "confidence, target exposure, leverage usage, directional bias, exit reasons, and holding behavior. "
-        "Return ONLY a valid JSON object with this exact schema: "
-        '{"archetype":string,"overview":string,"strengths":string[3],"weaknesses":string[3],'
-        '"recommendations":string[3],"best_window_reason":string,"worst_window_reason":string}. '
-        "Keep overview to at most two sentences. Keep each list item short and specific."
-    )
+    system_prompt = _TRADE_STYLE_JUDGE_PROMPT
     user_prompt = json.dumps(report_input, ensure_ascii=True, indent=2)
+
+    settings = get_settings()
+    report_model_key = settings.llm_report_model or submission.model_key
 
     fallback_payload = fallback.model_dump(mode="json")
     call_id, response_json, used_fallback = gateway.call_submission_report(
         session,
         submission_id=submission.submission_id,
         observed_at=now(),
-        model_key=submission.model_key,
+        model_key=report_model_key,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         fallback_report=fallback_payload,
@@ -380,52 +406,26 @@ def _generate_llm_report(
         submission.report_call_id = call_id
         return fallback
 
+    archetype = narrative.Style
+    if archetype not in ARCHETYPE_REPRESENTATIVES:
+        archetype = fallback.archetype
+
     submission.report_call_id = call_id
     return ArenaSubmissionReport(
         schema_version=1,
         generation_mode="llm",
-        overall_score=fallback.overall_score,
-        archetype=narrative.archetype,
-        overview=narrative.overview,
-        strengths=_trim_list(narrative.strengths, fallback.strengths),
-        weaknesses=_trim_list(narrative.weaknesses, fallback.weaknesses),
-        recommendations=_trim_list(narrative.recommendations, fallback.recommendations),
+        overall_score=max(0, min(100, narrative.Score)),
+        archetype=archetype,
+        representative=ARCHETYPE_REPRESENTATIVES.get(archetype),
+        overview=narrative.Description,
+        strengths=fallback.strengths,
+        weaknesses=fallback.weaknesses,
+        recommendations=fallback.recommendations,
         key_metrics=key_metrics,
-        best_window=ArenaSubmissionReportWindowHighlight(
-            window_code=best_window.window_code,
-            label=best_window.label,
-            return_pct=best_window.return_pct,
-            reason=(narrative.best_window_reason or fallback.best_window.reason)
-            if fallback.best_window is not None
-            else narrative.best_window_reason,
-        )
-        if best_window is not None
-        else None,
-        worst_window=ArenaSubmissionReportWindowHighlight(
-            window_code=worst_window.window_code,
-            label=worst_window.label,
-            return_pct=worst_window.return_pct,
-            reason=(narrative.worst_window_reason or fallback.worst_window.reason)
-            if fallback.worst_window is not None
-            else narrative.worst_window_reason,
-        )
-        if worst_window is not None
-        else None,
+        best_window=fallback.best_window,
+        worst_window=fallback.worst_window,
         windows=windows,
     )
-
-
-def _trim_list(values: list[str], fallback: list[str]) -> list[str]:
-    trimmed = [value.strip() for value in values if value.strip()]
-    if len(trimmed) >= 3:
-        return trimmed[:3]
-    out = trimmed[:]
-    for item in fallback:
-        if item not in out:
-            out.append(item)
-        if len(out) == 3:
-            break
-    return out[:3]
 
 
 def _build_submission_style_context(
@@ -691,8 +691,9 @@ def _build_fallback_report(
     windows: list[ArenaSubmissionReportWindow],
     best_window: ArenaSubmissionReportWindow | None,
     worst_window: ArenaSubmissionReportWindow | None,
+    style_metrics: dict[str, Any] | None = None,
 ) -> ArenaSubmissionReport:
-    archetype = _fallback_archetype(key_metrics)
+    archetype = _fallback_archetype(key_metrics, style_metrics=style_metrics)
     strengths = _fallback_strengths(key_metrics=key_metrics, best_window=best_window)
     weaknesses = _fallback_weaknesses(key_metrics=key_metrics, worst_window=worst_window)
     recommendations = _fallback_recommendations(key_metrics=key_metrics, worst_window=worst_window)
@@ -707,6 +708,7 @@ def _build_fallback_report(
         generation_mode="fallback",
         overall_score=score,
         archetype=archetype,
+        representative=ARCHETYPE_REPRESENTATIVES.get(archetype),
         overview=overview,
         strengths=strengths,
         weaknesses=weaknesses,
@@ -740,24 +742,163 @@ def _build_fallback_report(
     )
 
 
-def _fallback_archetype(key_metrics: ArenaSubmissionReportKeyMetrics) -> str:
-    total_return = key_metrics.total_return_pct or 0.0
-    max_drawdown = key_metrics.max_drawdown_pct or 0.0
-    profit_factor = key_metrics.profit_factor or 0.0
-    avg_target = key_metrics.avg_target_exposure_pct or 0.0
-    decision_count = key_metrics.decision_count
+ARCHETYPE_REPRESENTATIVES: dict[str, str] = {
+    "Meme Hunter": "Ansem",
+    "Diamond Hands": "Michael Saylor",
+    "Macro Speculator": "Arthur Hayes",
+    "FOMO Warrior": "Typical Retail",
+    "The Contrarian": "DonAlt",
+    "Contract King": "PickleCat (0xPickleCat)",
+    "On-chain Detective": "ZachXBT",
+    "SuperCycle Believer": "Su Zhu (3AC)",
+    "Degen Whale": "James Wynn",
+}
 
-    if total_return >= 10 and max_drawdown <= 10:
-        return "Trend Rider"
-    if max_drawdown <= 8 and profit_factor >= 1.1:
-        return "Risk Controller"
-    if decision_count >= 30 and profit_factor < 1.0:
-        return "Whipsaw Chaser"
-    if avg_target <= 25:
-        return "Cautious Observer"
-    if total_return < 0 and max_drawdown >= 15:
-        return "Volatility Taker"
-    return "Adaptive Swing Trader"
+ARCHETYPE_DESCRIPTIONS: dict[str, str] = {
+    "Meme Hunter": "High-frequency short-term narrative chaser. Aggressive position sizing.",
+    "Diamond Hands": "Low-frequency long holder. Disciplined and steady.",
+    "Macro Speculator": "Bidirectional swing trader driven by macro rhythms.",
+    "FOMO Warrior": "Emotional buy-high sell-low pattern. Overtrades consistently.",
+    "The Contrarian": "Counter-consensus bottom fisher. Swing-oriented and patient.",
+    "Contract King": "Futures-dominant medium-frequency trader. High leverage, high conviction.",
+    "On-chain Detective": "Low leverage, risk-first approach. Defense over offense.",
+    "SuperCycle Believer": "Perma-long with high leverage. Weak downside protection.",
+    "Degen Whale": "Extreme leverage, concentrated bets. Massive volatility.",
+}
+
+ARCHETYPE_LEVERAGE_CENTERS: dict[str, float] = {
+    "Meme Hunter": 4.0,
+    "Diamond Hands": 1.0,
+    "Macro Speculator": 5.0,
+    "FOMO Warrior": 3.0,
+    "The Contrarian": 3.0,
+    "Contract King": 6.0,
+    "On-chain Detective": 1.5,
+    "SuperCycle Believer": 8.0,
+    "Degen Whale": 15.0,
+}
+
+
+def _in_range(value: float, low: float, high: float) -> bool:
+    return low <= value <= high
+
+
+def _archetype_match_score(
+    *,
+    trades_per_day: float,
+    median_hold_hours: float,
+    avg_leverage: float,
+    short_ratio_pct: float,
+    stoploss_exit_ratio_pct: float,
+    profit_factor: float,
+    sharpe: float,
+    max_drawdown_pct: float,
+    pnl_dispersion: float,
+) -> dict[str, int]:
+    scores: dict[str, int] = {}
+
+    scores["Meme Hunter"] = (
+        (25 if trades_per_day >= 5 else 0)
+        + (25 if median_hold_hours <= 24 else 0)
+        + (25 if avg_leverage >= 3 else 0)
+        + 25  # top1_position_pct >= 25 always true (single-market)
+    )
+
+    scores["Diamond Hands"] = (
+        (25 if trades_per_day <= 0.8 else 0)
+        + (25 if median_hold_hours >= 168 else 0)
+        + (25 if avg_leverage <= 2 else 0)
+        + (25 if short_ratio_pct <= 15 else 0)
+    )
+
+    scores["Macro Speculator"] = (
+        (25 if _in_range(trades_per_day, 1, 5) else 0)
+        + (25 if _in_range(median_hold_hours, 24, 240) else 0)
+        + (25 if _in_range(short_ratio_pct, 20, 70) else 0)
+        + (25 if _in_range(avg_leverage, 2, 8) else 0)
+    )
+
+    scores["FOMO Warrior"] = (
+        (25 if trades_per_day >= 8 else 0)
+        + (25 if median_hold_hours <= 12 else 0)
+        + (25 if stoploss_exit_ratio_pct >= 25 else 0)
+        + (25 if profit_factor < 1.0 else 0)
+    )
+
+    scores["The Contrarian"] = (
+        (25 if _in_range(trades_per_day, 1, 5) else 0)
+        + (25 if _in_range(median_hold_hours, 24, 336) else 0)
+        + (25 if _in_range(short_ratio_pct, 10, 50) else 0)
+        + (25 if profit_factor >= 1.1 else 0)
+    )
+
+    scores["Contract King"] = (
+        (25 if _in_range(avg_leverage, 3, 10) else 0)
+        + (25 if _in_range(short_ratio_pct, 20, 60) else 0)
+        + (25 if _in_range(trades_per_day, 1, 6) else 0)
+        + (25 if sharpe >= 1.0 else 0)
+    )
+
+    scores["On-chain Detective"] = (
+        (25 if avg_leverage <= 2 else 0)
+        + (25 if max_drawdown_pct <= 15 else 0)
+        + (25 if trades_per_day <= 2 else 0)
+        + (25 if profit_factor >= 1.1 else 0)
+    )
+
+    scores["SuperCycle Believer"] = (
+        (25 if short_ratio_pct <= 10 else 0)
+        + (25 if median_hold_hours >= 120 else 0)
+        + (25 if avg_leverage >= 5 else 0)
+        + (25 if stoploss_exit_ratio_pct <= 10 else 0)
+    )
+
+    scores["Degen Whale"] = (
+        (25 if avg_leverage >= 12 else 0)
+        + 25  # top1_position_pct >= 45 always true (single-market)
+        + (25 if max_drawdown_pct >= 40 else 0)
+        + (25 if pnl_dispersion >= 0.08 else 0)
+    )
+
+    return scores
+
+
+def _fallback_archetype(
+    key_metrics: ArenaSubmissionReportKeyMetrics,
+    *,
+    style_metrics: dict[str, Any] | None = None,
+) -> str:
+    sm = style_metrics or {}
+    trades_per_day = float(sm.get("trades_per_day", 0))
+    median_hold_hours = float(sm.get("median_hold_hours") or 48)
+    avg_leverage = float(sm.get("avg_leverage") or 1.0)
+    short_ratio_pct = float(sm.get("short_decision_ratio_pct") or 0.0)
+    stoploss_exit_ratio_pct = float(sm.get("stoploss_exit_ratio_pct") or 0.0)
+    profit_factor = key_metrics.profit_factor or 1.0
+    sharpe = key_metrics.sharpe_ratio or 0.0
+    max_drawdown_pct = key_metrics.max_drawdown_pct or 0.0
+    pnl_dispersion = (key_metrics.window_return_dispersion_pct or 0.0) / 100.0
+
+    scores = _archetype_match_score(
+        trades_per_day=trades_per_day,
+        median_hold_hours=median_hold_hours,
+        avg_leverage=avg_leverage,
+        short_ratio_pct=short_ratio_pct,
+        stoploss_exit_ratio_pct=stoploss_exit_ratio_pct,
+        profit_factor=profit_factor,
+        sharpe=sharpe,
+        max_drawdown_pct=max_drawdown_pct,
+        pnl_dispersion=pnl_dispersion,
+    )
+
+    max_score = max(scores.values())
+    candidates = [name for name, s in scores.items() if s == max_score]
+    if len(candidates) == 1:
+        return candidates[0]
+    return min(
+        candidates,
+        key=lambda name: abs(ARCHETYPE_LEVERAGE_CENTERS.get(name, 5.0) - avg_leverage),
+    )
 
 
 def _fallback_overview(
@@ -767,12 +908,12 @@ def _fallback_overview(
     best_window: ArenaSubmissionReportWindow | None,
     worst_window: ArenaSubmissionReportWindow | None,
 ) -> str:
+    desc = ARCHETYPE_DESCRIPTIONS.get(archetype, archetype)
     total_return = _fmt_pct(key_metrics.total_return_pct)
-    avg_window = _fmt_pct(key_metrics.avg_window_return_pct)
     best_code = best_window.window_code if best_window is not None else "n/a"
     worst_code = worst_window.window_code if worst_window is not None else "n/a"
     return (
-        f"{archetype} profile across the submission: {total_return} compounded return with {avg_window} average window return. "
+        f"{desc} {total_return} compounded return. "
         f"Best slice {best_code}; weakest slice {worst_code}."
     )
 
@@ -837,19 +978,26 @@ def _fallback_recommendations(
     return (out + ["Compare best and worst windows before changing strategy wording."])[:3]
 
 
-def _compute_submission_score(key_metrics: ArenaSubmissionReportKeyMetrics) -> int:
+def _compute_submission_score(
+    key_metrics: ArenaSubmissionReportKeyMetrics,
+    *,
+    style_metrics: dict[str, Any] | None = None,
+) -> int:
+    avg_leverage = float((style_metrics or {}).get("avg_leverage") or 1.0)
+    pnl_dispersion = (key_metrics.window_return_dispersion_pct or 0.0) / 100.0
+
     performance = (
-        0.42 * _norm(key_metrics.total_return_pct, -20.0, 80.0)
-        + 0.20 * _norm(key_metrics.sharpe_ratio, -0.5, 2.5)
-        + 0.18 * _norm(key_metrics.profit_factor, 0.7, 2.0)
-        + 0.20 * _norm(key_metrics.win_rate_pct, 25.0, 75.0)
+        0.40 * _norm(key_metrics.total_return_pct, -20.0, 120.0)
+        + 0.25 * _norm(key_metrics.sharpe_ratio, -0.5, 2.5)
+        + 0.20 * _norm(key_metrics.profit_factor, 0.8, 2.0)
+        + 0.15 * _norm(key_metrics.win_rate_pct, 25.0, 70.0)
     )
-    resilience = (
-        0.55 * (100.0 - _norm(key_metrics.max_drawdown_pct, 5.0, 40.0))
-        + 0.25 * (100.0 - _norm(key_metrics.window_return_dispersion_pct, 1.0, 12.0))
-        + 0.20 * _norm(key_metrics.acceptance_rate_pct, 35.0, 100.0)
+    risk = (
+        0.50 * (100.0 - _norm(key_metrics.max_drawdown_pct, 5.0, 60.0))
+        + 0.30 * (100.0 - _norm(avg_leverage, 1.0, 20.0))
+        + 0.20 * (100.0 - _norm(pnl_dispersion, 0.01, 0.15))
     )
-    score = round((0.60 * performance) + (0.40 * resilience))
+    score = round((0.60 * performance) + (0.40 * risk))
     return max(0, min(100, score))
 
 

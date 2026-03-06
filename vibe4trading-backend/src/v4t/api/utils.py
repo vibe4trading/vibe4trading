@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from v4t.db.models import LlmModelRow, UserRow
 from v4t.settings import (
-    get_env_model_key,
     get_settings,
     parse_csv_set,
     parse_model_allowlist_override,
@@ -22,9 +21,6 @@ def default_allowed_model_keys(all_model_keys: set[str]) -> set[str]:
         if configured is None
         else {key for key in all_model_keys if key in configured}
     )
-    env_model_key = get_env_model_key()
-    if env_model_key is not None:
-        allowed.add(env_model_key)
     return allowed
 
 
@@ -35,9 +31,6 @@ def effective_allowed_model_keys(*, all_model_keys: set[str], user: UserRow | No
         allowed.update(model_key for model_key in additions if model_key in all_model_keys)
         allowed.difference_update(removals)
 
-    env_model_key = get_env_model_key()
-    if env_model_key is not None:
-        allowed.add(env_model_key)
     return allowed
 
 
@@ -49,9 +42,6 @@ def normalize_model_allowlist_override(raw: str | None) -> str | None:
 
 def assert_model_selectable(db: Session, user: UserRow, model_key: str) -> None:
     if model_key == "stub":
-        return
-    env_model_key = get_env_model_key()
-    if env_model_key is not None and model_key == env_model_key:
         return
 
     row = (
@@ -67,8 +57,6 @@ def assert_model_selectable(db: Session, user: UserRow, model_key: str) -> None:
         raise HTTPException(status_code=400, detail=f"model_key is disabled: {model_key}")
 
     all_model_keys = set(db.execute(select(LlmModelRow.model_key)).scalars().all())
-    if env_model_key is not None:
-        all_model_keys.add(env_model_key)
     allowed = effective_allowed_model_keys(all_model_keys=all_model_keys, user=user)
     if model_key not in allowed:
         raise HTTPException(status_code=400, detail=f"model_key not allowed for user: {model_key}")

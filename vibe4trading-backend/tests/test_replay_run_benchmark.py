@@ -51,7 +51,6 @@ def test_execute_replay_run_schema_v2_enriches_prompt_and_events(db_session) -> 
 
     cfg = RunConfigSnapshot(
         mode=RunMode.replay,
-        decision_schema_version=2,
         market_id="spot:demo:DEMO",
         risk_level=3,
         holding_period="swing",
@@ -62,7 +61,6 @@ def test_execute_replay_run_schema_v2_enriches_prompt_and_events(db_session) -> 
         ),
         scheduler=SchedulerConfig(
             base_interval_seconds=3600,
-            min_interval_seconds=300,
             price_tick_seconds=60,
         ),
         prompt=PromptConfig(
@@ -120,7 +118,6 @@ def test_execute_replay_run_schema_v2_enriches_prompt_and_events(db_session) -> 
         .order_by(EventRow.observed_at)
         .limit(1)
     ).scalar_one()
-    assert decision_event.payload["decision_schema_version"] == 2
     assert decision_event.payload["mode"] in {"spot", "futures"}
 
     snapshot_event = db_session.execute(

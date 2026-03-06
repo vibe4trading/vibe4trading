@@ -14,7 +14,7 @@ def test_benchmark_sim_futures_take_profit_and_funding() -> None:
         fee_bps=Decimal("10"),
     )
     try:
-        opened = sim.rebalance_to_target(
+        fills = sim.rebalance_to_target(
             tick_time=datetime(2024, 1, 1, tzinfo=UTC),
             price=Decimal("100"),
             target_exposure=Decimal("1.5"),
@@ -23,7 +23,8 @@ def test_benchmark_sim_futures_take_profit_and_funding() -> None:
             stop_loss_pct=Decimal("5"),
             take_profit_pct=Decimal("10"),
         )
-        assert opened is not None
+        assert len(fills) == 1
+        opened = fills[0]
         assert opened.position_mode == PositionMode.futures
         assert sim.position_qty_base() == Decimal("15.0")
         assert sim.position_leverage() == 2
@@ -54,7 +55,7 @@ def test_benchmark_sim_short_liquidation() -> None:
         fee_bps=Decimal("10"),
     )
     try:
-        opened = sim.rebalance_to_target(
+        fills = sim.rebalance_to_target(
             tick_time=datetime(2024, 1, 1, tzinfo=UTC),
             price=Decimal("100"),
             target_exposure=Decimal("-2.5"),
@@ -63,7 +64,7 @@ def test_benchmark_sim_short_liquidation() -> None:
             stop_loss_pct=Decimal("5"),
             take_profit_pct=None,
         )
-        assert opened is not None
+        assert len(fills) == 1
         assert sim.position_qty_base() < 0
         assert sim.liquidation_price() == Decimal("133.3333333333333333333333333")
 
@@ -85,7 +86,7 @@ def test_benchmark_sim_flip_only_charges_open_leg_after_close() -> None:
         fee_bps=Decimal("10"),
     )
     try:
-        first_fill = sim.rebalance_to_target(
+        first_fills = sim.rebalance_to_target(
             tick_time=datetime(2024, 1, 1, tzinfo=UTC),
             price=Decimal("100"),
             target_exposure=Decimal("1"),
@@ -94,10 +95,10 @@ def test_benchmark_sim_flip_only_charges_open_leg_after_close() -> None:
             stop_loss_pct=None,
             take_profit_pct=None,
         )
-        assert first_fill is not None
+        assert len(first_fills) == 1
 
         cash_before_flip = sim.cash_quote()
-        flip_fill = sim.rebalance_to_target(
+        flip_fills = sim.rebalance_to_target(
             tick_time=datetime(2024, 1, 1, 1, tzinfo=UTC),
             price=Decimal("100"),
             target_exposure=Decimal("-0.5"),
@@ -106,7 +107,8 @@ def test_benchmark_sim_flip_only_charges_open_leg_after_close() -> None:
             stop_loss_pct=None,
             take_profit_pct=None,
         )
-        assert flip_fill is not None
+        assert len(flip_fills) == 1
+        flip_fill = flip_fills[0]
         assert flip_fill.qty_base < 0
         assert flip_fill.fee_quote == Decimal("0.4995")
         assert sim.cash_quote() > cash_before_flip

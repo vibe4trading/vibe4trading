@@ -4,14 +4,6 @@ from datetime import datetime
 from typing import Any
 
 
-def _decision_schema_version(context: dict[str, Any]) -> int:
-    raw = context.get("decision_schema_version", 1)
-    try:
-        return int(raw)
-    except Exception:
-        return 1
-
-
 def _normalize_includes(includes: list[str] | None) -> set[str]:
     if not includes:
         return set()
@@ -56,7 +48,6 @@ def render_user_prompt(
     tick_time = str(context.get("tick_time") or "")
 
     lines: list[str] = []
-    decision_schema_version = _decision_schema_version(context)
 
     style = (style_text or "").strip()
     lines.append("User strategy prompt:")
@@ -129,29 +120,24 @@ def render_user_prompt(
         lines.append("")
         lines.append("Portfolio:")
         if isinstance(portfolio, dict) and portfolio:
-            if decision_schema_version == 2:
-                for k in (
-                    "equity_quote",
-                    "cash_quote",
-                    "position_mode",
-                    "position_direction",
-                    "position_qty_base",
-                    "position_leverage",
-                    "entry_price",
-                    "current_price",
-                    "liquidation_price",
-                    "unrealized_pnl",
-                    "unrealized_pnl_pct",
-                    "funding_cost_accumulated",
-                    "stop_loss_price",
-                    "take_profit_price",
-                ):
-                    if k in portfolio:
-                        lines.append(f"- {k}={portfolio.get(k)}")
-            else:
-                for k in ("equity_quote", "cash_quote", "position_qty_base", "price"):
-                    if k in portfolio:
-                        lines.append(f"- {k}={portfolio.get(k)}")
+            for k in (
+                "equity_quote",
+                "cash_quote",
+                "position_mode",
+                "position_direction",
+                "position_qty_base",
+                "position_leverage",
+                "entry_price",
+                "current_price",
+                "liquidation_price",
+                "unrealized_pnl",
+                "unrealized_pnl_pct",
+                "funding_cost_accumulated",
+                "stop_loss_price",
+                "take_profit_price",
+            ):
+                if k in portfolio:
+                    lines.append(f"- {k}={portfolio.get(k)}")
         else:
             lines.append("(none)")
 
@@ -187,7 +173,6 @@ def render_user_prompt(
                 mode = m.get("mode")
                 leverage = m.get("leverage")
                 confidence = m.get("confidence")
-                next_check = m.get("next_check_seconds")
                 reject_reason = m.get("reject_reason")
                 key_signals = m.get("key_signals")
                 rationale = m.get("rationale")
@@ -204,8 +189,6 @@ def render_user_prompt(
                     + str(leverage)
                     + " confidence="
                     + str(confidence)
-                    + " next_check_seconds="
-                    + str(next_check)
                     + " reject_reason="
                     + str(reject_reason)
                     + " key_signals="
@@ -218,18 +201,11 @@ def render_user_prompt(
 
     lines.append("")
     lines.append("Return ONLY a JSON object like:")
-    if decision_schema_version == 2:
-        lines.append(
-            '{"schema_version":2,"target":0.5,"mode":"spot","leverage":1,'
-            '"stop_loss_pct":5.0,"take_profit_pct":10.0,"next_check_seconds":3600,'
-            '"confidence":0.6,"key_signals":["..."],"rationale":"..."}'
-        )
-    else:
-        lines.append(
-            '{"schema_version":1,"targets":{"'
-            + (market_id or "<market_id>")
-            + '":0.25},"next_check_seconds":600,"confidence":0.6,"key_signals":["..."],"rationale":"..."}'
-        )
+    lines.append(
+        '{"schema_version":2,"target":0.5,"mode":"spot","leverage":1,'
+        '"stop_loss_pct":5.0,"take_profit_pct":10.0,'
+        '"confidence":0.6,"key_signals":["..."],"rationale":"..."}'
+    )
 
     return "\n".join(lines).strip() + "\n"
 

@@ -105,9 +105,8 @@ Non-goals (MVP):
 | Decision analysis fields | Rationale + confidence | Decision schema includes optional `rationale` string, `confidence` (0-1), and `key_signals` list for dashboard analysis. |
 | Exposure constraints | Gross/Net limits | Enforce gross leverage + net exposure caps across the whole portfolio; cash is implicit residual. |
 | Instrument constraints | Spot long-only | Spot exposures must be `>= 0` and `<= 1.0`. Violations => decision rejected (hold last targets). |
-| Scheduling | Wall-clock baseline + early checks | Model is called on a wall-clock base cadence for comparability/progress. Model may request earlier re-checks via `next_check_seconds`; we only honor earlier-than-base requests, clamp to `[min_interval_seconds, base_interval_seconds]`, align to the next price tick, and log all requests (even ignored ones) for cost/accounting. |
-| Base cadence behavior | Anchored | Base ticks stay anchored to the configured wall-clock cadence; early checks may insert extra ticks in-between but do not shift the next base tick. |
-| Default interval | 1 hour | Base cadence; model may request earlier re-checks; store every schedule request for analysis/cost accounting. |
+| Scheduling | Fixed wall-clock cadence | Model is called on a fixed wall-clock base cadence (1 hour) for comparability/progress. No LLM-controlled tick scheduling. |
+| Default interval | 1 hour | Fixed base cadence. |
 | Budgeting | Track + throttle (MVP) | Track calls/tokens/cost per user/run; enforce concurrency + rate limits (no billing; avoid runaway leaderboard submissions). |
 | Backtesting | MQ historical playback | Backfill/ingest historical market events into the DB, then publish a chosen time window into RabbitMQ to mimic live ingestion (LLM is called live on historical snapshots). |
 | Prompt time masking | Prompt-only offset | Allow shifting timestamps shown to the model (and derived time features) by a user-defined offset to test memorization/leakage. Internal `observed_at`/`event_time` in the replay stream and outputs remain unshifted. |
@@ -131,7 +130,6 @@ When persisted into canonical events (e.g. `llm.decision`), decimals are stored 
   "targets": {
     "spot:raydium:<pool>": 0.25
   },
-  "next_check_seconds": 600,
   "confidence": 0.62,
   "key_signals": ["momentum_up", "volume_spike"],
   "rationale": "Long spot TOKEN on breakout; reduce exposure if momentum fades."
@@ -161,7 +159,7 @@ Validation rules (v1):
 | Crawler architecture | Independent microservices | Each crawler (price, sentiment, on-chain) is its own service, communicates via RabbitMQ |
 | Exchange abstraction | CCXT-style unified API | Abstract base with `get_price()`, `get_ohlcv()`, `get_trades()`, `get_liquidity()`. Leverage CCXT for CEX if needed. |
 | Sentiment source | Scraper + per-item summarizer | Scrape a curated X/Twitter KOL list + RSS/news into `sentiment.item`. In data prepare (dataset import) and live ingestion, generate a 1:1 `sentiment.item_summary` per item (timestamped at the item time). |
-| Live sentiment refresh | On-demand fetch command | If the model requests an early check in live mode, orchestrator publishes a control command (e.g. `sentiment.fetch_now`) so the sentiment service attempts an immediate refresh before prompt building. |
+| Live sentiment refresh | Periodic | Sentiment is refreshed on each scheduled tick in live mode. |
 | Adapter packaging | In-repo modules | Keep adapters in the repo with explicit registration (no dynamic plugin loading). |
 
 ### Stretch Goals (if time permits)
@@ -252,7 +250,7 @@ Benchmark run model (MVP v1):
 Event stream categories (initial):
 - Market data: `market.*` (price, ohlcv, trades, liquidity)
 - Sentiment: `sentiment.*`
-- Decisions: `llm.decision`, `llm.schedule_request`
+- Decisions: `llm.decision`
 - Execution: `sim.fill`, `portfolio.snapshot`
 - Run lifecycle: `run.*` (started/finished/failed)
 
@@ -281,13 +279,10 @@ Sentiment (raw ingestion + per-item summaries):
 
 Sentiment context in prompts (v1):
 - At each decision tick, include bounded sentiment context by selecting recent items within the lookback window (prefer `sentiment.item_summary`, optionally include raw `sentiment.item` snippets/URLs).
-- On early-check ticks, explicitly highlight any new sentiment items since the previous tick (still bounded) so fast flips capture fresh info.
 - Replay/leaderboard ticks can include all relevant dataset sentiment up to the mocked tick time (bounded and time-masked by the prompt builder).
-- Live early-check ticks may trigger `sentiment.fetch_now` prior to prompt building.
 
 Decisions/execution:
 - `llm.decision` — Parsed decision payload (targets keyed by `market_id`, plus rationale/confidence) + references to prompt/response (e.g., `llm_calls.call_id`).
-- `llm.schedule_request` — Optional earlier re-check request derived from `next_check_seconds` in decision JSON (logged for cost + analysis).
 - `sim.fill` — Simulated trade/fill event.
 - `portfolio.snapshot` — Portfolio state projection (equity/cash/positions) at a point in time.
 
@@ -317,7 +312,6 @@ Run-scoped events (unique under `(run_id, event_type, dedupe_key)`):
 - `run.finished`: `finished`
 - `run.failed`: `failed`
 - `llm.decision`: `{tick_time}`
-- `llm.schedule_request`: `{tick_time}`
 - `portfolio.snapshot`: `{snapshot_time}`
 - `sim.fill` (rebalance model): `{tick_time}:{market_id}` (at most one fill per market per tick; MVP: only one `market_id` exists)
 
@@ -372,9 +366,7 @@ Draft config shape:
   },
   "scheduler": {
     "base_interval_seconds": 3600,
-    "min_interval_seconds": 60,
-    "price_tick_seconds": 60,
-    "early_check_alignment": "ceil_to_price_tick"
+    "price_tick_seconds": 60
   },
   "decision": {
     "missing_market_policy": "hold_previous"
@@ -589,7 +581,7 @@ Adapter categories:
 ### Services (v1) (Draft)
 
 - `api` — REST/OpenAPI surface for dashboard + CLI; stores configs/snapshots; run/dataset lifecycle.
-- `orchestrator` — Snapshot builder + scheduler; assembles bounded sentiment context + short prompt memory window; calls LLM gateway; publishes `run.*` / `llm.*` / `sim.*` / `portfolio.*` events. In live mode, may publish `sentiment.fetch_now` on `ex.control` on early-check ticks.
+- `orchestrator` — Snapshot builder + scheduler; assembles bounded sentiment context + short prompt memory window; calls LLM gateway; publishes `run.*` / `llm.*` / `sim.*` / `portfolio.*` events.
 - `event_store` — Single writer for the canonical `events` table (idempotent dedupe); optionally maintains simple projections.
 - `replay` — Reads canonical events for selected dataset ids/time window and publishes them into `ex.replay` with deterministic ordering.
 - `importers` — Backfill per category (spot/perps/sentiment) producing dataset ids.
@@ -602,9 +594,8 @@ Adapter categories:
 1. Crawlers independently fetch data on their own schedules → publish to RabbitMQ
 2. Orchestrator consumes from MQ, aggregates into a market snapshot
 3. On each scheduled tick, orchestrator builds a tick snapshot and assembles bounded sentiment context from recent `sentiment.item`/`sentiment.item_summary` within the lookback window (sentiment may be empty)
-4. If the tick is an early-check in live mode, orchestrator first publishes `sentiment.fetch_now` and incorporates any newly ingested sentiment before prompt building
-5. Orchestrator builds the prompt from the same snapshot + sentiment context + short memory window → calls the selected model
-6. The LLM returns target exposure (+ optional next-check request)
+4. Orchestrator builds the prompt from the same snapshot + sentiment context + short memory window → calls the selected model
+5. The LLM returns target exposure
 7. Simulated execution engine processes decisions, updates paper portfolio, and publishes `llm.decision` / `sim.fill` / `portfolio.snapshot` events
 8. Event-store service consumes canonical events from RabbitMQ and persists them to Postgres (append-only event log + projection tables for fast dashboard queries)
 9. Dashboard polls API for latest state, renders charts

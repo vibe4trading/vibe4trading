@@ -163,12 +163,19 @@ class RunRow(Base):
     parent_run_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("runs.run_id", ondelete="SET NULL"), nullable=True, index=True
     )
-    owner_user_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    owner_user_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True, index=True
+    )
     kind: Mapped[str] = mapped_column(String(32), nullable=False, default="single_window")
     visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="private")
     market_id: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
     model_key: Mapped[str] = mapped_column(String(128), nullable=False)
-    config_id: Mapped[UUID] = mapped_column(Uuid, nullable=False, index=True)
+    config_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("run_config_snapshots.config_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
 
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="pending")
     stop_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -203,8 +210,12 @@ class LlmCallRow(Base):
     __tablename__ = "llm_calls"
 
     call_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    run_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True, index=True)
-    dataset_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    run_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("runs.run_id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    dataset_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("datasets.dataset_id", ondelete="SET NULL"), nullable=True, index=True
+    )
     purpose: Mapped[str] = mapped_column(String(64), nullable=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -276,7 +287,9 @@ class ArenaSubmissionRow(Base):
     __tablename__ = "arena_submissions"
 
     submission_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    owner_user_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    owner_user_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     scenario_set_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     market_id: Mapped[str] = mapped_column(String(256), nullable=False, index=True)

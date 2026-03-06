@@ -9,7 +9,7 @@ from _pytest.monkeypatch import MonkeyPatch
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from v4t.contracts.payloads import LlmDecisionOutputV1
+from v4t.contracts.payloads import LlmDecisionOutput
 from v4t.db.models import LlmCallRow, LlmModelRow
 from v4t.llm.gateway import LlmGateway, StubDecisionFeatures
 from v4t.settings import get_settings
@@ -18,8 +18,6 @@ from v4t.settings import get_settings
 def test_llm_gateway_retries_on_unparseable_json(
     db_session: Session, monkeypatch: MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("V4T_LLM_BASE_URL", "http://example.invalid")
-    monkeypatch.setenv("V4T_LLM_API_KEY", "x")
     monkeypatch.setenv("V4T_LLM_MAX_RETRIES", "1")
     monkeypatch.setenv("V4T_LLM_TIMEOUT_SECONDS", "1.0")
     get_settings.cache_clear()
@@ -29,7 +27,8 @@ def test_llm_gateway_retries_on_unparseable_json(
         LlmModelRow(
             model_key="gpt-4o-mini",
             label="GPT-4o mini",
-            api_base_url=None,
+            api_base_url="http://example.invalid",
+            api_key="x",
             enabled=True,
             created_at=observed_at,
             updated_at=observed_at,
@@ -73,10 +72,11 @@ def test_llm_gateway_retries_on_unparseable_json(
             del url, headers, json
             self.calls += 1
             if self.calls == 1:
-                content = '{"schema_version":1,"targets":{"m":0.25}'
+                content = '{"schema_version":2,"target":0.25,"mode":"spot","leverage":1'
             else:
                 content = (
-                    '{"schema_version":1,"targets":{"m":0.25},"key_signals":[],"rationale":"ok"}'
+                    '{"schema_version":2,"target":0.25,"mode":"spot","leverage":1,'
+                    '"confidence":0.6,"key_signals":["ok"],"rationale":"ok"}'
                 )
             return FakeResponse({"choices": [{"message": {"content": content}}]})
 
@@ -96,8 +96,8 @@ def test_llm_gateway_retries_on_unparseable_json(
     )
 
     assert result.error is None
-    assert isinstance(result.decision, LlmDecisionOutputV1)
-    assert str(result.decision.targets.get("m")) == "0.25"
+    assert isinstance(result.decision, LlmDecisionOutput)
+    assert str(result.decision.target) == "0.25"
 
     rows = list(
         db_session.execute(
@@ -116,8 +116,6 @@ def test_llm_gateway_retries_on_unparseable_json(
 def test_llm_gateway_keeps_prompt_on_transport_retry(
     db_session: Session, monkeypatch: MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("V4T_LLM_BASE_URL", "http://example.invalid")
-    monkeypatch.setenv("V4T_LLM_API_KEY", "x")
     monkeypatch.setenv("V4T_LLM_MAX_RETRIES", "1")
     monkeypatch.setenv("V4T_LLM_TIMEOUT_SECONDS", "1.0")
     get_settings.cache_clear()
@@ -127,7 +125,8 @@ def test_llm_gateway_keeps_prompt_on_transport_retry(
         LlmModelRow(
             model_key="gpt-4o-mini",
             label="GPT-4o mini",
-            api_base_url=None,
+            api_base_url="http://example.invalid",
+            api_key="x",
             enabled=True,
             created_at=observed_at,
             updated_at=observed_at,
@@ -183,7 +182,7 @@ def test_llm_gateway_keeps_prompt_on_transport_retry(
             if self.calls == 1:
                 raise httpx.ConnectError("boom", request=httpx.Request("POST", str(url)))
 
-            content = '{"schema_version":1,"targets":{"m":0.25},"key_signals":[],"rationale":"ok"}'
+            content = '{"schema_version":2,"target":0.25,"mode":"spot","leverage":1,"stop_loss_pct":5.0,"take_profit_pct":10.0,"confidence":0.5,"key_signals":["ok"],"rationale":"ok"}'
             return FakeResponse({"choices": [{"message": {"content": content}}]})
 
     fake_client = FakeClient()
@@ -208,7 +207,7 @@ def test_llm_gateway_keeps_prompt_on_transport_retry(
     )
 
     assert result.error is None
-    assert isinstance(result.decision, LlmDecisionOutputV1)
+    assert isinstance(result.decision, LlmDecisionOutput)
     assert fake_client.prompts == [user_prompt, user_prompt]
 
 
@@ -270,7 +269,7 @@ def test_llm_gateway_uses_model_api_key_when_env_key_missing(
             del json
             assert str(url) == "https://router.example.test/v1/chat/completions"
             assert headers == {"Authorization": "Bearer sk-model-override"}
-            content = '{"schema_version":1,"targets":{"m":0.25},"key_signals":[],"rationale":"ok"}'
+            content = '{"schema_version":2,"target":0.25,"mode":"spot","leverage":1,"confidence":0.6,"key_signals":["ok"],"rationale":"ok"}'
             return FakeResponse({"choices": [{"message": {"content": content}}]})
 
     monkeypatch.setattr(httpx, "Client", FakeClient)
@@ -289,5 +288,5 @@ def test_llm_gateway_uses_model_api_key_when_env_key_missing(
     )
 
     assert result.error is None
-    assert isinstance(result.decision, LlmDecisionOutputV1)
-    assert str(result.decision.targets.get("m")) == "0.25"
+    assert isinstance(result.decision, LlmDecisionOutput)
+    assert str(result.decision.target) == "0.25"

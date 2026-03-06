@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { PromptInput } from "@/app/components/PromptInput";
+import { useModalA11y } from "@/app/hooks/useModalA11y";
 import { ModelPublicOut } from "@/app/lib/v4t";
 
 function pairName(marketId: string) {
@@ -47,66 +48,18 @@ export function NewRunModal({
 }: NewRunModalProps) {
   const [error, setError] = React.useState<string | null>(null);
   const firstFieldRef = React.useRef<HTMLSelectElement | null>(null);
-  const previouslyFocused = React.useRef<HTMLElement | null>(null);
-  const panelRef = React.useRef<HTMLDivElement | null>(null);
+  const { panelRef } = useModalA11y(open, submitting ? () => {} : onClose);
   const titleId = React.useId();
   const descId = React.useId();
 
   React.useEffect(() => {
     if (!open) return;
-
     setError(null);
-    previouslyFocused.current = document.activeElement as HTMLElement | null;
-    document.body.style.overflow = "hidden";
-
     const timeoutId = window.setTimeout(() => {
       firstFieldRef.current?.focus();
     }, 0);
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        if (!submitting) onClose();
-        return;
-      }
-
-      if (event.key !== "Tab") return;
-      const panel = panelRef.current;
-      if (!panel) return;
-
-      const focusables = Array.from(
-        panel.querySelectorAll<HTMLElement>(
-          'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((element) => !element.hasAttribute("disabled") && element.tabIndex !== -1);
-
-      if (focusables.length === 0) return;
-
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      const active = document.activeElement as HTMLElement | null;
-
-      if (event.shiftKey) {
-        if (!active || active === first || !panel.contains(active)) {
-          event.preventDefault();
-          last.focus();
-        }
-        return;
-      }
-
-      if (active === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.clearTimeout(timeoutId);
-      window.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = "";
-      previouslyFocused.current?.focus?.();
-    };
-  }, [open, onClose, submitting]);
+    return () => window.clearTimeout(timeoutId);
+  }, [open]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -165,7 +118,7 @@ export function NewRunModal({
       />
 
       <div
-        ref={panelRef}
+        ref={panelRef as React.RefObject<HTMLDivElement>}
         className="relative flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden border border-[#161616] bg-[#f4f1e8] text-[#141414] shadow-[0_24px_80px_rgba(0,0,0,0.4)]"
       >
         <div className="border-b border-[#161616]/18 px-6 py-6 md:px-8">

@@ -9,11 +9,13 @@ import { apiJson, ModelPublicOut } from "@/app/lib/v4t";
 
 type NewRunContextValue = {
   openNewRun: () => void;
+  markets: string[];
+  models: ModelPublicOut[];
 };
 
 const NewRunContext = React.createContext<NewRunContextValue | null>(null);
 const LEGACY_OUTPUT_FORMAT_BLOCK =
-  '\n\nOutput format:\n{"schema_version":1,"targets":{"<market_id>":0.25},"next_check_seconds":600,"confidence":0.6,"key_signals":["..."],"rationale":"..."}';
+  '\n\nOutput format:\n{"schema_version":1,"targets":{"<market_id>":0.25},"confidence":0.6,"key_signals":["..."],"rationale":"..."}';
 
 function firstSelectableModelKey(rows: ModelPublicOut[]) {
   return rows.find((row) => row.selectable)?.model_key ?? "";
@@ -97,8 +99,13 @@ export function NewRunProvider({ children }: { children: React.ReactNode }) {
     }
   }, [marketId, modelKey, promptText, router]);
 
+  const contextValue = React.useMemo(
+    () => ({ openNewRun, markets, models }),
+    [openNewRun, markets, models],
+  );
+
   return (
-    <NewRunContext.Provider value={{ openNewRun }}>
+    <NewRunContext.Provider value={contextValue}>
       {children}
       <NewRunModal
         open={open}
@@ -113,9 +120,7 @@ export function NewRunProvider({ children }: { children: React.ReactNode }) {
         onChangeModelKey={setModelKey}
         onChangePromptText={setPromptText}
         onClose={closeNewRun}
-        onSubmit={() => {
-          void submitNewRun();
-        }}
+        onSubmit={submitNewRun}
         submitting={submitting}
         submitError={submitError}
       />

@@ -5,13 +5,13 @@ from uuid import uuid4
 
 import httpx
 
-from v4t.contracts.payloads import LlmDecisionOutputV2
+from v4t.contracts.payloads import LlmDecisionOutput
 from v4t.db.models import LlmModelRow
 from v4t.llm.gateway import LlmGateway, StubDecisionFeatures
 from v4t.settings import get_settings
 
 
-def test_llm_gateway_parses_schema_v2(db_session, monkeypatch) -> None:
+def test_llm_gateway_parses_schema(db_session, monkeypatch) -> None:
     monkeypatch.setenv("V4T_LLM_BASE_URL", "http://example.invalid")
     monkeypatch.setenv("V4T_LLM_API_KEY", "x")
     monkeypatch.setenv("V4T_LLM_MAX_RETRIES", "0")
@@ -43,7 +43,7 @@ def test_llm_gateway_parses_schema_v2(db_session, monkeypatch) -> None:
                             "content": (
                                 '{"schema_version":2,"target":-2.0,"mode":"futures",'
                                 '"leverage":3,"stop_loss_pct":5.0,"take_profit_pct":10.0,'
-                                '"next_check_seconds":900,"confidence":0.7,'
+                                '"confidence":0.7,'
                                 '"key_signals":["trend"],"rationale":"short the breakdown"}'
                             )
                         }
@@ -74,15 +74,13 @@ def test_llm_gateway_parses_schema_v2(db_session, monkeypatch) -> None:
         system_prompt="s",
         user_prompt="u",
         stub_features=StubDecisionFeatures(
-            decision_schema_version=2,
             market_id="spot:test:BTC",
             closes=["1", "2"],
             risk_level=3,
         ),
-        decision_schema_version=2,
     )
 
     assert result.error is None
-    assert isinstance(result.decision, LlmDecisionOutputV2)
+    assert isinstance(result.decision, LlmDecisionOutput)
     assert result.decision.mode == "futures"
     assert str(result.decision.target) == "-2.0"

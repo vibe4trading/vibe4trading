@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -10,8 +8,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from v4t.api.app import create_app
-from v4t.api.deps import get_db
 from v4t.db.models import DatasetRow, LlmModelRow, UserRow
 from v4t.settings import get_settings
 
@@ -20,26 +16,11 @@ def _dispatch_task_arena(*, job: Any) -> str:
     return "task-arena"
 
 
-@contextmanager
-def _fresh_client(db_session: Session) -> Iterator[TestClient]:
-    app = create_app()
-
-    def _override_get_db() -> Iterator[Session]:
-        yield db_session
-
-    app.dependency_overrides[get_db] = _override_get_db
-    try:
-        with TestClient(app) as client:
-            yield client
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_public_models_endpoint_includes_stub(client: TestClient) -> None:
+def test_public_models_endpoint_excludes_stub(client: TestClient) -> None:
     res = client.get("/models")
     assert res.status_code == 200
     models = res.json()
-    assert any(m["model_key"] == "stub" for m in models)
+    assert not any(m["model_key"] == "stub" for m in models)
 
 
 def test_public_models_endpoint_shows_disabled_and_disallowed_models(
@@ -68,7 +49,6 @@ def test_public_models_endpoint_shows_disabled_and_disallowed_models(
     assert res.status_code == 200
     payload = {row["model_key"]: row for row in res.json()}
 
-    assert payload["stub"]["selectable"] is True
     assert payload["gpt-4o-mini"]["allowed"] is False
     assert payload["gpt-4o-mini"]["selectable"] is False
     assert payload["gpt-4o-mini"]["disabled_reason"] == "Not enabled for your account"
@@ -151,68 +131,6 @@ def test_admin_models_can_clear_api_key(db_session: Session, client: TestClient)
 
     row = db_session.query(LlmModelRow).filter(LlmModelRow.model_key == "gpt-4o-mini").one()
     assert row.api_key is None
-
-
-def test_env_model_is_listed_without_db_row(db_session: Session, monkeypatch: MonkeyPatch) -> None:
-    monkeypatch.setenv("V4T_LLM_MODEL", "env-gpt-test")
-    monkeypatch.setenv("V4T_LLM_BASE_URL", "https://example.test/v1")
-    monkeypatch.setenv("V4T_LLM_API_KEY", "")
-    get_settings.cache_clear()
-
-    with _fresh_client(db_session) as client:
-        public_res = client.get("/models")
-        assert public_res.status_code == 200
-        public_models = {row["model_key"]: row for row in public_res.json()}
-        assert "env-gpt-test" in public_models
-
-        admin_res = client.get("/admin/models")
-        assert admin_res.status_code == 200
-        admin_models = {row["model_key"]: row for row in admin_res.json()}
-        assert "env-gpt-test" in admin_models
-        assert admin_models["env-gpt-test"]["api_base_url"] == "https://example.test/v1"
-        assert admin_models["env-gpt-test"]["has_api_key"] is False
-
-
-def test_env_model_reports_api_key_presence(db_session: Session, monkeypatch: MonkeyPatch) -> None:
-    monkeypatch.setenv("V4T_LLM_MODEL", "env-gpt-test")
-    monkeypatch.setenv("V4T_LLM_BASE_URL", "https://example.test/v1")
-    monkeypatch.setenv("V4T_LLM_API_KEY", "sk-env")
-    get_settings.cache_clear()
-
-    with _fresh_client(db_session) as client:
-        admin_res = client.get("/admin/models")
-        assert admin_res.status_code == 200
-        admin_models = {row["model_key"]: row for row in admin_res.json()}
-        assert admin_models["env-gpt-test"]["has_api_key"] is True
-
-
-def test_admin_models_reject_env_model_key_mutation(
-    db_session: Session, monkeypatch: MonkeyPatch
-) -> None:
-    monkeypatch.setenv("V4T_LLM_MODEL", "env-gpt-test")
-    monkeypatch.setenv("V4T_LLM_BASE_URL", "https://example.test/v1")
-    get_settings.cache_clear()
-
-    with _fresh_client(db_session) as client:
-        create_res = client.post(
-            "/admin/models",
-            json={
-                "model_key": "env-gpt-test",
-                "label": "duplicate",
-                "api_base_url": "https://example.test/v1",
-                "enabled": True,
-            },
-        )
-        assert create_res.status_code == 400
-        assert create_res.json()["detail"] == "model_key is reserved"
-
-        update_res = client.put("/admin/models/env-gpt-test", json={"enabled": False})
-        assert update_res.status_code == 400
-        assert update_res.json()["detail"] == "model_key is reserved"
-
-        delete_res = client.delete("/admin/models/env-gpt-test")
-        assert delete_res.status_code == 400
-        assert delete_res.json()["detail"] == "model_key is reserved"
 
 
 def test_admin_model_access_update_normalizes_override(

@@ -39,16 +39,39 @@ export default function LeaderboardPage() {
 
     const [refreshing, setRefreshing] = React.useState(false);
     const [refreshError, setRefreshError] = React.useState<string | null>(null);
+    const [filterLoadError, setFilterLoadError] = React.useState<string | null>(null);
     const [selectedId, setSelectedId] = React.useState<string | null>(null);
 
     React.useEffect(() => {
-        apiJson<ModelPublicOut[]>("/models")
-            .then(setModels)
-            .catch((e) => console.error("Failed to load models:", e));
+        let cancelled = false;
 
-        apiJson<string[]>("/arena/markets")
-            .then((res) => setMarkets(res))
-            .catch((e) => console.error("Failed to load markets:", e));
+        void Promise.allSettled([
+            apiJson<ModelPublicOut[]>("/models"),
+            apiJson<string[]>("/arena/markets"),
+        ]).then((results) => {
+            if (cancelled) return;
+
+            const [modelsResult, marketsResult] = results;
+            const errors: string[] = [];
+
+            if (modelsResult.status === "fulfilled") {
+                setModels(modelsResult.value);
+            } else {
+                errors.push(modelsResult.reason instanceof Error ? modelsResult.reason.message : String(modelsResult.reason));
+            }
+
+            if (marketsResult.status === "fulfilled") {
+                setMarkets(marketsResult.value);
+            } else {
+                errors.push(marketsResult.reason instanceof Error ? marketsResult.reason.message : String(marketsResult.reason));
+            }
+
+            setFilterLoadError(errors.length > 0 ? errors.join(" ") : null);
+        });
+
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
     const refresh = React.useCallback(async () => {
@@ -79,7 +102,8 @@ export default function LeaderboardPage() {
     }, [modelFilter, marketFilter]);
 
     React.useEffect(() => {
-        refresh();
+        const timer = setTimeout(() => { refresh(); }, 300);
+        return () => clearTimeout(timer);
     }, [refresh]);
 
     const selected = entries.find((e) => e.submission_id === selectedId) ?? null;
@@ -135,9 +159,9 @@ export default function LeaderboardPage() {
                 </div>
             </section>
 
-            {refreshError && (
+            {(filterLoadError || refreshError) && (
                 <div className="bg-[#f9e5e5] border-2 border-[#c0392b] text-[#c0392b] p-3 text-lg mb-4">
-                    {refreshError}
+                    {[filterLoadError, refreshError].filter(Boolean).join(" ")}
                 </div>
             )}
 

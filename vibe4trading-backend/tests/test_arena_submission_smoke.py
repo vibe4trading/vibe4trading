@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from v4t.arena.runner import execute_arena_submission
 from v4t.db.models import ArenaSubmissionRow, ArenaSubmissionRunRow, DatasetRow, LlmCallRow
@@ -11,7 +13,7 @@ from v4t.settings import get_settings
 from v4t.utils.datetime import as_utc
 
 
-def test_arena_submission_smoke(db_session, monkeypatch):
+def test_arena_submission_smoke(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     base = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
     ids: list[str] = []
     for i in range(10):
@@ -72,7 +74,7 @@ def test_arena_submission_smoke(db_session, monkeypatch):
     assert sub.report_json["schema_version"] == 1
     assert isinstance(sub.report_json["overall_score"], int)
 
-    runs = list(
+    runs: list[ArenaSubmissionRunRow] = list(
         db_session.execute(
             select(ArenaSubmissionRunRow).where(
                 ArenaSubmissionRunRow.submission_id == sub.submission_id
@@ -85,7 +87,7 @@ def test_arena_submission_smoke(db_session, monkeypatch):
     assert all(r.status == "finished" for r in runs)
     assert all(r.return_pct is not None for r in runs)
 
-    report_calls = list(
+    report_calls: list[LlmCallRow] = list(
         db_session.execute(
             select(LlmCallRow)
             .where(LlmCallRow.purpose == "submission_report")
@@ -99,23 +101,24 @@ def test_arena_submission_smoke(db_session, monkeypatch):
     messages = prompt.get("messages", [])
     assert len(messages) == 2
     report_input = json.loads(messages[1]["content"])
-    assert report_input["style_metrics"]["source"] == "summary_prompt.md-single-coin-adaptation"
-    assert report_input["style_metrics"]["window_days"] == 5.0
     assert (
-        report_input["style_metrics"]["trade_count"] == sub.report_json["key_metrics"]["num_trades"]
+        report_input["summary"]["Total profit %"]
+        == sub.report_json["key_metrics"]["total_return_pct"]
+    )
+    assert report_input["summary"]["Sharpe"] == sub.report_json["key_metrics"]["sharpe_ratio"]
+    assert (
+        report_input["summary"]["Profit factor"] == sub.report_json["key_metrics"]["profit_factor"]
     )
     assert (
-        report_input["style_metrics"]["decision_count"]
-        == sub.report_json["key_metrics"]["decision_count"]
+        report_input["summary"]["Max % of account underwater"]
+        == sub.report_json["key_metrics"]["max_drawdown_pct"]
     )
-    assert "btc_exposure_pct" not in report_input["style_metrics"]
-    assert report_input["style_metrics"]["removed_multi_pair_metrics"] == [
-        "btc_exposure_pct",
-        "top1_position_pct",
-    ]
+    assert isinstance(report_input["trades"], list)
 
 
-def test_arena_submission_smoke_single_dataset(db_session, monkeypatch):
+def test_arena_submission_smoke_single_dataset(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
     base = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
 
     ds = DatasetRow(
@@ -170,7 +173,7 @@ def test_arena_submission_smoke_single_dataset(db_session, monkeypatch):
     assert sub.report_json is not None
     assert sub.report_json["schema_version"] == 1
 
-    runs = list(
+    runs: list[ArenaSubmissionRunRow] = list(
         db_session.execute(
             select(ArenaSubmissionRunRow).where(
                 ArenaSubmissionRunRow.submission_id == sub.submission_id
@@ -184,7 +187,9 @@ def test_arena_submission_smoke_single_dataset(db_session, monkeypatch):
     assert all(r.return_pct is not None for r in runs)
 
 
-def test_arena_submission_smoke_single_dataset_fullrange(db_session, monkeypatch):
+def test_arena_submission_smoke_single_dataset_fullrange(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
     base = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
 
     ds = DatasetRow(
@@ -235,7 +240,7 @@ def test_arena_submission_smoke_single_dataset_fullrange(db_session, monkeypatch
     assert sub.windows_total == 1
     assert sub.windows_completed == 1
 
-    runs = list(
+    runs: list[ArenaSubmissionRunRow] = list(
         db_session.execute(
             select(ArenaSubmissionRunRow).where(
                 ArenaSubmissionRunRow.submission_id == sub.submission_id

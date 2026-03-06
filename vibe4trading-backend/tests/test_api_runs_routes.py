@@ -395,7 +395,6 @@ def test_timeline_prices_decisions_and_summary(db_session, client) -> None:  # n
         "datasets": {"market_dataset_id": str(spot.dataset_id), "sentiment_dataset_id": None},
         "scheduler": {
             "base_interval_seconds": 3600,
-            "min_interval_seconds": 60,
             "price_tick_seconds": 60,
         },
         "prompt": {

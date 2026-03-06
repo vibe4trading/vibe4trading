@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type FocusEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type FocusEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 
 import { useNewRunModal } from "@/app/components/NewRunProvider";
@@ -36,6 +36,7 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
   const { data: session, status } = useSession();
   const [meData, setMeData] = useState<MeOut | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [loginPending, setLoginPending] = useState(false);
   const profileCloseTimerRef = useRef<number | null>(null);
   const [tokenStatus, setTokenStatus] = useState<TokenStatus>({
     tone: "idle",
@@ -74,13 +75,8 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
 
   const me = status === "authenticated" ? meData : null;
 
-  const profileName = useMemo(() => {
-    return me?.display_name ?? session?.user?.name ?? session?.user?.email ?? "YOU";
-  }, [me?.display_name, session?.user?.email, session?.user?.name]);
-
-  const profileEmail = useMemo(() => {
-    return me?.email ?? session?.user?.email ?? null;
-  }, [me?.email, session?.user?.email]);
+  const profileName = me?.display_name ?? session?.user?.name ?? session?.user?.email ?? "YOU";
+  const profileEmail = me?.email ?? session?.user?.email ?? null;
 
   const profileInitial = profileName.trim().charAt(0).toUpperCase() || "U";
   const profileTriggerClassName = isHome
@@ -127,7 +123,7 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
     }
   }
 
-  async function onCopyToken() {
+  const onCopyToken = useCallback(async () => {
     setTokenStatus({ tone: "loading", message: "Requesting your bot token..." });
     try {
       const token = await apiJson<MeApiTokenOut>("/me/api-token");
@@ -143,7 +139,7 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
         message: error instanceof Error ? error.message : "Unable to copy bot token.",
       });
     }
-  }
+  }, []);
 
   return (
     <header className={`top-nav ${isHome ? "home-top-nav" : ""}`}>
@@ -269,7 +265,15 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
             </div>
           </>
         ) : status === "unauthenticated" ? (
-          <button type="button" className="waitlist" onClick={() => signIn("v4t")}>LOGIN</button>
+          <button
+            type="button"
+            className={`waitlist${loginPending ? " waitlist-pending" : ""}`}
+            disabled={loginPending}
+            onClick={() => { setLoginPending(true); signIn("v4t"); }}
+          >
+            {loginPending && <span className="waitlist-spinner" aria-hidden="true" />}
+            {loginPending ? "SIGNING IN…" : "LOGIN"}
+          </button>
         ) : null}
       </div>
     </header>

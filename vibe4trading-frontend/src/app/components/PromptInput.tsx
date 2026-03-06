@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type PromptMode = "noob" | "pro";
 type PromptVariant = "dark" | "light";
@@ -40,6 +40,7 @@ export function PromptInput({
     timeHorizon: "medium-term",
     riskTolerance: "moderate",
   });
+  const initializedRef = useRef(false);
 
   useEffect(() => {
     setMode(initialMode);
@@ -52,10 +53,11 @@ export function PromptInput({
   );
 
   useEffect(() => {
-    if (mode === "noob" && !value.trim()) {
+    if (mode === "noob" && !value.trim() && !initializedRef.current) {
+      initializedRef.current = true;
       onChange(generatedPrompt);
     }
-  }, [generatedPrompt, mode, onChange, value]);
+  }, [mode, generatedPrompt, onChange, value]);
 
   const toggleBase = isLight
     ? "flex-1 border border-[#2f2f2f]/35 bg-transparent px-4 py-3 text-[12px] uppercase tracking-[0.22em] text-[#222] transition-colors hover:bg-[#111]/6"

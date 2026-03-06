@@ -3,6 +3,7 @@
 import Link from "next/link";
 import * as React from "react";
 
+import { useModalA11y } from "@/app/hooks/useModalA11y";
 import { ArenaSubmissionOut } from "@/app/lib/v4t";
 
 function fmt(dt: string | null) {
@@ -37,58 +38,8 @@ type MyRunsModalProps = {
 };
 
 export function MyRunsModal({ open, submissions, onClose }: MyRunsModalProps) {
-  const panelRef = React.useRef<HTMLDivElement | null>(null);
-  const previouslyFocused = React.useRef<HTMLElement | null>(null);
+  const { panelRef } = useModalA11y(open, onClose);
   const titleId = React.useId();
-
-  React.useEffect(() => {
-    if (!open) return;
-
-    previouslyFocused.current = document.activeElement as HTMLElement | null;
-    document.body.style.overflow = "hidden";
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-        return;
-      }
-
-      if (e.key === "Tab") {
-        const panel = panelRef.current;
-        if (!panel) return;
-
-        const focusables = Array.from(
-          panel.querySelectorAll<HTMLElement>(
-            'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])',
-          ),
-        ).filter((el) => !el.hasAttribute("disabled") && el.tabIndex !== -1);
-        if (focusables.length === 0) return;
-
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        const active = document.activeElement as HTMLElement | null;
-
-        if (e.shiftKey) {
-          if (!active || active === first || !panel.contains(active)) {
-            e.preventDefault();
-            last.focus();
-          }
-        } else {
-          if (active === last) {
-            e.preventDefault();
-            first.focus();
-          }
-        }
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = "";
-      previouslyFocused.current?.focus?.();
-    };
-  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -106,7 +57,7 @@ export function MyRunsModal({ open, submissions, onClose }: MyRunsModalProps) {
       />
 
       <div
-        ref={panelRef}
+        ref={panelRef as React.RefObject<HTMLDivElement>}
         className="relative w-full max-w-3xl max-h-[calc(100vh-3rem)] overflow-hidden rounded-3xl border border-white/10 bg-[color:var(--surface)] shadow-[0_20px_80px_rgba(0,0,0,0.6)] flex flex-col"
       >
         <div className="flex items-start justify-between gap-4 border-b border-white/10 bg-white/5 px-6 py-5">

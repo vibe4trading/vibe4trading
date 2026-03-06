@@ -48,7 +48,7 @@ export default function RunsPage() {
   const [models, setModels] = React.useState<ModelPublicOut[]>([]);
 
   const [marketId, setMarketId] = React.useState("spot:demo:DEMO");
-  const [modelKey, setModelKey] = React.useState("stub");
+  const [modelKey, setModelKey] = React.useState("");
   const [promptText, setPromptText] = React.useState("");
 
   const marketDatasetId = process.env.NEXT_PUBLIC_V4T_MARKET_DATASET_ID ?? "";
@@ -100,17 +100,6 @@ export default function RunsPage() {
       })
       .catch((e) => {
         setError(`Failed to load models: ${e instanceof Error ? e.message : String(e)}`);
-        setModels([
-          {
-            model_key: "stub",
-            label: "Stub",
-            enabled: true,
-            allowed: true,
-            selectable: true,
-            disabled_reason: null,
-          },
-        ]);
-        setModelKey("stub");
       });
   }, []);
 

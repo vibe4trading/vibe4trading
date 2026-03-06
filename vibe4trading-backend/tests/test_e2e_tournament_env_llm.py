@@ -35,6 +35,7 @@ from v4t.db.models import (
     DatasetRow,
     EventRow,
     LlmCallRow,
+    LlmModelRow,
     RunConfigSnapshotRow,
     RunRow,
 )
@@ -113,7 +114,6 @@ class _FakeLlmHandler(BaseHTTPRequestHandler):
                     "leverage": 1,
                     "stop_loss_pct": 5.0,
                     "take_profit_pct": 10.0,
-                    "next_check_seconds": 3600,
                     "confidence": 0.7,
                     "key_signals": ["deterministic_hourly_trend"],
                     "rationale": "Deterministic local test response.",
@@ -224,7 +224,6 @@ def test_tournament_e2e_uses_env_model_and_persists_replay_artifacts(
 ) -> None:
     monkeypatch.setenv("V4T_CELERY_ALWAYS_EAGER", "1")
     monkeypatch.setenv("V4T_REPLAY_BASE_INTERVAL_SECONDS", "21600")
-    monkeypatch.setenv("V4T_REPLAY_MIN_INTERVAL_SECONDS", "3600")
     monkeypatch.setenv("V4T_REPLAY_PRICE_TICK_SECONDS", "21600")
     get_settings.cache_clear()
 
@@ -233,8 +232,21 @@ def test_tournament_e2e_uses_env_model_and_persists_replay_artifacts(
     if model_key in {"", "stub"} or not settings.llm_base_url or not settings.llm_api_key:
         pytest.skip("backend env LLM is not configured")
 
+    ts = datetime.now(UTC)
+    db_session.add(
+        LlmModelRow(
+            model_key=model_key,
+            label="Env LLM Model",
+            api_base_url=None,
+            enabled=True,
+            created_at=ts,
+            updated_at=ts,
+        )
+    )
+    db_session.commit()
+
     start = datetime(2025, 3, 1, 0, 0, 0, tzinfo=UTC)
-    end = start + timedelta(hours=24)
+    end = start + timedelta(days=16)
     with _fresh_client(db_session) as client:
         public_models_res = client.get("/models")
         assert public_models_res.status_code == 200
@@ -275,11 +287,10 @@ def test_tournament_e2e_uses_env_model_and_persists_replay_artifacts(
                 "market_id": "spot:demo:BTC",
                 "model_key": model_key,
                 "prompt_text": (
-                    "You are trading BTC. Return ONLY valid JSON with schema_version=1, "
-                    'targets={"spot:demo:BTC": number between 0 and 1}, next_check_seconds, '
+                    "You are trading BTC. Return ONLY valid JSON with schema_version=2, "
+                    "target, mode, leverage, stop_loss_pct, take_profit_pct, "
                     "confidence, key_signals, and rationale."
                 ),
-                "decision_schema_version": 1,
                 "visibility": "public",
             },
         )
@@ -295,9 +306,9 @@ def test_tournament_e2e_uses_env_model_and_persists_replay_artifacts(
         assert len(decisions_res.json()) >= 1
 
     assert detail["status"] == "finished"
-    assert detail["windows_total"] == 1
-    assert detail["windows_completed"] == 1
-    assert len(detail["runs"]) == 1
+    assert detail["windows_total"] == 10
+    assert detail["windows_completed"] == 10
+    assert len(detail["runs"]) == 10
 
     run_id = UUID(detail["runs"][0]["run_id"])
     submission = db_session.get(ArenaSubmissionRow, UUID(submission_id))
@@ -395,10 +406,22 @@ def test_tournament_full_workflow_persists_replayable_llm_data(
         monkeypatch.setenv("V4T_LLM_API_KEY", "test-key")
         monkeypatch.setenv("V4T_CELERY_ALWAYS_EAGER", "1")
         monkeypatch.setenv("V4T_REPLAY_BASE_INTERVAL_SECONDS", "3600")
-        monkeypatch.setenv("V4T_REPLAY_MIN_INTERVAL_SECONDS", "3600")
         monkeypatch.setenv("V4T_REPLAY_PRICE_TICK_SECONDS", "3600")
         monkeypatch.setenv("V4T_ARENA_DATASET_IDS", str(dataset.dataset_id))
         get_settings.cache_clear()
+
+        ts = datetime.now(UTC)
+        db_session.add(
+            LlmModelRow(
+                model_key="fake-env-gpt",
+                label="Fake Env GPT",
+                api_base_url=None,
+                enabled=True,
+                created_at=ts,
+                updated_at=ts,
+            )
+        )
+        db_session.commit()
 
         with _fresh_client(db_session) as client:
             submission_res = client.post(
@@ -408,9 +431,8 @@ def test_tournament_full_workflow_persists_replayable_llm_data(
                     "model_key": "fake-env-gpt",
                     "prompt_text": (
                         "Trade BTC hourly. Return ONLY valid JSON with schema_version=2, target, mode, leverage, "
-                        "stop_loss_pct, take_profit_pct, next_check_seconds, confidence, key_signals, and rationale."
+                        "stop_loss_pct, take_profit_pct, confidence, key_signals, and rationale."
                     ),
-                    "decision_schema_version": 2,
                     "risk_level": 3,
                     "visibility": "public",
                 },
@@ -463,7 +485,6 @@ def test_tournament_full_workflow_persists_replayable_llm_data(
         assert cfg.market_id == market_id
         assert cfg.model.key == "fake-env-gpt"
         assert cfg.datasets.market_dataset_id == dataset.dataset_id
-        assert cfg.decision_schema_version == 2
         assert cfg.risk_level == 3
 
     decision_calls = list(

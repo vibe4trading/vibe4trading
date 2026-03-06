@@ -103,7 +103,6 @@ function buildDecisionContent(rng, opts) {
   const obj = {
     schema_version: 1,
     targets,
-    next_check_seconds: 900,
     confidence,
     key_signals: keySignals,
     rationale,

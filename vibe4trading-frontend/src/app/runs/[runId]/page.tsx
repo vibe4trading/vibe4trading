@@ -356,7 +356,6 @@ export default function RunDetailPage() {
                   <th className="px-3 py-2">Tick</th>
                   <th className="px-3 py-2">Accepted</th>
                   <th className="px-3 py-2">Target</th>
-                  <th className="px-3 py-2">Next Check</th>
                   <th className="px-3 py-2">Signals</th>
                   <th className="px-3 py-2">Rationale</th>
                 </tr>
@@ -377,9 +376,6 @@ export default function RunDetailPage() {
                       </span>
                     </td>
                     <td className="px-3 py-2 font-mono">{decisionTarget(decision) || "hold"}</td>
-                    <td className="px-3 py-2">
-                      {decision.next_check_seconds != null ? `${decision.next_check_seconds}s` : "–"}
-                    </td>
                     <td className="px-3 py-2">{decision.key_signals?.join(", ") || "–"}</td>
                     <td className="px-3 py-2 text-[13px] leading-6 text-[#444]">
                       {decision.reject_reason ? `[${decision.reject_reason}] ` : ""}

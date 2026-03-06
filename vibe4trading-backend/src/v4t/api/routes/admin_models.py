@@ -14,7 +14,7 @@ from v4t.api.schemas import ModelAdminCreateRequest, ModelAdminOut, ModelAdminUp
 from v4t.api.utils import now
 from v4t.auth.deps import get_admin_user
 from v4t.db.models import LlmModelRow, UserRow
-from v4t.settings import get_env_model_key, get_settings
+from v4t.settings import get_settings
 
 router = APIRouter(prefix="/admin/models", tags=["admin-models"])
 
@@ -23,10 +23,7 @@ _RESERVED_KEYS = {"stub", "multi-pair"}
 
 
 def _is_reserved_key(key: str) -> bool:
-    if key in _RESERVED_KEYS:
-        return True
-    env_key = get_env_model_key()
-    return env_key is not None and key == env_key
+    return key in _RESERVED_KEYS
 
 
 def _validate_api_base_url(raw: str | None) -> str | None:
@@ -83,23 +80,7 @@ def list_models(
     _admin: UserRow = Depends(get_admin_user),
 ) -> list[ModelAdminOut]:
     rows = list(db.execute(select(LlmModelRow).order_by(LlmModelRow.model_key)).scalars().all())
-    out = [_to_out(r) for r in rows]
-    env_key = get_env_model_key()
-    if env_key is not None and all(r.model_key != env_key for r in rows):
-        ts = now()
-        out.insert(
-            0,
-            ModelAdminOut(
-                model_key=env_key,
-                label=env_key,
-                api_base_url=get_settings().llm_base_url,
-                has_api_key=bool((get_settings().llm_api_key or "").strip()),
-                enabled=True,
-                created_at=ts,
-                updated_at=ts,
-            ),
-        )
-    return out
+    return [_to_out(r) for r in rows]
 
 
 @router.post("", response_model=ModelAdminOut)

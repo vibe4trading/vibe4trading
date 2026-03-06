@@ -1,5 +1,6 @@
 import React from "react";
 import { EventData } from "../lib/report-data";
+import { useModalA11y } from "../hooks/useModalA11y";
 
 export function EventModal({
     isOpen,
@@ -12,11 +13,15 @@ export function EventModal({
     eventData: EventData | null;
     eventCode: string;
 }) {
+    const { panelRef } = useModalA11y(isOpen, onClose);
+    const titleId = React.useId();
+
     if (!isOpen || !eventData) return null;
 
     return (
-        <div className="event-modal" onClick={onClose}>
+        <div className="event-modal" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby={titleId}>
             <article
+                ref={panelRef as React.RefObject<HTMLElement>}
                 className="event-modal-panel"
                 onClick={(e) => e.stopPropagation()}
             >
@@ -24,7 +29,7 @@ export function EventModal({
                     <div className="modal-head-main">
                         <div className="modal-head-title-row">
                             <span className="event-code-chip">{eventCode}</span>
-                            <h3>{eventData.title}</h3>
+                            <h3 id={titleId}>{eventData.title}</h3>
                         </div>
                         <p>{eventData.subtitle}</p>
                     </div>

@@ -19,7 +19,7 @@ from v4t.api.utils import (
 )
 from v4t.auth.deps import get_admin_user
 from v4t.db.models import LlmModelRow, UserRow
-from v4t.settings import get_env_model_key, get_settings, parse_csv_set
+from v4t.settings import get_settings, parse_csv_set
 
 router = APIRouter(prefix="/admin/model-access", tags=["admin-model-access"])
 
@@ -63,10 +63,6 @@ def list_user_model_access(
 
     all_model_keys = {row.model_key for row in model_rows}
     selectable_model_keys = {row.model_key for row in model_rows if row.enabled}
-    env_model_key = get_env_model_key()
-    if env_model_key is not None:
-        all_model_keys.add(env_model_key)
-        selectable_model_keys.add(env_model_key)
     configured_default = parse_csv_set(get_settings().llm_model_allowlist)
 
     return AdminModelAccessIndexOut(
@@ -110,10 +106,6 @@ def update_user_model_access(
     )
     all_model_keys = {row.model_key for row in model_rows}
     selectable_model_keys = {row.model_key for row in model_rows if row.enabled}
-    env_model_key = get_env_model_key()
-    if env_model_key is not None:
-        all_model_keys.add(env_model_key)
-        selectable_model_keys.add(env_model_key)
     return _user_out(
         user, all_model_keys=all_model_keys, selectable_model_keys=selectable_model_keys
     )

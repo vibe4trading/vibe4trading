@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -12,18 +13,31 @@ class LlmBudgetTracker:
     _MAX_CACHE_SIZE = 10_000
 
     def __init__(self) -> None:
-        self._blocked_runs: set[tuple[UUID, str]] = set()
-        self._blocked_datasets: set[tuple[UUID, str]] = set()
+        self._blocked_runs: OrderedDict[tuple[UUID, str], None] = OrderedDict()
+        self._blocked_datasets: OrderedDict[tuple[UUID, str], None] = OrderedDict()
+
+    def _is_blocked(
+        self, cache: OrderedDict[tuple[UUID, str], None], key: tuple[UUID, str]
+    ) -> bool:
+        if key not in cache:
+            return False
+        cache.move_to_end(key)
+        return True
+
+    def _mark_blocked(
+        self, cache: OrderedDict[tuple[UUID, str], None], key: tuple[UUID, str]
+    ) -> None:
+        cache[key] = None
+        cache.move_to_end(key)
+        if len(cache) > self._MAX_CACHE_SIZE:
+            cache.popitem(last=False)
 
     def exceeded_run(self, session: Session, *, run_id: UUID, purpose: str, limit: int) -> bool:
         if limit <= 0:
             return False
         key = (run_id, purpose)
-        if key in self._blocked_runs:
+        if self._is_blocked(self._blocked_runs, key):
             return True
-
-        if len(self._blocked_runs) >= self._MAX_CACHE_SIZE:
-            self._blocked_runs.clear()
 
         cnt = session.execute(
             select(func.count())
@@ -31,7 +45,7 @@ class LlmBudgetTracker:
             .where(LlmCallRow.run_id == run_id, LlmCallRow.purpose == purpose)
         ).scalar_one()
         if int(cnt) >= limit:
-            self._blocked_runs.add(key)
+            self._mark_blocked(self._blocked_runs, key)
             return True
         return False
 
@@ -41,11 +55,8 @@ class LlmBudgetTracker:
         if limit <= 0:
             return False
         key = (dataset_id, purpose)
-        if key in self._blocked_datasets:
+        if self._is_blocked(self._blocked_datasets, key):
             return True
-
-        if len(self._blocked_datasets) >= self._MAX_CACHE_SIZE:
-            self._blocked_datasets.clear()
 
         cnt = session.execute(
             select(func.count())
@@ -53,6 +64,6 @@ class LlmBudgetTracker:
             .where(LlmCallRow.dataset_id == dataset_id, LlmCallRow.purpose == purpose)
         ).scalar_one()
         if int(cnt) >= limit:
-            self._blocked_datasets.add(key)
+            self._mark_blocked(self._blocked_datasets, key)
             return True
         return False

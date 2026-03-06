@@ -22,7 +22,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       return token;
     },
-    async session({ session }) {
+    async session({ session, token }) {
+      session.accessToken = typeof token.accessToken === "string" ? token.accessToken : undefined;
+      session.accessTokenExpires =
+        typeof token.accessTokenExpires === "number" ? token.accessTokenExpires : undefined;
+      session.refreshToken = typeof token.refreshToken === "string" ? token.refreshToken : undefined;
       return session;
     },
   },

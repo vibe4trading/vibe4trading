@@ -135,7 +135,7 @@ def create_run(
             status_code=429, detail=f"Daily quota exceeded: {runs_used}/{runs_limit} runs used"
         )
 
-    risk_profile = get_risk_profile(req.risk_level) if req.decision_schema_version == 2 else None
+    risk_profile = get_risk_profile(req.risk_level)
     gross_leverage_cap = (
         float(risk_profile.max_abs_exposure)
         if risk_profile is not None
@@ -149,7 +149,6 @@ def create_run(
 
     cfg = RunConfigSnapshot(
         mode=RunMode.replay,
-        decision_schema_version=req.decision_schema_version,
         market_id=req.market_id,
         risk_level=req.risk_level,
         holding_period=req.holding_period,
@@ -159,7 +158,6 @@ def create_run(
         ),
         scheduler=SchedulerConfig(
             base_interval_seconds=settings.replay_base_interval_seconds,
-            min_interval_seconds=settings.replay_min_interval_seconds,
             price_tick_seconds=settings.replay_price_tick_seconds,
         ),
         prompt=PromptConfig(
@@ -199,7 +197,6 @@ def create_run(
         for pair in req.model_token_pairs:
             child_cfg = RunConfigSnapshot(
                 mode=RunMode.replay,
-                decision_schema_version=req.decision_schema_version,
                 market_id=req.market_id,
                 risk_level=req.risk_level,
                 holding_period=req.holding_period,

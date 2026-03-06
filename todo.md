@@ -101,7 +101,7 @@ Goal: lock the contracts early so everything else builds on stable types.
 - [x] Canonical payload models (v1):
   - [x] `market.price`, `market.ohlcv` (minimum required for prompts + fills)
   - [x] `sentiment.item`, `sentiment.item_summary`
-  - [x] `llm.decision`, `llm.schedule_request`
+  - [x] `llm.decision`
   - [x] `sim.fill`, `portfolio.snapshot`
   - [x] `run.started`, `run.finished`, `run.failed`
 - [x] Run config snapshot schema (match `ideas.md` draft; keep MVP constraint: 1 market + 1 model).
@@ -195,9 +195,7 @@ Goal: consume replay/live events, build snapshots, call LLM, simulate, persist r
   - [x] only use OHLCV after close (`bar_end <= tick_time`)
   - [x] require fresh price for fill pricing (age <= 60s; configurable)
 - [x] Scheduler:
-  - [x] base cadence 1h (anchored)
-  - [x] early-check requests via `next_check_seconds` (clamped + aligned)
-  - [x] always log schedule requests (even ignored)
+  - [x] base cadence 1h (anchored, fixed interval)
 - [x] Prompt builder:
   - [x] Mustache templates (no code execution)
   - [x] bounded market context + derived features
@@ -213,7 +211,7 @@ Persistence:
 
 - [x] Write run-scoped canonical events directly to `events` (`run_id` scoped):
   - [x] `run.started` / `run.finished` / `run.failed`
-  - [x] `llm.decision` / `llm.schedule_request`
+  - [x] `llm.decision`
   - [x] `sim.fill` / `portfolio.snapshot`
 - [x] Maintain projection tables (`portfolio_snapshots`, `sim_trades`) for UI speed.
 
@@ -290,7 +288,7 @@ Goal: one always-on live run for the main dashboard.
   - [x] write `market.price` events (run-scoped)
   - [x] build/write `market.ohlcv` bars (run-scoped)
 - [x] Live run execution loop:
-  - [x] anchored tick schedule + early-check support
+  - [x] anchored tick schedule (fixed 1h cadence)
   - [ ] optional early sentiment refresh (best effort)
   - [x] write run-scoped events and projections
 

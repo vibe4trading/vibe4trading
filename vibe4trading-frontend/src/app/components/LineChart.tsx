@@ -56,31 +56,32 @@ export function LineChart({
   const markerFill = isLight ? "rgba(0,0,0,0.92)" : "rgba(255,255,255,0.92)";
   const footerClass = isLight ? "mt-2 flex justify-between text-xs text-[var(--muted)]" : "mt-2 flex justify-between text-xs text-zinc-500";
 
-  const toX = (i: number) => {
+  const toX = React.useCallback((i: number) => {
     if (points.length <= 1) return padding;
     const t = i / (points.length - 1);
     return padding + t * (width - padding * 2);
-  };
-  const toY = (y: number) => {
+  }, [points.length, padding, width]);
+
+  const toY = React.useCallback((y: number) => {
     const t = (y - minY) / spanY;
     return padding + (1 - t) * (height - padding * 2);
-  };
+  }, [minY, spanY, padding, height]);
 
-  const d = points
+  const d = React.useMemo(() => points
     .map((p, i) => {
       const x = toX(i);
       const y = toY(p.y);
       return `${i === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`;
     })
-    .join(" ");
+    .join(" "), [points, toX, toY]);
 
   const last = points[points.length - 1];
   const lastY = last ? last.y : 0;
   const lastPct = points.length > 0 && points[0].y !== 0 ? ((lastY - points[0].y) / points[0].y) * 100 : 0;
 
-  const fillD = points.length > 0
+  const fillD = React.useMemo(() => points.length > 0
     ? `${d} L${toX(points.length - 1).toFixed(2)} ${(height - padding).toFixed(2)} L${toX(0).toFixed(2)} ${(height - padding).toFixed(2)} Z`
-    : "";
+    : "", [d, points.length, toX, height, padding]);
 
   return (
     <div className={cardClass}>

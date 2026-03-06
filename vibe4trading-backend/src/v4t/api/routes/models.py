@@ -9,7 +9,6 @@ from v4t.api.schemas import ModelPublicOut
 from v4t.api.utils import effective_allowed_model_keys
 from v4t.auth.deps import get_current_user
 from v4t.db.models import LlmModelRow, UserRow
-from v4t.settings import get_env_model_key
 
 router = APIRouter(tags=["models"])
 
@@ -20,26 +19,14 @@ def list_models(
     user: UserRow = Depends(get_current_user),
 ) -> list[ModelPublicOut]:
     rows = list(db.execute(select(LlmModelRow).order_by(LlmModelRow.model_key)).scalars().all())
-    env_model_key = get_env_model_key()
 
     models: dict[str, tuple[str | None, bool]] = {
         row.model_key: (row.label, bool(row.enabled)) for row in rows if row.model_key != "stub"
     }
-    if env_model_key is not None:
-        models.setdefault(env_model_key, (env_model_key, True))
 
     allowed_model_keys = effective_allowed_model_keys(all_model_keys=set(models), user=user)
 
-    out: list[ModelPublicOut] = [
-        ModelPublicOut(
-            model_key="stub",
-            label="Stub",
-            enabled=True,
-            allowed=True,
-            selectable=True,
-            disabled_reason=None,
-        )
-    ]
+    out: list[ModelPublicOut] = []
     for model_key in sorted(models):
         label, enabled = models[model_key]
         allowed = model_key in allowed_model_keys

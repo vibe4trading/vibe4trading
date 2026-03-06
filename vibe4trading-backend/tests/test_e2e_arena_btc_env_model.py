@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
 
 from sqlalchemy import select
 
@@ -13,6 +12,7 @@ from v4t.db.models import (
     DatasetRow,
     EventRow,
     LlmCallRow,
+    LlmModelRow,
     RunConfigSnapshotRow,
     RunRow,
 )
@@ -23,10 +23,23 @@ BTC_MARKET_ID = "spot:freqtrade:BTC/USDT"
 
 
 def _setup_env(monkeypatch):
-    monkeypatch.setenv("V4T_LLM_MODEL", ENV_MODEL_KEY)
-    monkeypatch.setenv("V4T_LLM_BASE_URL", "https://test.example.com/v1")
     monkeypatch.setenv("V4T_CELERY_ALWAYS_EAGER", "1")
     get_settings.cache_clear()
+
+
+def _create_model_row(session):
+    ts = datetime.now(UTC)
+    session.add(
+        LlmModelRow(
+            model_key=ENV_MODEL_KEY,
+            label="Test Env Model",
+            api_base_url=None,
+            enabled=True,
+            created_at=ts,
+            updated_at=ts,
+        )
+    )
+    session.commit()
 
 
 def _create_btc_arena_datasets(session, *, n_datasets: int = 1):
@@ -53,44 +66,9 @@ def _create_btc_arena_datasets(session, *, n_datasets: int = 1):
     return ids
 
 
-def test_env_model_appears_in_models_list(db_session, client, monkeypatch):
-    _setup_env(monkeypatch)
-
-    res = client.get("/models")
-    assert res.status_code == 200
-    models = res.json()
-    keys = {m["model_key"] for m in models}
-    assert "stub" in keys
-    assert ENV_MODEL_KEY in keys
-
-    env_entry = next(m for m in models if m["model_key"] == ENV_MODEL_KEY)
-    assert env_entry["selectable"] is True
-
-
-def test_admin_crud_rejects_env_model_key(db_session, client, monkeypatch):
-    _setup_env(monkeypatch)
-
-    res = client.post(
-        "/admin/models",
-        json={"model_key": ENV_MODEL_KEY, "label": "Env Model", "enabled": True},
-    )
-    assert res.status_code == 400
-    assert "reserved" in res.json()["detail"]
-
-    res = client.put(
-        f"/admin/models/{ENV_MODEL_KEY}",
-        json={"enabled": False},
-    )
-    assert res.status_code == 400
-    assert "reserved" in res.json()["detail"]
-
-    res = client.delete(f"/admin/models/{ENV_MODEL_KEY}")
-    assert res.status_code == 400
-    assert "reserved" in res.json()["detail"]
-
-
 def test_arena_submission_accepts_env_model_via_api(db_session, client, monkeypatch):
     _setup_env(monkeypatch)
+    _create_model_row(db_session)
     ids = _create_btc_arena_datasets(db_session)
     monkeypatch.setenv("V4T_ARENA_DATASET_IDS", ",".join(ids))
     get_settings.cache_clear()
@@ -114,6 +92,7 @@ def test_arena_submission_accepts_env_model_via_api(db_session, client, monkeypa
 
 def test_e2e_arena_btc_tournament_env_model(db_session, monkeypatch):
     _setup_env(monkeypatch)
+    _create_model_row(db_session)
     ids = _create_btc_arena_datasets(db_session)
     monkeypatch.setenv("V4T_ARENA_DATASET_IDS", ",".join(ids))
     get_settings.cache_clear()
@@ -127,7 +106,6 @@ def test_e2e_arena_btc_tournament_env_model(db_session, monkeypatch):
         prompt_template_id=None,
         prompt_vars={
             "prompt_text": "Analyze BTC market data and decide target exposure.",
-            "decision_schema_version": 1,
         },
         visibility="public",
         status="pending",

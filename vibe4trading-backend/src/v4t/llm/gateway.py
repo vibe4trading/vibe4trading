@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from v4t.contracts.payloads import LlmDecisionOutputV1, LlmDecisionOutputV2
+from v4t.contracts.payloads import LlmDecisionOutput
 from v4t.db.models import LlmCallRow, LlmModelRow
 from v4t.llm.budget import LlmBudgetTracker
 from v4t.llm.json_extract import extract_first_json_object_text
@@ -25,7 +25,7 @@ from v4t.llm.retry import (
     is_retryable,
     post_json_request,
 )
-from v4t.settings import get_settings, is_env_model_key
+from v4t.settings import get_settings
 from v4t.utils.datetime import now
 
 _LOG: Final = structlog.get_logger("llm.gateway")
@@ -61,7 +61,6 @@ def _extract_message_content(data: dict[str, Any]) -> str:
 class StubDecisionFeatures(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    decision_schema_version: int = 1
     market_id: str
     closes: list[str]  # decimal strings
     risk_level: int | None = None
@@ -70,7 +69,7 @@ class StubDecisionFeatures(BaseModel):
 @dataclass
 class LlmCallResult:
     call_id: UUID | None
-    decision: LlmDecisionOutputV1 | LlmDecisionOutputV2
+    decision: LlmDecisionOutput
     error: str | None = None
 
 
@@ -93,16 +92,12 @@ class LlmGateway:
     def _model_allowed(self, session: Session, model_key: str) -> bool:
         if model_key == "stub":
             return True
-        if is_env_model_key(model_key):
-            return True
 
         return self._get_enabled_model_row(session, model_key) is not None
 
     def _resolve_transport(self, session: Session, model_key: str) -> tuple[str | None, str | None]:
         if model_key == "stub":
             return None, None
-        if is_env_model_key(model_key):
-            return self.settings.llm_base_url, self.settings.llm_api_key
 
         row = self._get_enabled_model_row(session, model_key)
         base_url = self.settings.llm_base_url
@@ -137,8 +132,7 @@ class LlmGateway:
         user_prompt: str,
         temperature: float,
         max_output_tokens: int,
-        decision_schema_version: int = 1,
-    ) -> LlmCallResult | tuple[UUID | None, str]:
+    ) -> tuple[UUID, str]:
         err = "llm_not_configured"
         req = self._build_request(
             model_key=model_key,
@@ -160,14 +154,63 @@ class LlmGateway:
             latency_ms=0,
             error=err,
         )
+        return call.call_id, err
 
-        if purpose == "decision":
-            return LlmCallResult(
-                call_id=call.call_id,
-                decision=self._empty_decision(decision_schema_version),
-                error=err,
-            )
-        return call.call_id, f"(error) {err}"
+    def _missing_config_decision_result(
+        self,
+        session: Session,
+        *,
+        run_id: UUID | None,
+        dataset_id: UUID | None,
+        purpose: str,
+        observed_at: datetime,
+        model_key: str,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float,
+        max_output_tokens: int,
+    ) -> LlmCallResult:
+        call_id, err = self._missing_config_result(
+            session,
+            run_id=run_id,
+            dataset_id=dataset_id,
+            purpose=purpose,
+            observed_at=observed_at,
+            model_key=model_key,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+        return LlmCallResult(call_id=call_id, decision=self._empty_decision(), error=err)
+
+    def _missing_config_text_result(
+        self,
+        session: Session,
+        *,
+        run_id: UUID | None,
+        dataset_id: UUID | None,
+        purpose: str,
+        observed_at: datetime,
+        model_key: str,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float,
+        max_output_tokens: int,
+    ) -> tuple[UUID, str]:
+        call_id, err = self._missing_config_result(
+            session,
+            run_id=run_id,
+            dataset_id=dataset_id,
+            purpose=purpose,
+            observed_at=observed_at,
+            model_key=model_key,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+        return call_id, f"(error) {err}"
 
     def _build_request(
         self,
@@ -230,7 +273,6 @@ class LlmGateway:
         system_prompt: str,
         user_prompt: str,
         stub_features: StubDecisionFeatures,
-        decision_schema_version: int = 1,
         temperature: float = 0.0,
         max_output_tokens: int = 800,
     ) -> LlmCallResult:
@@ -261,7 +303,7 @@ class LlmGateway:
         if not self._model_allowed(session, model_key):
             return LlmCallResult(
                 call_id=None,
-                decision=self._empty_decision(decision_schema_version),
+                decision=self._empty_decision(),
                 error=f"model_not_allowed: {model_key}",
             )
 
@@ -273,13 +315,13 @@ class LlmGateway:
         ):
             return LlmCallResult(
                 call_id=None,
-                decision=self._empty_decision(decision_schema_version),
+                decision=self._empty_decision(),
                 error="budget_exceeded: max decision calls per run",
             )
 
         base_url, api_key = self._resolve_transport(session, model_key)
         if base_url is None or not api_key:
-            res = self._missing_config_result(
+            return self._missing_config_decision_result(
                 session,
                 run_id=run_id,
                 dataset_id=None,
@@ -290,11 +332,7 @@ class LlmGateway:
                 user_prompt=user_prompt,
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
-                decision_schema_version=decision_schema_version,
             )
-            if not isinstance(res, LlmCallResult):
-                raise ValueError("unexpected _missing_config_result return type")
-            return res
         url, headers = self._api_url_and_headers(base_url, api_key)
         max_attempts = max(1, int(self.settings.llm_max_retries) + 1)
         attempt_user_prompt = user_prompt
@@ -318,7 +356,7 @@ class LlmGateway:
                 resp_parsed: dict[str, Any] | None = None
                 usage: dict[str, Any] | None = None
                 error: str | None = None
-                decision: LlmDecisionOutputV1 | LlmDecisionOutputV2 | None = None
+                decision: LlmDecisionOutput | None = None
 
                 try:
                     data = post_json_request(
@@ -399,7 +437,7 @@ class LlmGateway:
 
         return LlmCallResult(
             call_id=last_call_id,
-            decision=self._empty_decision(decision_schema_version),
+            decision=self._empty_decision(),
             error=last_error,
         )
 
@@ -414,7 +452,6 @@ class LlmGateway:
         user_prompt: str,
         stub_features: StubDecisionFeatures,
         on_delta: Callable[[str], None],
-        decision_schema_version: int = 1,
         temperature: float = 0.0,
         max_output_tokens: int = 800,
     ) -> LlmCallResult:
@@ -453,7 +490,6 @@ class LlmGateway:
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             stub_features=stub_features,
-            decision_schema_version=decision_schema_version,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
         )
@@ -514,7 +550,7 @@ class LlmGateway:
 
         base_url, api_key = self._resolve_transport(session, model_key)
         if base_url is None or not api_key:
-            res = self._missing_config_result(
+            return self._missing_config_text_result(
                 session,
                 run_id=run_id,
                 dataset_id=None,
@@ -526,9 +562,6 @@ class LlmGateway:
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
             )
-            if not isinstance(res, tuple):
-                raise ValueError("unexpected _missing_config_result return type")
-            return res
 
         url, headers = self._api_url_and_headers(base_url, api_key)
         req = self._build_request(
@@ -757,7 +790,7 @@ class LlmGateway:
 
         base_url, api_key = self._resolve_transport(session, model_key)
         if base_url is None or not api_key:
-            res = self._missing_config_result(
+            return self._missing_config_text_result(
                 session,
                 run_id=None,
                 dataset_id=dataset_id,
@@ -769,9 +802,6 @@ class LlmGateway:
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
             )
-            if not isinstance(res, tuple):
-                raise ValueError("unexpected _missing_config_result return type")
-            return res
         url, headers = self._api_url_and_headers(base_url, api_key)
         req = self._build_request(
             model_key=model_key,
@@ -825,9 +855,7 @@ class LlmGateway:
 
         return call.call_id, return_text
 
-    def _stub_decision(
-        self, features: StubDecisionFeatures
-    ) -> LlmDecisionOutputV1 | LlmDecisionOutputV2:
+    def _stub_decision(self, features: StubDecisionFeatures) -> LlmDecisionOutput:
         closes = [Decimal(c) for c in features.closes if c]
         if len(closes) < 2:
             target = Decimal("0")
@@ -844,60 +872,39 @@ class LlmGateway:
                 rationale = "Momentum flat/down; reduce exposure."
                 confidence = Decimal("0.45")
 
-        if int(features.decision_schema_version) == 2:
-            leverage = 1
-            mode = "spot"
-            if features.risk_level is not None and int(features.risk_level) >= 3 and target > 0:
-                mode = "futures"
-                leverage = 2
-                target = Decimal("2.0")
-            return LlmDecisionOutputV2(
-                schema_version=2,
-                target=target,
-                mode=mode,
-                leverage=leverage,
-                stop_loss_pct=Decimal("5.0") if target != 0 else None,
-                take_profit_pct=Decimal("10.0") if target != 0 else None,
-                next_check_seconds=3600,
-                confidence=confidence,
-                key_signals=["stub_momentum"],
-                rationale=rationale,
-            )
-
-        return LlmDecisionOutputV1(
-            schema_version=1,
-            targets={features.market_id: target},
-            next_check_seconds=900,
+        leverage = 1
+        mode = "spot"
+        if features.risk_level is not None and int(features.risk_level) >= 3 and target > 0:
+            mode = "futures"
+            leverage = 2
+            target = Decimal("2.0")
+        return LlmDecisionOutput(
+            schema_version=2,
+            target=target,
+            mode=mode,
+            leverage=leverage,
+            stop_loss_pct=Decimal("5.0") if target != 0 else None,
+            take_profit_pct=Decimal("10.0") if target != 0 else None,
             confidence=confidence,
             key_signals=["stub_momentum"],
             rationale=rationale,
         )
 
-    def _empty_decision(
-        self, decision_schema_version: int
-    ) -> LlmDecisionOutputV1 | LlmDecisionOutputV2:
-        if int(decision_schema_version) == 2:
-            return LlmDecisionOutputV2(
-                schema_version=2,
-                target=Decimal("0"),
-                mode="spot",
-                leverage=1,
-                stop_loss_pct=None,
-                take_profit_pct=None,
-                next_check_seconds=3600,
-                confidence=Decimal("0"),
-                key_signals=["llm_unavailable"],
-                rationale="No decision available.",
-            )
-        return LlmDecisionOutputV1(schema_version=1, targets={})
+    def _empty_decision(self) -> LlmDecisionOutput:
+        return LlmDecisionOutput(
+            schema_version=2,
+            target=Decimal("0"),
+            mode="spot",
+            leverage=1,
+            stop_loss_pct=None,
+            take_profit_pct=None,
+            confidence=Decimal("0"),
+            key_signals=["llm_unavailable"],
+            rationale="No decision available.",
+        )
 
-    def _parse_decision_output(
-        self, obj: dict[str, Any]
-    ) -> LlmDecisionOutputV1 | LlmDecisionOutputV2:
-        schema_version = int(obj.get("schema_version", 1))
-        if schema_version == 2:
-            return LlmDecisionOutputV2.model_validate(obj)
-        return LlmDecisionOutputV1.model_validate(obj)
+    def _parse_decision_output(self, obj: dict[str, Any]) -> LlmDecisionOutput:
+        return LlmDecisionOutput.model_validate(obj)
 
 
 def _retry_prompt(user_prompt: str, err: str | None) -> str:

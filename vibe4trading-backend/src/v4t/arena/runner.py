@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -30,6 +32,7 @@ from v4t.contracts.run_config import (
     RunVisibility,
     SchedulerConfig,
 )
+from v4t.db.engine import new_session
 from v4t.db.models import (
     ArenaSubmissionRow,
     ArenaSubmissionRunRow,
@@ -41,15 +44,21 @@ from v4t.db.models import (
 )
 from v4t.ingest.dataset_import import import_dataset
 from v4t.orchestrator.replay_run import execute_replay_run
-from v4t.settings import get_settings, is_env_model_key
+from v4t.settings import get_settings
 from v4t.utils.datetime import as_utc, now
 
 DEFAULT_PROMPT_TEXT = "Analyze the market data and decide target exposure."
 ALL_MARKETS_SENTINEL = "benchmark:all"
 
 
+@dataclass(frozen=True)
+class PendingScenarioRun:
+    scenario_index: int
+    run_id: UUID
+
+
 def _compute_fixed_windows(
-    *, start, end, window_hours: int, n_windows: int
+    *, start: datetime, end: datetime, window_hours: int, n_windows: int
 ) -> list[ScenarioWindow]:
     start = as_utc(start)
     end = as_utc(end)
@@ -103,8 +112,6 @@ def _find_sentiment_dataset(session: Session, *, spot_ds: DatasetRow) -> UUID | 
 def _assert_model_allowed(session: Session, model_key: str) -> None:
     if model_key == "stub":
         return
-    if is_env_model_key(model_key):
-        return
 
     row = (
         session.execute(
@@ -136,7 +143,6 @@ def _create_scenario_run(
     risk_level = (submission.prompt_vars or {}).get("risk_level")
     holding_period_raw = (submission.prompt_vars or {}).get("holding_period")
     system_prompt_override = (submission.prompt_vars or {}).get("system_prompt")
-    decision_schema_version = int((submission.prompt_vars or {}).get("decision_schema_version", 1))
     risk_profile = get_risk_profile(int(risk_level)) if risk_level is not None else None
     gross_leverage_cap = (
         float(risk_profile.max_abs_exposure)
@@ -151,7 +157,6 @@ def _create_scenario_run(
 
     cfg = RunConfigSnapshot(
         mode=RunMode.replay,
-        decision_schema_version=decision_schema_version,
         run_kind=RunKind.tournament,
         visibility=RunVisibility.public
         if submission.visibility == "public"
@@ -166,7 +171,6 @@ def _create_scenario_run(
         ),
         scheduler=SchedulerConfig(
             base_interval_seconds=settings.replay_base_interval_seconds,
-            min_interval_seconds=settings.replay_min_interval_seconds,
             price_tick_seconds=settings.replay_price_tick_seconds,
         ),
         replay=ReplayConfig(
@@ -235,6 +239,84 @@ def _get_run_return_pct(session: Session, *, run_id: UUID) -> Decimal | None:
         return None
     payload = RunFinishedPayload.model_validate(row.payload)
     return Decimal(payload.return_pct)
+
+
+def _execute_submission_window(*, run_id: UUID) -> None:
+    with new_session() as session:
+        execute_replay_run(session, run_id=run_id, finalize_submission_report=False)
+
+
+def _apply_completed_window_result(
+    session: Session,
+    *,
+    submission: ArenaSubmissionRow,
+    scenario_index: int,
+    run_id: UUID,
+    completed_returns: list[Decimal],
+) -> None:
+    session.expire_all()
+    ret = _get_run_return_pct(session, run_id=run_id)
+    if ret is None:
+        raise ValueError(f"scenario run missing run.finished: run_id={run_id}")
+
+    link = session.get(ArenaSubmissionRunRow, (submission.submission_id, scenario_index))
+    if link is not None:
+        run = session.get(RunRow, run_id)
+        if link.status != "finished" or link.return_pct is None:
+            link.status = "finished"
+            link.return_pct = ret
+        if link.started_at is None and run is not None:
+            link.started_at = run.started_at
+        if run is not None:
+            link.ended_at = run.ended_at
+        link.updated_at = now()
+
+    completed_returns.append(ret)
+    submission.windows_completed = int(len(completed_returns))
+    submission.updated_at = now()
+    session.commit()
+
+
+def _execute_pending_submission_runs(
+    session: Session,
+    *,
+    submission: ArenaSubmissionRow,
+    pending_runs: list[PendingScenarioRun],
+    completed_returns: list[Decimal],
+    max_parallel_windows: int,
+) -> None:
+    if not pending_runs:
+        return
+
+    if max_parallel_windows <= 1:
+        for pending in pending_runs:
+            _execute_submission_window(run_id=pending.run_id)
+            _apply_completed_window_result(
+                session,
+                submission=submission,
+                scenario_index=pending.scenario_index,
+                run_id=pending.run_id,
+                completed_returns=completed_returns,
+            )
+        return
+
+    with ThreadPoolExecutor(
+        max_workers=max_parallel_windows, thread_name_prefix="arena-run"
+    ) as executor:
+        future_map: dict[Future[None], PendingScenarioRun] = {
+            executor.submit(_execute_submission_window, run_id=pending.run_id): pending
+            for pending in pending_runs
+        }
+        for future in as_completed(future_map):
+            pending = future_map[future]
+            future.result()
+            _apply_completed_window_result(
+                session,
+                submission=submission,
+                scenario_index=pending.scenario_index,
+                run_id=pending.run_id,
+                completed_returns=completed_returns,
+            )
 
 
 def execute_arena_submission(session: Session, *, submission_id: UUID) -> None:
@@ -345,6 +427,8 @@ def execute_arena_submission(session: Session, *, submission_id: UUID) -> None:
         submission.updated_at = now()
         session.commit()
 
+        max_parallel_windows = max(1, int(settings.llm_max_concurrent_requests))
+        pending_runs: list[PendingScenarioRun] = []
         scenario_offset = 0
         for market_id, market_datasets, windows in market_windows:
             for w in windows:
@@ -382,30 +466,18 @@ def execute_arena_submission(session: Session, *, submission_id: UUID) -> None:
                     market_dataset_id=spot_ds.dataset_id,
                     sentiment_dataset_id=sentiment_ds_id,
                 )
-
-                execute_replay_run(session, run_id=run_id, finalize_submission_report=False)
-
-                ret = _get_run_return_pct(session, run_id=run_id)
-                if ret is None:
-                    raise ValueError(f"scenario run missing run.finished: run_id={run_id}")
-
-                link = session.get(ArenaSubmissionRunRow, (submission_id, scenario_index))
-                if link is not None:
-                    run = session.get(RunRow, run_id)
-                    if link.status != "finished" or link.return_pct is None:
-                        link.status = "finished"
-                        link.return_pct = ret
-                    if link.started_at is None and run is not None:
-                        link.started_at = run.started_at
-                    if run is not None:
-                        link.ended_at = run.ended_at
-                    link.updated_at = now()
-
-                completed_returns.append(ret)
-                submission.windows_completed = int(len(completed_returns))
-                submission.updated_at = now()
-                session.commit()
+                pending_runs.append(
+                    PendingScenarioRun(scenario_index=scenario_index, run_id=run_id)
+                )
             scenario_offset += len(windows)
+
+        _execute_pending_submission_runs(
+            session,
+            submission=submission,
+            pending_runs=pending_runs,
+            completed_returns=completed_returns,
+            max_parallel_windows=min(max_parallel_windows, len(pending_runs) or 1),
+        )
 
         if not completed_returns:
             raise ValueError("tournament produced no window results")

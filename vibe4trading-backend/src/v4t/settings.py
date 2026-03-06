@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     llm_model: str = "stub"
+    llm_report_model: str | None = Field(
+        default=None,
+        description=(
+            "Model key used for arena submission report generation. "
+            "When unset, falls back to the submission's own model_key."
+        ),
+    )
 
     # Optional model allowlist (comma-separated). When set, only these model keys are allowed.
     # "stub" is always allowed.
@@ -84,10 +91,6 @@ class Settings(BaseSettings):
         default=3600,
         description="Replay: base interval for scheduler ticks (seconds).",
     )
-    replay_min_interval_seconds: int = Field(
-        default=60,
-        description="Replay: minimum interval between scheduler checks (seconds).",
-    )
     replay_price_tick_seconds: int = Field(
         default=60,
         description="Replay: price tick cadence (seconds).",
@@ -96,10 +99,6 @@ class Settings(BaseSettings):
     live_base_interval_seconds: int = Field(
         default=60,
         description="Live: base interval for scheduler ticks (seconds).",
-    )
-    live_min_interval_seconds: int = Field(
-        default=30,
-        description="Live: minimum interval between scheduler checks (seconds).",
     )
     live_price_tick_seconds: int = Field(
         default=5,
@@ -196,22 +195,6 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
-
-def get_env_model_key() -> str | None:
-    """Return the env-configured LLM model key, or None when it's the default 'stub'."""
-    s = get_settings()
-    key = (s.llm_model or "").strip()
-    base_url = (s.llm_base_url or "").strip()
-    if key in {"", "stub"} or not base_url:
-        return None
-    return key
-
-
-def is_env_model_key(model_key: str) -> bool:
-    """Check whether *model_key* matches the env-configured LLM model."""
-    env_key = get_env_model_key()
-    return env_key is not None and model_key == env_key
 
 
 def parse_csv_set(raw: str | None) -> set[str] | None:

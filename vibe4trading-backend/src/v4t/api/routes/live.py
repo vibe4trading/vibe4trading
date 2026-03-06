@@ -84,7 +84,7 @@ def start_live_run(
     if live_cfg.source == "dexscreener" and (not live_cfg.chain_id or not live_cfg.pair_id):
         raise HTTPException(status_code=400, detail="dexscreener live requires chain_id + pair_id")
 
-    risk_profile = get_risk_profile(req.risk_level) if req.decision_schema_version == 2 else None
+    risk_profile = get_risk_profile(req.risk_level)
     gross_leverage_cap = (
         float(risk_profile.max_abs_exposure)
         if risk_profile is not None
@@ -98,7 +98,6 @@ def start_live_run(
 
     cfg = RunConfigSnapshot(
         mode=RunMode.live,
-        decision_schema_version=req.decision_schema_version,
         market_id=req.market_id,
         risk_level=req.risk_level,
         holding_period=req.holding_period,
@@ -107,7 +106,6 @@ def start_live_run(
         live=live_cfg,
         scheduler=SchedulerConfig(
             base_interval_seconds=settings.live_base_interval_seconds,
-            min_interval_seconds=settings.live_min_interval_seconds,
             price_tick_seconds=settings.live_price_tick_seconds,
         ),
         prompt=PromptConfig(
