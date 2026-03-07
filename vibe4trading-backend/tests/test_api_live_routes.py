@@ -15,7 +15,7 @@ def _make_live_cfg(*, market_id: str) -> dict:
         "market_id": market_id,
         "model": {"key": "stub"},
         "datasets": {"market_dataset_id": None, "sentiment_dataset_id": None},
-        "live": {"source": "demo", "chain_id": None, "pair_id": None, "base_price": 1.0},
+        "live": {"source": "demo", "base_price": 1.0},
         "scheduler": {
             "base_interval_seconds": 60,
             "price_tick_seconds": 60,
@@ -151,18 +151,3 @@ def test_start_live_run_force_restart_marks_old_stop_requested_and_starts_new(
     assert len(jobs) == 1
     assert jobs[0].job_type == JOB_TYPE_RUN_EXECUTE_LIVE
     assert jobs[0].payload["celery_task_id"] == "task-live"
-
-
-def test_start_live_run_validates_dexscreener_requires_ids(client) -> None:  # noqa: ANN001
-    res = client.post(
-        "/live/run",
-        json={
-            "market_id": "spot:dexscreener:SOL/USDC",
-            "model_key": "stub",
-            "force_restart": True,
-            "live_source": "dexscreener",
-            "base_price": 1.0,
-        },
-    )
-    assert res.status_code == 400
-    assert res.json()["detail"] == "Chain ID and Pair ID are required for DexScreener"

@@ -438,9 +438,23 @@ def execute_arena_submission(session: Session, *, submission_id: UUID) -> None:
                     if existing.status == "finished" and existing.return_pct is not None:
                         completed_returns.append(existing.return_pct)
                         continue
-                    raise ValueError(
-                        f"submission already has an in-progress scenario run: index={scenario_index}"
-                    )
+                    if existing.status in ("pending", "failed"):
+                        # Stale leftover from a previous crash — clean up and re-create.
+                        stale_run = session.get(RunRow, existing.run_id)
+                        stale_config_id = stale_run.config_id if stale_run else None
+                        session.delete(existing)
+                        if stale_run is not None:
+                            session.delete(stale_run)
+                        session.flush()
+                        if stale_config_id is not None:
+                            stale_cfg = session.get(RunConfigSnapshotRow, stale_config_id)
+                            if stale_cfg is not None:
+                                session.delete(stale_cfg)
+                        session.flush()
+                    else:
+                        raise ValueError(
+                            f"submission already has an in-progress scenario run: index={scenario_index}"
+                        )
 
                 if len(market_datasets) == 1:
                     spot_ds = market_datasets[0]

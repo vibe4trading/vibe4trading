@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from v4t.api.deps import get_db
 from v4t.api.schemas import ModelPublicOut
 from v4t.api.utils import effective_allowed_model_keys
-from v4t.auth.deps import get_current_user
+from v4t.auth.deps import get_optional_current_user
 from v4t.db.models import LlmModelRow, UserRow
 
 router = APIRouter(tags=["models"])
@@ -16,7 +16,7 @@ router = APIRouter(tags=["models"])
 @router.get("/models", response_model=list[ModelPublicOut])
 def list_models(
     db: Session = Depends(get_db),
-    user: UserRow = Depends(get_current_user),
+    user: UserRow | None = Depends(get_optional_current_user),
 ) -> list[ModelPublicOut]:
     rows = list(db.execute(select(LlmModelRow).order_by(LlmModelRow.model_key)).scalars().all())
 

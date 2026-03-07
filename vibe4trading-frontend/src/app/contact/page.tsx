@@ -19,7 +19,7 @@ export default function ContactPage() {
           <article className="contact-item">
             <span>Community</span>
             <strong>@vibe4trading</strong>
-            <a className="contact-link" href="https://x.com" target="_blank" rel="noreferrer">VISIT X</a>
+            <a className="contact-link" href="https://x.com/vibe4trading" target="_blank" rel="noreferrer">VISIT X</a>
           </article>
         </div>
       </section>

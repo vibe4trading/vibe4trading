@@ -283,7 +283,7 @@ export default async function globalSetup() {
     });
     const sentimentDatasetId = await createDatasetReady(backendOrigin, {
       category: "sentiment",
-      source: "rss",
+      source: "demo",
       start: runStartIso,
       end: runEndIso,
       params: { market_id: marketId },

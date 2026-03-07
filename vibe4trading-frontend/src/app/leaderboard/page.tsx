@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import * as React from "react";
 import {
     apiJson,
@@ -338,7 +336,7 @@ export default function LeaderboardPage() {
 
                             {/* View run link */}
                             <Link
-                                href={`/arena/submissions/${selected.submission_id}`}
+                                to={`/arena/submissions/${selected.submission_id}`}
                                 className="lb-reset-btn"
                                 style={{ textAlign: "center", display: "block", marginTop: "8px", textDecoration: "none", color: "inherit" }}
                             >

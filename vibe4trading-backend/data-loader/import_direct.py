@@ -31,6 +31,7 @@ with Session(engine) as db:
                 continue
 
             market_id = f"spot:binance:{coin}"
+            relative_path = f"data/{event['id']}/binance/{pair_file}-1h.feather"
 
             row = DatasetRow(
                 dataset_id=uuid4(),
@@ -40,7 +41,7 @@ with Session(engine) as db:
                 end=datetime.fromisoformat(event["event_end"].replace("Z", "+00:00")),
                 params={
                     "market_id": market_id,
-                    "feather_path": str(feather_path),
+                    "feather_path": relative_path,
                     "event_id": event["id"],
                     "event_name": event["name"],
                 },

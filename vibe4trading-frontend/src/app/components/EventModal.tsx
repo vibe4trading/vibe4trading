@@ -35,10 +35,10 @@ export function EventModal({
                     </div>
                     <div className="modal-tag-row">
                         <span className="modal-tag tone-strong">
-                            环境难度: {eventData.difficulty}
+                            Difficulty: {eventData.difficulty}
                         </span>
                         <span className="modal-tag tone-avg">
-                            特征: {eventData.regime}
+                            Regime: {eventData.regime}
                         </span>
                         <span
                             className={`modal-tag ${eventData.edge === "Strong"
@@ -48,18 +48,18 @@ export function EventModal({
                                         : "tone-avg"
                                 }`}
                         >
-                            模型优势: {eventData.edge}
+                            Edge: {eventData.edge}
                         </span>
                     </div>
                     <button className="modal-close-btn" onClick={onClose}>
-                        [ESC] 关闭
+                        [ESC] Close
                     </button>
                 </header>
 
                 <div className="event-modal-body">
                     <section className="event-modal-left">
                         <div className="modal-card story-card">
-                            <h4>事件剧情 / Storyline</h4>
+                            <h4>Storyline</h4>
                             <p className="story-subtitle">{eventData.period}</p>
                             <p style={{ fontSize: "14px", lineHeight: 1.5 }}>
                                 {eventData.background}
@@ -68,13 +68,13 @@ export function EventModal({
 
                         <div className="modal-card">
                             <div className="modal-card-head">
-                                <h4>净值回放 / Equity Curve</h4>
+                                <h4>Equity Curve</h4>
                                 <span>{eventData.period}</span>
                             </div>
                             <div className="curve-meta-strip">
-                                <span>标的: BTC-USDT</span>
-                                <span>基准: $1,000</span>
-                                <span>最大连转: 2</span>
+                                <span>Pair: BTC-USDT</span>
+                                <span>Baseline: $1,000</span>
+                                <span>Max Consec. Loss: 2</span>
                             </div>
 
                             <svg
@@ -149,7 +149,7 @@ export function EventModal({
 
                     <section className="event-modal-right">
                         <div className="modal-card">
-                            <h4>表现指标 / Event Stats</h4>
+                            <h4>Event Stats</h4>
                             <div className="modal-stat-grid">
                                 <div style={{ padding: "8px", background: "#eaeaea" }}>
                                     <div style={{ fontSize: "11px", color: "#666", marginBottom: "4px" }}>
@@ -204,7 +204,7 @@ export function EventModal({
 
                         <div className="modal-card" style={{ flexGrow: 1 }}>
                             <div className="modal-card-head">
-                                <h4>关键决策 / Key Nodes</h4>
+                                <h4>Key Decisions</h4>
                             </div>
                             <div style={{ display: "grid", gap: "8px" }}>
                                 {eventData.nodes.map((node, i) => {

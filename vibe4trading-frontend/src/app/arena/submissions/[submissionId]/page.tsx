@@ -1,10 +1,11 @@
-"use client";
-
-import Link from "next/link";
-import { useParams } from "next/navigation";
+import { Link } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import * as React from "react";
 
 import { useRealtimeRefresh } from "@/app/lib/realtime";
+import { storyCards } from "@/app/lib/report-data";
+import { getSubmissionStatusDisplay } from "@/app/lib/submissionStatus";
+import { useModalA11y } from "@/app/hooks/useModalA11y";
 import {
   apiJson,
   ArenaScenarioRunOut,
@@ -89,7 +90,7 @@ function windowLabel(scenarioSetKey: string | null | undefined, idx: number) {
     return `Window ${idx + 1}`;
   }
 
-  return `Window ${idx + 1}`;
+  return storyCards[windowCode(idx)]?.title ?? `Window ${idx + 1}`;
 }
 
 function curvePoints(ret: number | null | undefined) {
@@ -116,26 +117,41 @@ type WindowModalProps = {
 };
 
 function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
+  const isOpen = !!slot && !!submission;
+  const { panelRef } = useModalA11y(isOpen, onClose);
+  const titleId = React.useId();
+
   if (!slot || !submission) return null;
 
   const run = slot.run;
+  const story = storyCards[slot.code] ?? null;
   const tone = statusMark(run?.status ?? "pending", run?.return_pct);
   const curve = curvePoints(run?.return_pct);
+
+  const curveMin = Math.min(...curve);
+  const curveMax = Math.max(...curve);
+  const curveSpan = Math.max(1e-9, curveMax - curveMin);
+  const chartTop = 24;
+  const chartBottom = 200;
+  const chartHeight = chartBottom - chartTop;
+  const normalizeY = (v: number) =>
+    chartBottom - ((v - curveMin) / curveSpan) * chartHeight;
+
   const path = curve
     .map((value, index) => {
       const x = (index / (curve.length - 1)) * 580 + 10;
-      const y = 220 - value;
+      const y = normalizeY(value);
       return `${index === 0 ? "M" : "L"} ${x} ${y}`;
     })
     .join(" ");
 
-  const area = `M 10 220 ${curve
+  const area = `M 10 ${chartBottom} ${curve
     .map((value, index) => {
       const x = (index / (curve.length - 1)) * 580 + 10;
-      const y = 220 - value;
+      const y = normalizeY(value);
       return `L ${x} ${y}`;
     })
-    .join(" ")} L 590 220 Z`;
+    .join(" ")} L 590 ${chartBottom} Z`;
 
   const notes = [
     {
@@ -168,25 +184,38 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
   ] as const;
 
   return (
-    <div className="event-modal" onClick={onClose}>
-      <article className="event-modal-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="event-modal" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <article className="event-modal-panel" onClick={(e) => e.stopPropagation()} ref={panelRef as React.RefObject<HTMLElement>}>
         <header className="event-modal-head">
           <div className="modal-head-main">
             <div className="modal-head-title-row">
               <span className="event-code-chip">{slot.code}</span>
-              <h3>{slot.label}</h3>
+              <h3 id={titleId}>{story ? story.title : slot.label}</h3>
             </div>
             <p>
-              {pairName(submission.market_id)} · {submission.scenario_set_key} · {fmt(run?.window_start ?? null)} to{" "}
-              {fmt(run?.window_end ?? null)}
+              {story
+                ? story.subtitle
+                : `${pairName(submission.market_id)} · ${submission.scenario_set_key} · ${fmt(run?.window_start ?? null)} to ${fmt(run?.window_end ?? null)}`}
             </p>
           </div>
           <div className="modal-tag-row">
-            <span className="modal-tag">{(run?.status ?? "pending").toUpperCase()}</span>
-            <span className={`modal-tag ${tone === "strong" ? "tone-strong" : tone === "weak" || tone === "crash" ? "tone-weak" : "tone-avg"}`}>
-              Return: {pct(run?.return_pct)}
-            </span>
-            <span className="modal-tag">Run: {run ? `${run.run_id.slice(0, 8)}…` : "pending"}</span>
+            {story ? (
+              <>
+                <span className="modal-tag tone-strong">Difficulty: {story.difficulty}</span>
+                <span className="modal-tag tone-avg">Regime: {story.regime}</span>
+                <span className={`modal-tag ${story.edge === "Strong" ? "tone-strong" : story.edge === "Weak" ? "tone-weak" : "tone-avg"}`}>
+                  Edge: {story.edge}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="modal-tag">{(run?.status ?? "pending").toUpperCase()}</span>
+                <span className={`modal-tag ${tone === "strong" ? "tone-strong" : tone === "weak" || tone === "crash" ? "tone-weak" : "tone-avg"}`}>
+                  Return: {pct(run?.return_pct)}
+                </span>
+                <span className="modal-tag">Run: {run ? `${run.run_id.slice(0, 8)}…` : "pending"}</span>
+              </>
+            )}
           </div>
           <button className="modal-close-btn" onClick={onClose}>
             [ESC] CLOSE
@@ -196,11 +225,12 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
         <div className="event-modal-body">
           <section className="event-modal-left">
             <div className="modal-card story-card">
-              <h4>Window Overview</h4>
-              <p className="story-subtitle">{slot.label}</p>
+              <h4>{story ? "Storyline" : "Window Overview"}</h4>
+              <p className="story-subtitle">{story ? `${story.title} · ${story.period}` : slot.label}</p>
               <p style={{ fontSize: "14px", lineHeight: 1.5 }}>
-                This trial window ran with the exact same prompt, market, and model configuration as the rest of the
-                submission. Use it to compare how the strategy behaved from one historical slice to the next.
+                {story
+                  ? story.background
+                  : "This trial window ran with the exact same prompt, market, and model configuration as the rest of the submission. Use it to compare how the strategy behaved from one historical slice to the next."}
               </p>
             </div>
 
@@ -222,16 +252,15 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
                 style={{ height: "200px" }}
               >
                 <g className="chart-grid">
-                  <line x1="0" y1="40" x2="600" y2="40" />
-                  <line x1="0" y1="80" x2="600" y2="80" />
-                  <line x1="0" y1="120" x2="600" y2="120" />
-                  <line x1="0" y1="160" x2="600" y2="160" />
+                  <line x1="0" y1={chartTop + chartHeight * 0.25} x2="600" y2={chartTop + chartHeight * 0.25} />
+                  <line x1="0" y1={chartTop + chartHeight * 0.5} x2="600" y2={chartTop + chartHeight * 0.5} />
+                  <line x1="0" y1={chartTop + chartHeight * 0.75} x2="600" y2={chartTop + chartHeight * 0.75} />
                 </g>
                 <path className={`modal-curve-area ${run?.return_pct != null && run.return_pct < 0 ? "neg" : "pos"}`} d={area} />
                 <path className={`modal-curve-line ${run?.return_pct != null && run.return_pct < 0 ? "neg" : "pos"}`} d={path} />
                 {curve.map((value, index) => {
                   const x = (index / (curve.length - 1)) * 580 + 10;
-                  return <circle key={`${slot.code}-${index}`} cx={x} cy={220 - value} r="4" className="modal-dot base-dot" />;
+                  return <circle key={`${slot.code}-${index}`} cx={x} cy={normalizeY(value)} r="4" className="modal-dot base-dot" />;
                 })}
               </svg>
             </div>
@@ -282,7 +311,7 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
               </ul>
 
               {submission.visibility !== "private" && run ? (
-                <Link href={`/runs/${run.run_id}`} className="leaderboard-entry-link" style={{ marginTop: "12px" }}>
+                <Link to={`/runs/${run.run_id}`} className="leaderboard-entry-link" style={{ marginTop: "12px" }}>
                   OPEN REPLAY →
                 </Link>
               ) : null}
@@ -295,8 +324,7 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
 }
 
 export default function SubmissionDetailPage() {
-  const params = useParams<{ submissionId: string }>();
-  const submissionId = params.submissionId;
+  const submissionId = useParams<{ submissionId: string }>().submissionId ?? "";
 
   const [data, setData] = React.useState<ArenaSubmissionDetailOut | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -321,7 +349,8 @@ export default function SubmissionDetailPage() {
     refresh();
   }, [refresh]);
 
-  const shouldRefresh = !data?.status || data.status === "pending" || data.status === "running";
+  const shouldRefresh =
+    !data?.status || data.status === "pending" || data.status === "submitted" || data.status === "running";
   useRealtimeRefresh({
     wsPath: "/runs/ws",
     enabled: shouldRefresh,
@@ -365,10 +394,18 @@ export default function SubmissionDetailPage() {
   const report = data?.report_json ?? null;
   const score = report?.overall_score ?? fallbackScoreValue(data?.total_return_pct ?? null, winRatePct, progressPct);
   const progressText = data ? `${data.windows_completed}/${data.windows_total}` : "…";
+  const statusDisplay = getSubmissionStatusDisplay({
+    status: data?.status,
+    startedAt: data?.started_at,
+  });
 
   const summary = React.useMemo(() => {
     if (!data) return "Loading trial report.";
     if (report?.overview) return report.overview;
+
+    if (statusDisplay.isQueued) {
+      return `This trial is in the queue for ${pairName(data.market_id)}. Nothing has started yet, and the report will refresh automatically the moment a worker begins replaying the submission.`;
+    }
 
     if (data.status === "pending" || data.status === "running") {
       return `This trial is still executing on ${pairName(data.market_id)}. ${data.windows_completed} of ${data.windows_total} windows have completed so far, and the report will keep refreshing until the full submission settles.`;
@@ -382,7 +419,7 @@ export default function SubmissionDetailPage() {
     const worstCopy = worstSlot?.run?.return_pct != null ? `${worstSlot.code} ${pct(worstSlot.run.return_pct)}` : "–";
 
     return `The submission finished ${finishedSlots.length} windows on ${pairName(data.market_id)} with ${pct(data.total_return_pct)} total return and ${pct(data.avg_return_pct)} average return per window. Best slice: ${bestCopy}. Weakest slice: ${worstCopy}.`;
-  }, [bestSlot, data, finishedSlots.length, report?.overview, worstSlot]);
+  }, [bestSlot, data, finishedSlots.length, report?.overview, statusDisplay.isQueued, worstSlot]);
 
   const chartMax = React.useMemo(() => {
     const values = slots
@@ -407,19 +444,23 @@ export default function SubmissionDetailPage() {
                 <div className="score-value">{String(score).padStart(2, "0")}</div>
               </div>
               <div className="persona">
-                <h1>{data?.status === "finished" ? report?.archetype ?? "Historical Trial Verdict" : "Trial In Progress"}</h1>
+                <h1>
+                  {data?.status === "finished"
+                    ? report?.archetype ?? "Historical Trial Verdict"
+                    : statusDisplay.headline}
+                </h1>
                 {report?.representative ? (
                   <p className="representative">Archetype: {report.representative}</p>
                 ) : null}
                 <p>
-                  Status: <span data-testid="tournament-run-status">{data?.status ?? "pending"}</span> · Progress:{" "}
+                  Status: <span data-testid="tournament-run-status">{statusDisplay.label}</span> · Progress:{" "}
                   <span data-testid="tournament-run-progress">{progressText}</span> · Pair: {pairName(data?.market_id)}
                 </p>
                 <div className="tags">
                   <span>{data?.scenario_set_key ?? "scenario-set"}</span>
                   <span>{pairName(data?.market_id)}</span>
                   <span>{data?.visibility ?? "public"}</span>
-                  <span>{data?.status ?? "pending"}</span>
+                  <span>{statusDisplay.label}</span>
                   {report ? <span>{report.generation_mode}</span> : null}
                 </div>
               </div>
@@ -438,7 +479,9 @@ export default function SubmissionDetailPage() {
                 />
               </div>
               <p className="mt-3 mb-0 text-[16px] text-[#555]">
-                Auto-refresh is enabled while the submission is pending or running.
+                {statusDisplay.isQueued
+                  ? "This trial is in queue and has not started yet. Auto-refresh will keep checking until a worker begins execution."
+                  : "Auto-refresh is enabled while the submission is pending or running."}
               </p>
             </section>
           ) : null}
@@ -472,32 +515,40 @@ export default function SubmissionDetailPage() {
           </section>
 
           {report ? (
-            <section className="grid gap-4 xl:grid-cols-3">
-              <article className="block">
-                <div className="hero-meta">STRENGTHS</div>
-                <ul className="mt-4 space-y-3 text-[15px] leading-7 text-[#444]">
-                  {report.strengths.map((item) => (
-                    <li key={item}>- {item}</li>
-                  ))}
-                </ul>
-              </article>
-              <article className="block">
-                <div className="hero-meta">WEAKNESSES</div>
-                <ul className="mt-4 space-y-3 text-[15px] leading-7 text-[#444]">
-                  {report.weaknesses.map((item) => (
-                    <li key={item}>- {item}</li>
-                  ))}
-                </ul>
-              </article>
-              <article className="block">
-                <div className="hero-meta">NEXT ACTIONS</div>
-                <ul className="mt-4 space-y-3 text-[15px] leading-7 text-[#444]">
-                  {report.recommendations.map((item) => (
-                    <li key={item}>- {item}</li>
-                  ))}
-                </ul>
-              </article>
-            </section>
+            <>
+              {report.roast ? (
+                <section className="block" style={{ borderLeft: "4px solid var(--red, #d44)", paddingLeft: "16px" }}>
+                  <div className="hero-meta">THE ROAST</div>
+                  <p className="mt-3 text-[17px] italic leading-8 text-[#333]">&ldquo;{report.roast}&rdquo;</p>
+                </section>
+              ) : null}
+              <section className="grid gap-4 xl:grid-cols-3">
+                <article className="block">
+                  <div className="hero-meta">STRENGTHS</div>
+                  <ul className="mt-4 space-y-3 text-[15px] leading-7 text-[#444]">
+                    {report.strengths.map((item) => (
+                      <li key={item}>- {item}</li>
+                    ))}
+                  </ul>
+                </article>
+                <article className="block">
+                  <div className="hero-meta">WEAKNESSES</div>
+                  <ul className="mt-4 space-y-3 text-[15px] leading-7 text-[#444]">
+                    {report.weaknesses.map((item) => (
+                      <li key={item}>- {item}</li>
+                    ))}
+                  </ul>
+                </article>
+                <article className="block">
+                  <div className="hero-meta">NEXT ACTIONS</div>
+                  <ul className="mt-4 space-y-3 text-[15px] leading-7 text-[#444]">
+                    {report.recommendations.map((item) => (
+                      <li key={item}>- {item}</li>
+                    ))}
+                  </ul>
+                </article>
+              </section>
+            </>
           ) : null}
 
           <section className="viz-grid">
@@ -608,14 +659,14 @@ export default function SubmissionDetailPage() {
               underlying replay run for a deeper investigation.
             </p>
             <div className="entry-links">
-              <Link href="/arena" className="return-trials-btn">
+              <Link to="/arena" className="return-trials-btn">
                 RETURN TO TRIALS
               </Link>
-              <Link href="/leaderboard" className="mini-leaderboard-btn">
+              <Link to="/leaderboard" className="mini-leaderboard-btn">
                 OPEN LEADERBOARD
               </Link>
               {data?.visibility !== "private" && bestSlot?.run ? (
-                <Link href={`/runs/${bestSlot.run.run_id}`} className="mini-leaderboard-btn trials-link">
+                <Link to={`/runs/${bestSlot.run.run_id}`} className="mini-leaderboard-btn trials-link">
                   BEST WINDOW →
                 </Link>
               ) : null}
@@ -682,7 +733,7 @@ export default function SubmissionDetailPage() {
                   <div className="trades-cell">
                     {run && data?.visibility !== "private" ? (
                       <Link
-                        href={`/runs/${run.run_id}`}
+                        to={`/runs/${run.run_id}`}
                         onClick={(e) => e.stopPropagation()}
                         style={{ textDecoration: "none", color: "inherit" }}
                       >

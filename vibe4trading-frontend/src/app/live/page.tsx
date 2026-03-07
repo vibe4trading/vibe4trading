@@ -1,9 +1,7 @@
-"use client";
-
 export default function LivePage() {
   return (
     <main className="flex flex-col items-center justify-center min-h-[70vh] gap-6 select-none">
-      <style jsx>{`
+      <style>{`
         .scene {
           position: relative;
           width: 320px;

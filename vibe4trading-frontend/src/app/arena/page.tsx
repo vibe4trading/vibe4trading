@@ -1,10 +1,15 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import * as React from "react";
 
 import { useNewRunModal } from "@/app/components/NewRunProvider";
+import { useRealtimeRefresh } from "@/app/lib/realtime";
+import { getSubmissionStatusDisplay } from "@/app/lib/submissionStatus";
 import { apiJson, ArenaSubmissionIndexOut, ArenaSubmissionOut } from "@/app/lib/v4t";
+
+function mergeSubmissions(current: ArenaSubmissionOut[], fresh: ArenaSubmissionOut[]) {
+  const freshIds = new Set(fresh.map((submission) => submission.submission_id));
+  return [...fresh, ...current.filter((submission) => !freshIds.has(submission.submission_id))];
+}
 
 function fmt(dt: string) {
   try {
@@ -32,7 +37,7 @@ export default function ArenaPage() {
     apiJson<ArenaSubmissionIndexOut>("/arena/submissions")
       .then((res) => {
         setRefreshError(null);
-        setSubs(res.items);
+        setSubs((current) => mergeSubmissions(current, res.items));
         setSubsCursor(res.next_cursor);
         setSubsHasMore(res.has_more);
       })
@@ -61,6 +66,18 @@ export default function ArenaPage() {
     refreshSubmissions();
   }, [refreshSubmissions]);
 
+  const hasActiveSubmissions = React.useMemo(
+    () => subs.some((row) => row.status === "pending" || row.status === "running"),
+    [subs],
+  );
+
+  useRealtimeRefresh({
+    wsPath: hasActiveSubmissions ? "/runs/ws" : null,
+    enabled: hasActiveSubmissions,
+    pollIntervalMs: 2500,
+    refresh: refreshSubmissions,
+  });
+
   return (
     <main className="trials-page-main animate-rise">
       <section className="trials-head block">
@@ -81,29 +98,39 @@ export default function ArenaPage() {
           <div className="p-4 text-center text-[#555]">No recent runs found.</div>
         )}
         {subs.map((row) => (
-          <Link
-            key={row.submission_id}
-            href={`/arena/submissions/${row.submission_id}`}
-            className="trial-row"
-          >
-            <div className="trial-meta">
-              <strong>{row.submission_id.slice(0, 8)}</strong>
-              <span>{fmt(row.created_at)}</span>
-            </div>
-            <div className="trial-main">
-              <p className="trial-prompt">Scenario: {row.scenario_set_key}</p>
-              <div className="trial-tags">
-                <span>Model: {row.model_key}</span>
-                <span>Pair: {pairName(row.market_id)}</span>
-                {row.status && <span>Status: {row.status}</span>}
-                {row.windows_total > 0 && (
-                  <span>
-                    Progress: {row.windows_completed}/{row.windows_total}
-                  </span>
-                )}
-              </div>
-            </div>
-          </Link>
+          (() => {
+            const statusDisplay = getSubmissionStatusDisplay({
+              status: row.status,
+              startedAt: row.started_at,
+            });
+
+            return (
+              <Link
+                key={row.submission_id}
+                to={`/arena/submissions/${row.submission_id}`}
+                className="trial-row"
+              >
+                <div className="trial-meta">
+                  <strong>{row.submission_id.slice(0, 8)}</strong>
+                  <span>{fmt(row.created_at)}</span>
+                </div>
+                <div className="trial-main">
+                  <p className="trial-prompt">Scenario: {row.scenario_set_key}</p>
+                  <div className="trial-tags">
+                    <span>Model: {row.model_key}</span>
+                    <span>Pair: {pairName(row.market_id)}</span>
+                    {row.status && <span>Status: {statusDisplay.label}</span>}
+                    {statusDisplay.isQueued ? <span>Waiting for worker</span> : null}
+                    {row.windows_total > 0 && (
+                      <span>
+                        Progress: {row.windows_completed}/{row.windows_total}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            );
+          })()
         ))}
         {subsHasMore ? (
           <div className="flex justify-center pt-4">

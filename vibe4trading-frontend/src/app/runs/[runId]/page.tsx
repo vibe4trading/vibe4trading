@@ -1,8 +1,6 @@
-"use client";
-
 import * as React from "react";
 
-import { useParams } from "next/navigation";
+import { useParams } from "react-router-dom";
 
 import { CircularLoading } from "@/app/components/CircularLoading";
 import { LineChart } from "@/app/components/LineChart";
@@ -111,8 +109,7 @@ function buildFallbackSummary(
 }
 
 export default function RunDetailPage() {
-  const params = useParams<{ runId: string }>();
-  const runId = params.runId;
+  const runId = useParams<{ runId: string }>().runId ?? "";
 
   const [run, setRun] = React.useState<RunOut | null>(null);
   const [config, setConfig] = React.useState<RunConfigSnapshot | null>(null);
@@ -385,7 +382,7 @@ export default function RunDetailPage() {
                 ))}
                 {recentDecisions.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-8 text-center text-[var(--muted)]" colSpan={6}>
+                    <td className="px-3 py-8 text-center text-[var(--muted)]" colSpan={5}>
                       No decisions recorded yet.
                     </td>
                   </tr>

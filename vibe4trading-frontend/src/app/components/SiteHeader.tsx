@@ -1,12 +1,10 @@
-"use client";
-
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { Link } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { type FocusEvent, useCallback, useEffect, useRef, useState } from "react";
-import { useSession, signIn, signOut } from "next-auth/react";
+import { useAuth } from "@/auth";
 
 import { useNewRunModal } from "@/app/components/NewRunProvider";
-import { apiJson, type MeApiTokenOut, type MeOut } from "@/app/lib/v4t";
+import { apiJson, type MeApiTokenOut } from "@/app/lib/v4t";
 
 type TokenStatus =
   | { tone: "idle"; message: string }
@@ -32,9 +30,8 @@ async function copyText(value: string) {
 }
 
 export function SiteHeader({ isHome }: { isHome?: boolean }) {
-  const pathname = usePathname();
-  const { data: session, status } = useSession();
-  const [meData, setMeData] = useState<MeOut | null>(null);
+  const { pathname } = useLocation();
+  const { status, user, signIn, signOut } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
   const [loginPending, setLoginPending] = useState(false);
   const profileCloseTimerRef = useRef<number | null>(null);
@@ -43,14 +40,6 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
     message: "Copy your bot token only when you need to wire up automation.",
   });
   const { openNewRun } = useNewRunModal();
-
-  useEffect(() => {
-    if (status === "authenticated") {
-      apiJson<MeOut>("/me")
-        .then((data) => setMeData(data))
-        .catch(() => setMeData(null));
-    }
-  }, [status]);
 
   useEffect(() => {
     if (tokenStatus.tone !== "success") return;
@@ -73,10 +62,10 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
     };
   }, []);
 
-  const me = status === "authenticated" ? meData : null;
+  const me = user;
 
-  const profileName = me?.display_name ?? session?.user?.name ?? session?.user?.email ?? "YOU";
-  const profileEmail = me?.email ?? session?.user?.email ?? null;
+  const profileName = user?.display_name ?? user?.email ?? "YOU";
+  const profileEmail = user?.email ?? null;
 
   const profileInitial = profileName.trim().charAt(0).toUpperCase() || "U";
   const profileTriggerClassName = isHome
@@ -128,7 +117,6 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
     try {
       const token = await apiJson<MeApiTokenOut>("/me/api-token");
       await copyText(token.api_token);
-      setMeData((current) => (current ? { ...current, has_api_token: true } : current));
       setTokenStatus({
         tone: "success",
         message: token.created ? "New bot token issued and copied." : "Bot token copied.",
@@ -149,13 +137,13 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
       </div>
 
       <nav className="nav-links">
-        <Link href="/" className={pathname === "/" ? "active" : ""}>HOME</Link>
-        <Link href="/arena" className={pathname === "/arena" || pathname.startsWith("/arena/") ? "active" : ""}>TRIALS</Link>
-        <Link href="/leaderboard" className={pathname === "/leaderboard" ? "active" : ""}>LEADERBOARD</Link>
-        <Link href="/live" className={pathname === "/live" ? "active" : ""}>LIVE</Link>
-        <Link href="/contact" className={pathname === "/contact" ? "active" : ""}>CONTACT US</Link>
+        <Link to="/" className={pathname === "/" ? "active" : ""}>HOME</Link>
+        <Link to="/arena" className={pathname === "/arena" || pathname.startsWith("/arena/") ? "active" : ""}>TRIALS</Link>
+        <Link to="/leaderboard" className={pathname === "/leaderboard" ? "active" : ""}>LEADERBOARD</Link>
+        <Link to="/live" className={pathname === "/live" ? "active" : ""}>LIVE</Link>
+        <Link to="/contact" className={pathname === "/contact" ? "active" : ""}>CONTACT US</Link>
         {me?.is_admin && (
-          <Link href="/admin/models" className={pathname.startsWith("/admin") ? "active" : ""}>ADMIN</Link>
+          <Link to="/admin/models" className={pathname.startsWith("/admin") ? "active" : ""}>ADMIN</Link>
         )}
       </nav>
 
@@ -269,7 +257,7 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
             type="button"
             className={`waitlist${loginPending ? " waitlist-pending" : ""}`}
             disabled={loginPending}
-            onClick={() => { setLoginPending(true); signIn("v4t"); }}
+            onClick={() => { setLoginPending(true); signIn(pathname); }}
           >
             {loginPending && <span className="waitlist-spinner" aria-hidden="true" />}
             {loginPending ? "SIGNING IN…" : "LOGIN"}

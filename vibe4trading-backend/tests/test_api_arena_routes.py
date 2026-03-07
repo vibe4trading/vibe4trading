@@ -365,6 +365,7 @@ def test_submission_detail_includes_report_json(db_session, client) -> None:  # 
                 "Compare against stronger baselines.",
                 "Inspect the replay.",
             ],
+            "roast": "So cautious you'd need on-chain proof the sun will rise before going long.",
             "key_metrics": {
                 "total_return_pct": 4.5,
                 "avg_window_return_pct": 4.5,

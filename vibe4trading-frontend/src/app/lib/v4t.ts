@@ -294,6 +294,7 @@ export type ArenaSubmissionReport = {
   strengths: string[];
   weaknesses: string[];
   recommendations: string[];
+  roast: string | null;
   key_metrics: ArenaSubmissionReportKeyMetrics;
   best_window: ArenaSubmissionReportHighlight | null;
   worst_window: ArenaSubmissionReportHighlight | null;
@@ -316,6 +317,10 @@ export type LeaderboardEntryOut = {
   created_at: string;
 };
 
+export function getApiBaseUrl(): string {
+  return import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+}
+
 export async function apiJson<T>(
   path: string,
   init?: Omit<RequestInit, "body"> & { body?: unknown },
@@ -324,9 +329,10 @@ export async function apiJson<T>(
   const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
   try {
-    const res = await fetch(`/api/v4t${path}`, {
+    const res = await fetch(`${getApiBaseUrl()}${path}`, {
       ...init,
       signal: init?.signal ?? controller.signal,
+      credentials: "include",
       headers: {
         ...(init?.headers ?? {}),
         ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),

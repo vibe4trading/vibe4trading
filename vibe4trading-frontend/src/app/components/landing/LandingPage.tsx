@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router-dom";
 
 import { AsciiDitherAnimation } from "./AsciiDitherAnimation";
 import { Typewriter } from "./Typewriter";
@@ -105,7 +103,14 @@ const archetypes = [
   },
 ];
 
-const team = ["GRIDER", "TIANNAN", "FIONA", "LVYAN CHEN", "JERRY", "JACKY"];
+const team = [
+  { name: "Jiarui Zhang", role: "AI Product Lead" },
+  { name: "Grider Li", role: "Tech Lead" },
+  { name: "Tiannan Zhao", role: "AI Product Strategy & Design" },
+  { name: "Ruojia Ma", role: "Research Lead & Design" },
+  { name: "Lyuyan Chen", role: "Engineer & Product Manager" },
+  { name: "Jacky Yang", role: "Agentic Engineer" },
+];
 
 function fadeInClasses(visible: boolean) {
   return visible ? "animate-landing-fade-in-up opacity-100" : "opacity-0";
@@ -142,7 +147,7 @@ function HeroSection() {
           </div>
 
           <Link
-            href="/arena"
+            to="/arena"
             className="mt-10 inline-flex items-center justify-center border-2 border-white px-6 py-4 text-sm tracking-[0.25em] text-white transition-colors hover:bg-white hover:text-black md:px-12 md:text-lg"
           >
             START YOUR TRIAL
@@ -365,19 +370,19 @@ function TeamSection() {
           We build benchmark tooling for AI-native trading workflows.
         </p>
 
-        <div className="mt-14 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-14 flex flex-wrap justify-center gap-x-16 gap-y-14">
           {team.map((member, index) => (
             <div
-              key={member}
-              className={`flex flex-col items-center gap-4 text-center ${fadeInClasses(visible)}`}
+              key={member.name}
+              className={`flex w-40 flex-col items-center gap-4 text-center ${fadeInClasses(visible)}`}
               style={{ animationDelay: `${index * 90}ms` }}
             >
-              <div className="h-24 w-24 border border-white/20 bg-white/[0.04]" />
+              <div className="h-24 w-24 rounded-full border border-white/20 bg-white/[0.04]" />
               <div>
-                <div className="text-lg uppercase tracking-[0.18em] text-white">{member}</div>
-                <div className="mt-2 text-sm tracking-[0.08em] text-zinc-400">
-                  Core product and systems
+                <div className="text-sm tracking-[0.08em] text-zinc-400">
+                  {member.role}
                 </div>
+                <div className="mt-2 text-lg tracking-[0.08em] text-white">{member.name}</div>
               </div>
             </div>
           ))}
@@ -407,13 +412,13 @@ function FinalCtaSection() {
         </h2>
         <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
           <Link
-            href="/arena"
+            to="/arena"
             className="inline-flex min-w-[220px] items-center justify-center border-2 border-white px-8 py-4 text-sm uppercase tracking-[0.24em] text-white transition-colors hover:bg-white hover:text-black"
           >
             START YOUR TRIAL
           </Link>
           <Link
-            href="/leaderboard"
+            to="/leaderboard"
             className="inline-flex min-w-[220px] items-center justify-center border border-white/30 bg-white/5 px-8 py-4 text-sm uppercase tracking-[0.24em] text-zinc-100 transition-colors hover:bg-white/10"
           >
             VIEW LEADERBOARD
@@ -432,6 +437,11 @@ function FooterSection() {
     <footer className="border-t border-white/10 px-6 py-8 text-center">
       <p className="text-xs uppercase tracking-[0.32em] text-zinc-500">
         VIBE4TRADING | OPEN BENCHMARKS | 2026
+      </p>
+      <p className="mt-3 text-xs tracking-[0.2em] text-zinc-600">
+        <Link to="/privacy" className="text-zinc-500 underline transition-colors hover:text-zinc-300">
+          PRIVACY POLICY
+        </Link>
       </p>
     </footer>
   );

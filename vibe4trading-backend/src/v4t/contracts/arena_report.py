@@ -56,7 +56,11 @@ class ArenaSubmissionReportNarrative(BaseModel):
 
     Score: int = Field(ge=0, le=100)
     Style: str
-    Description: str
+    Overview: str
+    Strengths: list[str] = Field(min_length=2, max_length=4)
+    Weaknesses: list[str] = Field(min_length=2, max_length=4)
+    Recommendations: list[str] = Field(min_length=2, max_length=4)
+    Roast: str
 
 
 class ArenaSubmissionReport(BaseModel):
@@ -71,6 +75,7 @@ class ArenaSubmissionReport(BaseModel):
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
+    roast: str | None = None
     key_metrics: ArenaSubmissionReportKeyMetrics
     best_window: ArenaSubmissionReportWindowHighlight | None = None
     worst_window: ArenaSubmissionReportWindowHighlight | None = None

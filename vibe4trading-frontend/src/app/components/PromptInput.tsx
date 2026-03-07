@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type PromptMode = "noob" | "pro";
@@ -192,7 +190,7 @@ export function PromptInput({
               {isLight ? (
                 <button
                   type="button"
-                  onClick={() => navigator.clipboard.writeText(value || generatedPrompt)}
+                  onClick={() => { try { navigator.clipboard.writeText(value || generatedPrompt); } catch { /* clipboard unavailable */ } }}
                   className="border border-[#2f2f2f]/30 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-[#222] transition-colors hover:bg-[#111]/6"
                 >
                   Copy

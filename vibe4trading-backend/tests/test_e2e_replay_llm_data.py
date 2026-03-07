@@ -61,7 +61,7 @@ def _make_price(market_id: str, price: str) -> dict:
 def _make_sentiment_summary(
     item_time: datetime,
     summary_text: str,
-    source: str = "test_rss",
+    source: str = "test",
 ) -> dict:
     return SentimentItemSummaryPayload(
         source=source,

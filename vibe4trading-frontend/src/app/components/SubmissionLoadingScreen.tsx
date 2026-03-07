@@ -1,5 +1,3 @@
-"use client";
-
 import * as React from "react";
 
 import {
@@ -17,6 +15,9 @@ type SubmissionLoadingScreenProps = {
   promptText: string;
   progressPercent: number;
   status: string | null;
+  statusHeadline: string;
+  statusDetail: string;
+  isQueued: boolean;
   windowsCompleted: number;
   windowsTotal: number;
   isTerminal: boolean;
@@ -26,7 +27,17 @@ type SubmissionLoadingScreenProps = {
 };
 
 export function SubmissionLoadingScreen({
+  submissionId,
+  pairLabel,
+  modelKey,
+  promptText,
   progressPercent,
+  status,
+  statusHeadline,
+  statusDetail,
+  isQueued,
+  windowsCompleted,
+  windowsTotal,
   isTerminal,
   error,
   onViewReport,
@@ -89,6 +100,9 @@ export function SubmissionLoadingScreen({
 
   const activeStage = loadingStages[displayStageIndex];
   const displayProgress = Math.max(activeStage.progress_percent, progressPercent);
+  const trimmedPrompt = promptText.trim();
+  const promptPreview =
+    trimmedPrompt.length > 140 ? `${trimmedPrompt.slice(0, 137).trimEnd()}...` : trimmedPrompt;
 
   return (
     <main className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-[#0a0a0a] px-6">
@@ -96,7 +110,7 @@ export function SubmissionLoadingScreen({
         className="mb-6 text-[11px] uppercase tracking-[0.3em] text-[#ababab] transition-opacity duration-300"
         style={{ opacity: copyVisible ? 1 : 0 }}
       >
-        {activeStage.label}
+        {isQueued ? "QUEUED" : activeStage.label}
       </p>
 
       <p
@@ -116,6 +130,32 @@ export function SubmissionLoadingScreen({
       <p className="text-[10px] uppercase tracking-widest text-[#ababab]">
         {Math.round(displayProgress)}%
       </p>
+
+      <div className="mt-6 w-full max-w-2xl border border-white/10 bg-white/5 px-5 py-4 text-white/80 backdrop-blur-sm">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] uppercase tracking-[0.24em] text-[#c7c7c7]">
+          <span>{statusHeadline}</span>
+          <span>Trial {submissionId.slice(0, 8)}</span>
+          <span>{windowsCompleted}/{windowsTotal || 0} windows</span>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-white">{statusDetail}</p>
+        <div className="mt-4 grid gap-3 text-xs text-[#bbbbbb] md:grid-cols-3">
+          <div>
+            <div className="uppercase tracking-[0.2em] text-[#7f7f7f]">Pair</div>
+            <div className="mt-1 text-sm text-white">{pairLabel}</div>
+          </div>
+          <div>
+            <div className="uppercase tracking-[0.2em] text-[#7f7f7f]">Model</div>
+            <div className="mt-1 break-all text-sm text-white">{modelKey}</div>
+          </div>
+          <div>
+            <div className="uppercase tracking-[0.2em] text-[#7f7f7f]">Status</div>
+            <div className="mt-1 text-sm text-white">{status ?? "pending"}</div>
+          </div>
+        </div>
+        <p className="mt-4 border-t border-white/10 pt-4 text-xs leading-6 text-[#9f9f9f]">
+          Prompt preview: {promptPreview || "Waiting for prompt details."}
+        </p>
+      </div>
 
       {error ? (
         <p className="mt-6 max-w-sm text-center text-[12px] leading-relaxed text-[#ff9b8a]">

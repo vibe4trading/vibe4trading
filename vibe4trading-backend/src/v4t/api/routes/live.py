@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -77,12 +77,8 @@ def start_live_run(
 
     live_cfg = LiveConfig(
         source=req.live_source,
-        chain_id=req.chain_id,
-        pair_id=req.pair_id,
         base_price=req.base_price,
     )
-    if live_cfg.source == "dexscreener" and (not live_cfg.chain_id or not live_cfg.pair_id):
-        raise HTTPException(status_code=400, detail="dexscreener live requires chain_id + pair_id")
 
     risk_profile = get_risk_profile(req.risk_level)
     gross_leverage_cap = (

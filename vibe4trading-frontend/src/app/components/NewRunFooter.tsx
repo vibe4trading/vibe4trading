@@ -1,5 +1,3 @@
-"use client";
-
 type NewRunFooterProps = {
   onMyRuns: () => void;
   onNewRun: () => void;

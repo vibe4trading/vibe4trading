@@ -1,12 +1,11 @@
-"use client";
-
 import * as React from "react";
 
-import { useParams } from "next/navigation";
+import { useParams } from "react-router-dom";
 
 import { LineChart } from "@/app/components/LineChart";
 import {
   apiJson,
+  getApiBaseUrl,
   LlmDecision,
   PricePoint,
   RunConfigSnapshot,
@@ -65,8 +64,7 @@ type StreamEvent = {
 };
 
 export default function RunWatchPage() {
-  const params = useParams<{ runId: string }>();
-  const runId = params.runId;
+  const runId = useParams<{ runId: string }>().runId ?? "";
 
   const [run, setRun] = React.useState<RunOut | null>(null);
   const [cfg, setCfg] = React.useState<RunConfigSnapshot | null>(null);
@@ -77,13 +75,15 @@ export default function RunWatchPage() {
   const [equityPoints, setEquityPoints] = React.useState<ChartPoint[]>([]);
   const [decisions, setDecisions] = React.useState<LlmDecision[]>([]);
 
+  const [error, setError] = React.useState<string | null>(null);
+
   const [activeTick, setActiveTick] = React.useState<string | null>(null);
   const [streamText, setStreamText] = React.useState<string>("");
   const [streamHistory, setStreamHistory] = React.useState<
     { tick_time: string; text: string; decision?: LlmDecision }[]
   >([]);
 
-  const baseIntervalSeconds = cfg?.scheduler?.base_interval_seconds ?? 3600;
+  const baseIntervalSeconds = cfg?.scheduler?.base_interval_seconds ?? 14400;
   const wallSecondsPerTick = cfg?.replay?.pace_seconds_per_base_tick ?? 2;
 
   const pricesMs = React.useMemo(() => {
@@ -144,22 +144,27 @@ export default function RunWatchPage() {
   const portfolioRafRef = React.useRef<number | null>(null);
 
   const refresh = React.useCallback(async () => {
-    const [runRes, cfgRes, pricesRes, tlRes, decRes] = await Promise.all([
-      apiJson<RunOut>(`/runs/${runId}`),
-      apiJson<RunConfigSnapshot>(`/runs/${runId}/config`),
-      apiJson<PricePoint[]>(`/runs/${runId}/prices?limit=5000`),
-      apiJson<TimelinePoint[]>(`/runs/${runId}/timeline`),
-      apiJson<LlmDecision[]>(`/runs/${runId}/decisions?limit=500&offset=0`),
-    ]);
+    try {
+      const [runRes, cfgRes, pricesRes, tlRes, decRes] = await Promise.all([
+        apiJson<RunOut>(`/runs/${runId}`),
+        apiJson<RunConfigSnapshot>(`/runs/${runId}/config`),
+        apiJson<PricePoint[]>(`/runs/${runId}/prices?limit=5000`),
+        apiJson<TimelinePoint[]>(`/runs/${runId}/timeline`),
+        apiJson<LlmDecision[]>(`/runs/${runId}/decisions?limit=500&offset=0`),
+      ]);
 
-    setRun(runRes);
-    setCfg(cfgRes);
-    setPricesAll(pricesRes);
+      setRun(runRes);
+      setCfg(cfgRes);
+      setPricesAll(pricesRes);
 
-    setEquityPoints(
-      tlRes.map((p) => ({ xLabel: timeLabel(p.observed_at), y: p.equity_quote })),
-    );
-    setDecisions(decRes);
+      setEquityPoints(
+        tlRes.map((p) => ({ xLabel: timeLabel(p.observed_at), y: p.equity_quote })),
+      );
+      setDecisions(decRes);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load run data");
+    }
   }, [runId]);
 
   React.useEffect(() => {
@@ -257,7 +262,7 @@ export default function RunWatchPage() {
   }, [stopPlayback]);
 
   React.useEffect(() => {
-    const es = new EventSource(`/api/v4t/runs/${runId}/stream`);
+    const es = new EventSource(`${getApiBaseUrl()}/runs/${runId}/stream`);
 
     const onLlmStart = (e: MessageEvent<string>) => {
       try {
@@ -288,7 +293,9 @@ export default function RunWatchPage() {
     const onDecision = (e: MessageEvent<string>) => {
       try {
         const ev = JSON.parse(e.data) as StreamEvent;
-        const payload = ev.payload as unknown as LlmDecision;
+        const raw = ev.payload;
+        if (typeof raw !== "object" || raw === null || !("tick_time" in raw)) return;
+        const payload = raw as LlmDecision;
         setDecisions((prev) => {
           const byTick = new Map<string, LlmDecision>();
           for (const d of prev) byTick.set(d.tick_time, d);
@@ -384,6 +391,18 @@ export default function RunWatchPage() {
 
   return (
     <div className="animate-rise flex flex-col gap-6">
+      {error ? (
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm text-red-300">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={() => { setError(null); refresh().catch(() => null); }}
+            className="shrink-0 rounded-lg border border-red-500/40 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-red-200 transition-colors hover:bg-red-500/20"
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
       <div className="flex items-end justify-between gap-4">
         <div>
           <p className="text-xs font-bold tracking-widest text-[color:var(--accent-2)]">

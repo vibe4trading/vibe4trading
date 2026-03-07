@@ -61,7 +61,7 @@ with Session(engine) as db:
                 end=datetime.fromisoformat(event["event_end"].replace("Z", "+00:00")),
                 params={
                     "market_id": market_id,
-                    "feather_path": str(output_path.absolute()),
+                    "feather_path": f"data/{event['id']}/binance/merged-1h.feather",
                     "event_id": event["id"],
                     "event_name": event["name"],
                     "scoring_start": event["scoring_start"],

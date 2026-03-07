@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import structlog
-from fastapi import Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,10 +19,11 @@ logger = structlog.get_logger()
 security = HTTPBearer(auto_error=False)
 
 
-async def get_current_user(
+async def get_optional_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db),
-) -> UserRow:
+    v4t_session: str | None = Cookie(default=None),
+) -> UserRow | None:
     settings = get_settings()
     if settings.bypass_auth:
         import os
@@ -44,33 +45,45 @@ async def get_current_user(
                 db.refresh(user)
             return user
 
-    if not credentials:
+    if credentials:
+        token = credentials.credentials
+
+        user = validate_token(db, token)
+        if user is not None:
+            return user
+
+        try:
+            payload = await validate_jwt(
+                token, settings.oidc_jwks_url, settings.oidc_audience, settings.oidc_issuer
+            )
+            user = provision_user_from_jwt(db, payload)
+            return user
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+            ) from exc
+
+    if v4t_session:
+        user = validate_token(db, v4t_session)
+        if user is not None:
+            return user
+
+    return None
+
+
+async def get_current_user(
+    user: UserRow | None = Depends(get_optional_current_user),
+) -> UserRow:
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authentication",
         )
-
-    token = credentials.credentials
-
-    user = validate_token(db, token)
-    if user is not None:
-        return user
-
-    try:
-        settings = get_settings()
-        payload = await validate_jwt(
-            token, settings.oidc_jwks_url, settings.oidc_audience, settings.oidc_issuer
-        )
-        user = await provision_user_from_jwt(db, payload)
-        return user
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        ) from exc
+    return user
 
 
-async def provision_user_from_jwt(db: Session, payload: dict[str, Any]) -> UserRow:
+def provision_user_from_jwt(db: Session, payload: dict[str, Any]) -> UserRow:
     oidc_issuer = payload.get("iss")
     oidc_sub = payload.get("sub")
     email = payload.get("email")

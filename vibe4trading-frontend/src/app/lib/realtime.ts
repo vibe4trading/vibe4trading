@@ -1,11 +1,9 @@
-"use client";
-
 import * as React from "react";
 
 function wsBaseUrlFromWindow(): string {
   if (typeof window === "undefined") return "";
 
-  const env = process.env.NEXT_PUBLIC_V4T_WS_BASE_URL;
+  const env = import.meta.env.VITE_V4T_WS_BASE_URL;
   if (env && env.trim()) return env.replace(/\/$/, "");
 
   const host = window.location.hostname;

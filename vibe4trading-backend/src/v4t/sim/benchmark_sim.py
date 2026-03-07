@@ -342,10 +342,19 @@ class BenchmarkPaperSim:
         if new_qty == 0:
             self.position = None
         else:
+            if (
+                self.position is not None
+                and current_qty != 0
+                and (current_qty > 0) == (new_qty > 0)
+            ):
+                old_entry = self.position.entry_price
+                new_entry = (abs(current_qty) * old_entry + abs(delta_qty) * price) / abs(new_qty)
+            else:
+                new_entry = price
             self.position = BenchmarkPosition(
                 mode=PositionMode.spot,
                 qty_base=new_qty,
-                entry_price=price,
+                entry_price=new_entry,
                 leverage=1,
                 margin_used=Decimal("0"),
             )
@@ -440,16 +449,27 @@ class BenchmarkPaperSim:
         margin_required = target_notional / Decimal(leverage)
         current_margin = self.position.margin_used if self.position is not None else Decimal("0")
 
-        # Credit unrealized PnL before resetting entry price, otherwise it vanishes.
-        if self.position is not None and self.position.qty_base != 0:
+        extending = (
+            self.position is not None
+            and self.position.qty_base != 0
+            and (self.position.qty_base > 0) == (target_qty > 0)
+        )
+
+        if extending:
+            assert self.position is not None
+            old_entry = self.position.entry_price
+            new_entry = (abs(current_qty) * old_entry + abs(delta_qty) * price) / abs(target_qty)
+        else:
+            new_entry = price
+
+        if not extending and self.position is not None and self.position.qty_base != 0:
             unrealized = (price - self.position.entry_price) * self.position.qty_base
             self.cash_quote_value += unrealized
 
         margin_delta = margin_required - current_margin
         fee = self._fee(delta_qty * price)
         if self.cash_quote_value - margin_delta - fee < 0:
-            # Undo the unrealized credit if we can't afford the rebalance.
-            if self.position is not None and self.position.qty_base != 0:
+            if not extending and self.position is not None and self.position.qty_base != 0:
                 unrealized = (price - self.position.entry_price) * self.position.qty_base
                 self.cash_quote_value -= unrealized
             return None
@@ -461,7 +481,7 @@ class BenchmarkPaperSim:
         self.position = BenchmarkPosition(
             mode=PositionMode.futures,
             qty_base=target_qty,
-            entry_price=price,
+            entry_price=new_entry,
             leverage=leverage,
             margin_used=margin_required,
             funding_cost_accumulated=funding_cost,

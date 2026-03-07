@@ -40,7 +40,7 @@ def compute_sharpe_from_returns(returns_pct: list[float]) -> float | None:
     std_r = math.sqrt(variance)
     if std_r == 0:
         return 0.0
-    sharpe = (mean_r / std_r) * math.sqrt(len(returns))
+    sharpe = mean_r / std_r
     return round(sharpe, 2)
 
 
@@ -300,7 +300,10 @@ def _decision_exposure_pct(decision: LlmDecisionPayload, *, market_id: str) -> f
 
 
 _TRADE_STYLE_JUDGE_PROMPT = (
-    'You are a "Freqtrade Trading Style Judge." '
+    'You are a brutally honest "Crypto Trading Style Judge" — '
+    "part analyst, part CT shitposter. "
+    "You evaluate trading performance data and deliver verdicts that are "
+    "sharp, specific, and impossible to ignore.\n\n"
     "You may only use raw fields from the input JSON. Do not infer or fabricate data.\n\n"
     "## Input Structure\n"
     '{"summary":{"Total profit %":number,"Sharpe":number,"Profit factor":number,'
@@ -350,9 +353,39 @@ _TRADE_STYLE_JUDGE_PROMPT = (
     "Tiebreak: pick the style whose leverage center is closest to avg_leverage. "
     "Centers: Meme Hunter=4, Diamond Hands=1, Macro Speculator=5, FOMO Warrior=3, "
     "The Contrarian=3, Contract King=6, On-chain Detective=1.5, SuperCycle Believer=8, Degen Whale=15.\n\n"
-    "## Output\n"
-    "Return ONLY a valid JSON object: "
-    '{"Score":<integer 0-100>,"Style":"<exact archetype name>","Description":"<15 words or fewer>"}.'
+    "## Output Fields\n\n"
+    "Return ONLY a valid JSON object with these fields:\n\n"
+    "- Score: integer 0-100 computed from the formula above.\n"
+    "- Style: exact archetype name from the 9 options.\n"
+    "- Overview: 2-3 sentence narrative summary of the trader's performance. "
+    "Reference specific numbers (return %, Sharpe, drawdown). "
+    "Write like a portfolio manager briefing a CIO, not a chatbot.\n"
+    "- Strengths: array of 2-3 strings. Each is a specific, data-backed strength. "
+    "Cite the metric that proves it (e.g. 'Profit factor of 2.1 shows winners outsize losers 2:1'). "
+    "No generic praise.\n"
+    "- Weaknesses: array of 2-3 strings. Each is a specific, data-backed weakness. "
+    "Name the exact metric that's problematic and why it matters "
+    "(e.g. 'Max drawdown of 28% means one bad week wipes a month of gains'). "
+    "Be direct — coddling helps nobody.\n"
+    "- Recommendations: array of 2-3 strings. Each is a concrete, actionable change. "
+    "Not 'improve risk management' — instead 'Cut max leverage from 12x to 5x and add a 5% trailing stop'. "
+    "Every recommendation must be something the trader can implement in their next session.\n"
+    "- Roast: a single sharp, witty, crypto-native one-liner that captures the trader's biggest flaw. "
+    "Think CT roast, not corporate feedback. Examples of the vibe: "
+    "'You trade like you discovered leverage yesterday and margin calls tomorrow.' "
+    "'Diamond hands? More like diamond brain — smooth and hard to reason with.' "
+    "Make it memorable and specific to THIS trader's data.\n\n"
+    "## Output Format\n"
+    "Return ONLY this JSON:\n"
+    "{"
+    '"Score":<int>,'
+    '"Style":"<archetype>",'
+    '"Overview":"<2-3 sentences>",'
+    '"Strengths":["<strength 1>","<strength 2>"],'
+    '"Weaknesses":["<weakness 1>","<weakness 2>"],'
+    '"Recommendations":["<rec 1>","<rec 2>"],'
+    '"Roast":"<one-liner>"'
+    "}"
 )
 
 
@@ -393,6 +426,7 @@ def _generate_llm_report(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         fallback_report=fallback_payload,
+        max_output_tokens=1500,
     )
 
     if used_fallback:
@@ -417,10 +451,13 @@ def _generate_llm_report(
         overall_score=max(0, min(100, narrative.Score)),
         archetype=archetype,
         representative=ARCHETYPE_REPRESENTATIVES.get(archetype),
-        overview=narrative.Description,
-        strengths=fallback.strengths,
-        weaknesses=fallback.weaknesses,
-        recommendations=fallback.recommendations,
+        overview=narrative.Overview,
+        strengths=narrative.Strengths if narrative.Strengths else fallback.strengths,
+        weaknesses=narrative.Weaknesses if narrative.Weaknesses else fallback.weaknesses,
+        recommendations=narrative.Recommendations
+        if narrative.Recommendations
+        else fallback.recommendations,
+        roast=narrative.Roast or fallback.roast,
         key_metrics=key_metrics,
         best_window=fallback.best_window,
         worst_window=fallback.worst_window,
@@ -703,6 +740,7 @@ def _build_fallback_report(
         best_window=best_window,
         worst_window=worst_window,
     )
+    roast = _fallback_roast(archetype=archetype, key_metrics=key_metrics)
     return ArenaSubmissionReport(
         schema_version=1,
         generation_mode="fallback",
@@ -713,6 +751,7 @@ def _build_fallback_report(
         strengths=strengths,
         weaknesses=weaknesses,
         recommendations=recommendations,
+        roast=roast,
         key_metrics=key_metrics,
         best_window=ArenaSubmissionReportWindowHighlight(
             window_code=best_window.window_code,
@@ -976,6 +1015,36 @@ def _fallback_recommendations(
             f"Inspect {worst_window.window_code} replay details before adjusting the prompt."
         )
     return (out + ["Compare best and worst windows before changing strategy wording."])[:3]
+
+
+ARCHETYPE_ROASTS: dict[str, str] = {
+    "Meme Hunter": "You trade like a caffeinated squirrel chasing every shiny object on CT.",
+    "Diamond Hands": "Holding through everything isn't a strategy — it's a coping mechanism.",
+    "Macro Speculator": "You read one Arthur Hayes essay and made it your whole personality.",
+    "FOMO Warrior": "You buy tops, sell bottoms, and call it 'learning experience' every single time.",
+    "The Contrarian": "Being early and being wrong look identical in your PnL.",
+    "Contract King": "High leverage, high conviction, high copium when it goes wrong.",
+    "On-chain Detective": "So cautious you'd need on-chain proof the sun will rise before going long.",
+    "SuperCycle Believer": "Perma-long with max leverage — Su Zhu would be proud, and that's not a compliment.",
+    "Degen Whale": "Your risk management strategy is 'hope' with a side of 'surely it can't go lower.'",
+}
+
+
+def _fallback_roast(
+    *,
+    archetype: str,
+    key_metrics: ArenaSubmissionReportKeyMetrics,
+) -> str:
+    base = ARCHETYPE_ROASTS.get(archetype)
+    if base:
+        return base
+
+    total_return = key_metrics.total_return_pct or 0
+    if total_return < -10:
+        return "The market took your lunch money and you thanked it for the lesson."
+    if total_return < 0:
+        return "At least you didn't lose it all — that's the nicest thing anyone can say."
+    return "Congratulations on your positive return. Your bank's savings account is still jealous."
 
 
 def _compute_submission_score(

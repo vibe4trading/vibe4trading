@@ -14,8 +14,10 @@ from v4t.api.routes.live import router as live_router
 from v4t.api.routes.me import router as me_router
 from v4t.api.routes.models import router as models_router
 from v4t.api.routes.runs import router as runs_router
+from v4t.auth.web import router as auth_router
 from v4t.db.engine import get_engine
 from v4t.db.init_db import init_db
+from v4t.settings import get_settings
 
 
 def create_app() -> FastAPI:
@@ -46,10 +48,16 @@ def create_app() -> FastAPI:
     app.include_router(admin_model_access_router)
     app.include_router(datasets_router)
     app.include_router(runs_router)
+    app.include_router(auth_router)
+
+    settings = get_settings()
+    allowed_origins = [settings.frontend_url.rstrip("/")]
+    if "localhost" in settings.frontend_url or "127.0.0.1" in settings.frontend_url:
+        allowed_origins.append("http://localhost:3000")
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000"],
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

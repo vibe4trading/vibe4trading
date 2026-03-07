@@ -26,6 +26,7 @@ for event in events:
             continue
 
         market_id = f"spot:binance:{coin}"
+        relative_path = f"data/{event['id']}/binance/{pair_file}-1h.feather"
 
         response = requests.post(
             f"{BACKEND_URL}/api/datasets",
@@ -36,7 +37,7 @@ for event in events:
                 "end": event["event_end"],
                 "params": {
                     "market_id": market_id,
-                    "feather_path": str(feather_path),
+                    "feather_path": relative_path,
                     "event_id": event["id"],
                     "event_name": event["name"],
                 },

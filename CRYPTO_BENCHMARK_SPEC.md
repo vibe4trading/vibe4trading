@@ -4,9 +4,9 @@
 
 The vibe4trading backend currently supports:
 - **Replay mode**: Historical backtesting with spot-only, long-only positions
-- **Live mode**: Real-time paper trading with demo/DexScreener price feeds
+- **Live mode**: Real-time paper trading with demo price feeds
 - **Decision schema v1**: Simple spot exposure targets (0.0-1.0), no leverage, no shorts
-- **Fixed tick scheduling**: 1-hour base cadence, no LLM-controlled tick scheduling
+- **Fixed tick scheduling**: 4-hour base cadence, no LLM-controlled tick scheduling
 - **Sentiment integration**: Works in replay, empty in live
 
 The system uses:
@@ -19,7 +19,7 @@ The system uses:
 
 Extend the engine to support a **crypto trading benchmark** where:
 1. Multiple LLMs compete across 10 tokens × 10 event windows (100 runs per user config)
-2. Each run lasts 168 hours (7 days) with hourly base ticks
+2. Each run lasts 168 hours (7 days) with 4-hour base ticks
 3. LLMs can trade SPOT (long-only) or FUTURES (long/short with leverage up to 100x)
 4. LLMs specify stop-loss and take-profit levels that execute automatically
 5. Risk levels 1-5 control max leverage, shorting permissions, and exposure caps
@@ -301,9 +301,9 @@ Trading style: position. Hold through multi-day moves. Only adjust on significan
 ## Data Requirements
 
 ### Already Available
-- ✅ Price data (Binance, DexScreener)
+- ✅ Price data (Binance)
 - ✅ OHLCV bars (1h timeframe)
-- ✅ Sentiment summaries (RSS, Twitter crawler)
+- ✅ Sentiment summaries (Twitter crawler)
 - ✅ Decision memory (last 3 decisions)
 
 ### Need to Add
@@ -331,10 +331,10 @@ Trading style: position. Hold through multi-day moves. Only adjust on significan
 
 ## Cost Estimates
 
-- **Per run**: ~168 LLM calls (1 per hour) × $0.01 = $1.68
-- **Per tournament**: 100 runs × $1.68 = $168
-- **Per user per day**: Assume 3 tournaments = $504
-- **100 users**: $50,400/day
+- **Per run**: ~42 LLM calls (1 per 4 hours) × $0.01 = $0.42
+- **Per tournament**: 100 runs × $0.42 = $42
+- **Per user per day**: Assume 3 tournaments = $126
+- **100 users**: $12,600/day
 
 Mitigation:
 - Use cheaper models for lower risk levels (GPT-4o-mini, Gemini Flash)

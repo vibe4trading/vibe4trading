@@ -1,7 +1,5 @@
-"use client";
-
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 
 import { NewRunModal } from "@/app/components/NewRunModal";
 import { saveSubmissionLoadingSnapshot } from "@/app/lib/submissionLoading";
@@ -22,7 +20,7 @@ function firstSelectableModelKey(rows: ModelPublicOut[]) {
 }
 
 export function NewRunProvider({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
+  const navigate = useNavigate();
 
   const [open, setOpen] = React.useState(false);
   const [markets, setMarkets] = React.useState<string[]>([]);
@@ -91,13 +89,13 @@ export function NewRunProvider({ children }: { children: React.ReactNode }) {
         promptText,
       });
       setOpen(false);
-      router.push(`/arena/submissions/${body.submission_id}/loading`);
+      navigate(`/arena/submissions/${body.submission_id}/loading`);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
     }
-  }, [marketId, modelKey, promptText, router]);
+  }, [marketId, modelKey, promptText, navigate]);
 
   const contextValue = React.useMemo(
     () => ({ openNewRun, markets, models }),

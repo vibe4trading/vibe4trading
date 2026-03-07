@@ -11,7 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from v4t.contracts.payloads import SimFillPayload
-from v4t.db.models import EventRow, PortfolioSnapshotRow
+from v4t.db.models import EventRow, PortfolioSnapshotRow, RunConfigSnapshotRow, RunRow
+
+SECONDS_PER_YEAR = 365 * 24 * 60 * 60
+DEFAULT_BASE_INTERVAL_SECONDS = 3600
 
 
 @dataclass
@@ -28,8 +31,9 @@ def compute_run_metrics(session: Session, *, run_id: UUID) -> RunMetrics:
 
     snapshots = _load_equity_series(session, run_id)
     fills = _load_fills(session, run_id)
+    tick_interval_seconds = _load_tick_interval_seconds(session, run_id)
 
-    sharpe = _compute_sharpe(snapshots)
+    sharpe = _compute_sharpe(snapshots, tick_interval_seconds=tick_interval_seconds)
     max_dd = _compute_max_drawdown(snapshots)
     win_rate, profit_fac, n_trades = _compute_trade_stats(fills)
 
@@ -68,8 +72,27 @@ def _load_fills(session: Session, run_id: UUID) -> list[SimFillPayload]:
     return [SimFillPayload.model_validate(r.payload) for r in rows]
 
 
-def _compute_sharpe(equity_series: list[Decimal]) -> Decimal:
-    """Annualised Sharpe from per-tick equity returns (assuming ~hourly ticks)."""
+def _load_tick_interval_seconds(session: Session, run_id: UUID) -> int:
+    config = session.execute(
+        select(RunConfigSnapshotRow.config)
+        .join(RunRow, RunRow.config_id == RunConfigSnapshotRow.config_id)
+        .where(RunRow.run_id == run_id)
+        .limit(1)
+    ).scalar_one_or_none()
+    if not isinstance(config, dict):
+        return DEFAULT_BASE_INTERVAL_SECONDS
+
+    scheduler = config.get("scheduler")
+    if not isinstance(scheduler, dict):
+        return DEFAULT_BASE_INTERVAL_SECONDS
+
+    interval = scheduler.get("base_interval_seconds")
+    if isinstance(interval, (int, float)) and interval > 0:
+        return max(1, int(interval))
+    return DEFAULT_BASE_INTERVAL_SECONDS
+
+
+def _compute_sharpe(equity_series: list[Decimal], *, tick_interval_seconds: int) -> Decimal:
     if len(equity_series) < 2:
         return Decimal("0")
 
@@ -93,8 +116,8 @@ def _compute_sharpe(equity_series: list[Decimal]) -> Decimal:
     if std_r == 0:
         return Decimal("0")
 
-    # Annualise assuming ~hourly ticks, ~8760 ticks/year
-    sharpe = (mean_r / std_r) * math.sqrt(min(len(returns), 8760))
+    annualization_factor = math.sqrt(SECONDS_PER_YEAR / max(tick_interval_seconds, 1))
+    sharpe = (mean_r / std_r) * annualization_factor
     return Decimal(str(round(sharpe, 4)))
 
 
@@ -144,14 +167,14 @@ def _compute_trade_stats(
         notional = Decimal(fill.notional_quote)
 
         if fill.side == "buy":
-            position_qty += qty
-            cost_basis += notional
-        else:  # sell
-            if position_qty > 0:
-                # Proportional cost basis for the sold portion
-                sold_fraction = min(qty / position_qty, Decimal("1"))
-                allocated_cost = cost_basis * sold_fraction
-                pnl = notional - allocated_cost
+            if position_qty < 0:
+                # Covering a short position — compute P&L
+                cover_qty = min(qty, abs(position_qty))
+                cover_fraction = min(cover_qty / abs(position_qty), Decimal("1"))
+                allocated_cost = cost_basis * cover_fraction
+                cover_notional = cover_qty * price
+                # Short P&L: profit when buy-back price < sell price
+                pnl = allocated_cost - cover_notional
 
                 total_trades += 1
                 if pnl > 0:
@@ -161,13 +184,43 @@ def _compute_trade_stats(
                     gross_loss += abs(pnl)
 
                 cost_basis -= allocated_cost
-                position_qty -= qty
-                if position_qty < 0:
-                    # Flipped to short — reset basis
-                    cost_basis = abs(position_qty) * price
+                position_qty += cover_qty
+                remaining_qty = qty - cover_qty
+                if remaining_qty > 0:
+                    # Flipped to long — start new cost basis
+                    cost_basis = remaining_qty * price
+                    position_qty += remaining_qty
             else:
+                # Extending or opening a long position
+                position_qty += qty
+                cost_basis += notional
+        else:  # sell
+            if position_qty > 0:
+                # Closing/reducing a long position
+                sell_qty = min(qty, position_qty)
+                sold_fraction = min(sell_qty / position_qty, Decimal("1"))
+                allocated_cost = cost_basis * sold_fraction
+                sell_notional = sell_qty * price
+                pnl = sell_notional - allocated_cost
+
                 total_trades += 1
-                gross_loss += Decimal("0")
+                if pnl > 0:
+                    gross_profit += pnl
+                    wins += 1
+                else:
+                    gross_loss += abs(pnl)
+
+                cost_basis -= allocated_cost
+                position_qty -= sell_qty
+                remaining_qty = qty - sell_qty
+                if remaining_qty > 0:
+                    # Flipped to short — start new cost basis
+                    cost_basis = remaining_qty * price
+                    position_qty -= remaining_qty
+            else:
+                # Extending or opening a short position
+                position_qty -= qty
+                cost_basis += notional
 
     win_rate = (
         Decimal(str(round(wins / total_trades * 100, 2))) if total_trades > 0 else Decimal("0")

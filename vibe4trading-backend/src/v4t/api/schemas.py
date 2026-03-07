@@ -14,7 +14,7 @@ class DatasetCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     category: Literal["spot", "sentiment"]
-    source: Literal["demo", "dexscreener", "empty", "rss", "freqtrade"] = "demo"
+    source: Literal["demo", "empty", "freqtrade"] = "demo"
     start: datetime
     end: datetime
     params: dict[str, Any] = Field(default_factory=dict)
@@ -224,9 +224,7 @@ class LiveRunCreateRequest(BaseModel):
     system_prompt: str | None = None
 
     # Live ingestion
-    live_source: Literal["demo", "dexscreener"] = "demo"
-    chain_id: str | None = None
-    pair_id: str | None = None
+    live_source: Literal["demo"] = "demo"
     base_price: float = 1.0
 
     # If a live run is already running, reuse it unless force_restart=true.

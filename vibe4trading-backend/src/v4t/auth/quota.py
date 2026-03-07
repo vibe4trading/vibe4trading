@@ -96,4 +96,4 @@ def increment_quota(db: Session, user_id: UUID) -> None:
     quota_row = db.execute(stmt).scalar_one()
     quota_row.runs_used += 1
 
-    db.commit()
+    db.flush()

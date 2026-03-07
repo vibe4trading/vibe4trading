@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from v4t.api.deps import get_db
 from v4t.api.schemas import DatasetCreateRequest, DatasetIndexOut, DatasetOut
 from v4t.api.utils import now
-from v4t.auth.deps import get_current_user
+from v4t.auth.deps import get_admin_user, get_current_user
 from v4t.db.models import DatasetRow, UserRow
 from v4t.jobs.repo import dispatch_and_update_job, enqueue_job
 from v4t.jobs.types import JOB_TYPE_DATASET_IMPORT
@@ -102,7 +102,7 @@ def get_dataset(dataset_id: UUID, db: Session = Depends(get_db)) -> DatasetOut:
 def delete_dataset(
     dataset_id: UUID,
     db: Session = Depends(get_db),
-    _user: UserRow = Depends(get_current_user),
+    _user: UserRow = Depends(get_admin_user),
 ) -> dict[str, str | bool]:
     row = db.get(DatasetRow, dataset_id)
     if row is None:

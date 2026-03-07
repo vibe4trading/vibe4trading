@@ -119,7 +119,7 @@ def _compute_sharpe_from_returns(returns_pct: list[float]) -> float | None:
     std_r = math.sqrt(variance)
     if std_r == 0:
         return 0.0
-    sharpe = (mean_r / std_r) * math.sqrt(len(returns))
+    sharpe = mean_r / std_r
     return round(sharpe, 2)
 
 
@@ -413,7 +413,7 @@ def list_submissions(
     db: Session = Depends(get_db),
 ) -> ArenaSubmissionIndexOut:
     cursor_created_at, cursor_submission_id = _parse_submission_cursor(cursor)
-    stmt = select(ArenaSubmissionRow)
+    stmt = select(ArenaSubmissionRow).where(ArenaSubmissionRow.visibility == "public")
     if scenario_set_key:
         stmt = stmt.where(ArenaSubmissionRow.scenario_set_key == scenario_set_key)
     if market_id:
@@ -516,6 +516,7 @@ def get_leaderboard(
         ArenaSubmissionRow.status == "finished",
         ArenaSubmissionRow.total_return_pct.is_not(None),
         ArenaSubmissionRow.avg_return_pct.is_not(None),
+        ArenaSubmissionRow.visibility == "public",
     )
     if scenario_set_key:
         stmt = stmt.where(ArenaSubmissionRow.scenario_set_key == scenario_set_key)

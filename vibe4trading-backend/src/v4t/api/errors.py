@@ -10,7 +10,6 @@ def transform_error(error: str) -> str:
         "dataset_id not found": "Dataset not found",
         "run_id not found": "Run not found",
         "unknown scenario_set_key": "Invalid scenario set",
-        "dexscreener live requires chain_id + pair_id": "Chain ID and Pair ID are required for DexScreener",
         "datasets must be status=ready": "Datasets must be ready before creating a run",
         "dataset windows must match exactly": "All datasets must have matching time windows",
     }

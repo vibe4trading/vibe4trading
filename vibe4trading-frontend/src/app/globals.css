@@ -1014,6 +1014,61 @@ body.with-entry-bar {
   background: #d9e5ff;
 }
 
+.privacy-page-main {
+  padding: 16px;
+}
+
+.privacy-card {
+  display: grid;
+  gap: 18px;
+  max-width: 860px;
+}
+
+.privacy-card h1 {
+  margin: 0;
+  font-size: 36px;
+}
+
+.privacy-updated {
+  margin: 0;
+  font-size: 14px;
+  color: #5b5b5b;
+}
+
+.privacy-section h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.privacy-section p {
+  margin: 0;
+  font-size: 17px;
+  color: #4c4c4c;
+  line-height: 1.55;
+}
+
+.privacy-section ul {
+  margin: 6px 0 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 6px;
+}
+
+.privacy-section li {
+  font-size: 17px;
+  color: #4c4c4c;
+  line-height: 1.55;
+}
+
+.privacy-section a {
+  color: #2a4fa0;
+  text-decoration: underline;
+}
+
+.privacy-section a:hover {
+  color: #16234a;
+}
+
 .newrun-page-main {
   padding: 16px;
   display: grid;

@@ -1,9 +1,8 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import * as React from "react";
 
 import { useModalA11y } from "@/app/hooks/useModalA11y";
+import { getSubmissionStatusDisplay } from "@/app/lib/submissionStatus";
 import { ArenaSubmissionOut } from "@/app/lib/v4t";
 
 function fmt(dt: string | null) {
@@ -22,11 +21,13 @@ function pct(v: number | null) {
 }
 
 function submissionBadge(status: string) {
-  if (status === "finished")
+  if (status === "Finished")
     return "bg-[color:var(--accent)]/10 text-[color:var(--accent)] border border-[color:var(--accent)]/30 drop-shadow-[0_0_8px_var(--accent-glow)]";
-  if (status === "running")
+  if (status === "Running")
     return "bg-[color:var(--accent-2)]/10 text-[color:var(--accent-2)] border border-[color:var(--accent-2)]/30 drop-shadow-[0_0_8px_var(--accent-2-glow)]";
-  if (status === "failed")
+  if (status === "Queued")
+    return "bg-amber-500/10 text-amber-300 border border-amber-500/30 drop-shadow-[0_0_8px_rgba(245,158,11,0.18)]";
+  if (status === "Failed")
     return "bg-rose-500/10 text-rose-400 border border-rose-500/30 drop-shadow-[0_0_8px_rgba(244,63,94,0.15)]";
   return "bg-zinc-500/10 text-zinc-400 border border-zinc-500/30";
 }
@@ -113,66 +114,73 @@ export function MyRunsModal({ open, submissions, onClose }: MyRunsModalProps) {
                   <th className="px-6 py-4 font-semibold">Created</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/10">
-                {submissions.map((s) => (
-                  <tr key={s.submission_id} className="transition-colors hover:bg-white/5">
-                    <td className="px-6 py-4">
-                      <Link
-                        className="font-mono text-xs text-[color:var(--accent)] hover:text-white transition-colors"
-                        href={`/arena/submissions/${s.submission_id}`}
-                        onClick={onClose}
-                      >
-                        {s.submission_id.slice(0, 8)}&hellip;
-                      </Link>
-                      <div className="mt-1.5 text-xs font-medium text-zinc-500">
-                        {s.scenario_set_key}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-wider shadow-[0_0_10px_rgba(0,0,0,0.2)] ${submissionBadge(s.status)}`}
-                      >
-                        {s.status === "running" && (
-                          <span className="relative flex h-1.5 w-1.5">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-75" />
-                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-current" />
-                          </span>
-                        )}
-                        {s.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 font-mono text-xs text-white">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold">{s.windows_completed}</span>
-                        <span className="text-zinc-500">/</span>
-                        <span className="text-zinc-400">{s.windows_total}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 font-mono text-xs">
-                      {s.status === "finished" ? (
-                        <span
-                          className={
-                            s.total_return_pct && s.total_return_pct >= 0
-                              ? "text-[color:var(--accent)] drop-shadow-[0_0_8px_var(--accent-glow)] font-bold"
-                              : "text-rose-400 drop-shadow-[0_0_8px_rgba(244,63,94,0.15)] font-bold"
-                          }
+                <tbody className="divide-y divide-white/10">
+                {submissions.map((s) => {
+                  const statusDisplay = getSubmissionStatusDisplay({
+                    status: s.status,
+                    startedAt: s.started_at,
+                  });
+
+                  return (
+                    <tr key={s.submission_id} className="transition-colors hover:bg-white/5">
+                      <td className="px-6 py-4">
+                        <Link
+                          className="font-mono text-xs text-[color:var(--accent)] hover:text-white transition-colors"
+                          to={`/arena/submissions/${s.submission_id}`}
+                          onClick={onClose}
                         >
-                          {pct(s.total_return_pct)}
+                          {s.submission_id.slice(0, 8)}&hellip;
+                        </Link>
+                        <div className="mt-1.5 text-xs font-medium text-zinc-500">
+                          {s.scenario_set_key}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-wider shadow-[0_0_10px_rgba(0,0,0,0.2)] ${submissionBadge(statusDisplay.label)}`}
+                        >
+                          {statusDisplay.label === "Running" && (
+                            <span className="relative flex h-1.5 w-1.5">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-75" />
+                              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-current" />
+                            </span>
+                          )}
+                          {statusDisplay.label}
                         </span>
-                      ) : (
-                        <span className="text-zinc-600">&ndash;</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 font-mono text-xs text-zinc-300">{s.market_id}</td>
-                    <td className="px-6 py-4">
-                      <span className="font-mono text-xs text-[color:var(--accent-2)]">
-                        {s.model_key}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 font-mono text-xs text-zinc-400">{fmt(s.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
+                      </td>
+                      <td className="px-6 py-4 font-mono text-xs text-white">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">{s.windows_completed}</span>
+                          <span className="text-zinc-500">/</span>
+                          <span className="text-zinc-400">{s.windows_total}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 font-mono text-xs">
+                        {s.status === "finished" ? (
+                          <span
+                            className={
+                              s.total_return_pct && s.total_return_pct >= 0
+                                ? "text-[color:var(--accent)] drop-shadow-[0_0_8px_var(--accent-glow)] font-bold"
+                                : "text-rose-400 drop-shadow-[0_0_8px_rgba(244,63,94,0.15)] font-bold"
+                            }
+                          >
+                            {pct(s.total_return_pct)}
+                          </span>
+                        ) : (
+                          <span className="text-zinc-600">&ndash;</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 font-mono text-xs text-zinc-300">{s.market_id}</td>
+                      <td className="px-6 py-4">
+                        <span className="font-mono text-xs text-[color:var(--accent-2)]">
+                          {s.model_key}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 font-mono text-xs text-zinc-400">{fmt(s.created_at)}</td>
+                    </tr>
+                  );
+                })}
+                </tbody>
             </table>
           )}
         </div>

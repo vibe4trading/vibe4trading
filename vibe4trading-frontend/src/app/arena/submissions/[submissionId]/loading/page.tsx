@@ -1,10 +1,9 @@
-"use client";
-
 import * as React from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useNavigate } from "react-router-dom";
 
 import { SubmissionLoadingScreen } from "@/app/components/SubmissionLoadingScreen";
 import { useRealtimeRefresh } from "@/app/lib/realtime";
+import { getSubmissionStatusDisplay } from "@/app/lib/submissionStatus";
 import {
   clearSubmissionLoadingSnapshot,
   readSubmissionLoadingSnapshot,
@@ -25,9 +24,8 @@ function isTerminalStatus(status: string | null | undefined) {
 }
 
 export default function SubmissionLoadingPage() {
-  const params = useParams<{ submissionId: string }>();
-  const router = useRouter();
-  const submissionId = params.submissionId;
+  const submissionId = useParams<{ submissionId: string }>().submissionId ?? "";
+  const navigate = useNavigate();
 
   const [data, setData] = React.useState<ArenaSubmissionDetailOut | null>(null);
   const [snapshot, setSnapshot] = React.useState<SubmissionLoadingSnapshot | null>(null);
@@ -37,8 +35,8 @@ export default function SubmissionLoadingPage() {
 
   const viewReport = React.useCallback(() => {
     clearSubmissionLoadingSnapshot(submissionId);
-    router.replace(`/arena/submissions/${submissionId}`);
-  }, [router, submissionId]);
+    navigate(`/arena/submissions/${submissionId}`, { replace: true });
+  }, [navigate, submissionId]);
 
   const refresh = React.useCallback(async () => {
     try {
@@ -80,13 +78,17 @@ export default function SubmissionLoadingPage() {
     return () => window.clearTimeout(timeoutId);
   }, [reportReady, viewReport]);
 
-  const totalLlmCalls = data ? 7 * 24 * data.windows_total : 0;
+  const totalLlmCalls = data ? 7 * 6 * data.windows_total : 0;
   const progressPercent =
     data && totalLlmCalls > 0
       ? Math.min((data.llm_calls_completed / totalLlmCalls) * 100, 100)
       : initialLoading
         ? 5
         : 0;
+  const statusDisplay = getSubmissionStatusDisplay({
+    status: data?.status ?? (initialLoading ? "submitted" : null),
+    startedAt: data?.started_at,
+  });
 
   if (error && !data && !initialLoading) {
     return (
@@ -129,7 +131,10 @@ export default function SubmissionLoadingPage() {
         "Prompt locked in. Running the strategy through the historical window set before we reveal the verdict."
       }
       progressPercent={progressPercent}
-      status={data?.status ?? (initialLoading ? "submitted" : null)}
+      status={statusDisplay.label}
+      statusHeadline={statusDisplay.headline}
+      statusDetail={statusDisplay.detail}
+      isQueued={statusDisplay.isQueued}
       windowsCompleted={data?.windows_completed ?? 0}
       windowsTotal={data?.windows_total ?? 0}
       isTerminal={isTerminal}

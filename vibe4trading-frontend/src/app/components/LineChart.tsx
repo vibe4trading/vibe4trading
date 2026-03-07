@@ -1,5 +1,3 @@
-"use client";
-
 import * as React from "react";
 
 type Point = {
@@ -20,6 +18,7 @@ export function LineChart({
   strokeTo = "rgba(249,115,22,0.85)",
   markers,
   variant = "dark",
+  showBaseline = true,
 }: {
   points: Point[];
   height?: number;
@@ -29,6 +28,7 @@ export function LineChart({
   strokeTo?: string;
   markers?: { index: number; color?: string; label?: string }[];
   variant?: "dark" | "light";
+  showBaseline?: boolean;
 }) {
   const id = React.useId();
   const safeId = id.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -42,6 +42,39 @@ export function LineChart({
   const minY = ys.length > 0 ? Math.min(...ys) : 0;
   const maxY = ys.length > 0 ? Math.max(...ys) : 1;
   const spanY = Math.max(1e-9, maxY - minY);
+
+  /* ── padded Y range (8% breathing room) ── */
+  const paddedMin = minY - spanY * 0.08;
+  const paddedMax = maxY + spanY * 0.08;
+  const paddedSpan = Math.max(1e-9, paddedMax - paddedMin);
+  const rightPad = 56;
+
+  /* ── flat-data detection ── */
+  const meanY =
+    ys.length > 0 ? ys.reduce((a, b) => a + b, 0) / ys.length : 0;
+  const isFlat =
+    ys.length > 0 &&
+    Math.abs(meanY) > 1e-12 &&
+    spanY < 0.001 * Math.abs(meanY);
+  const yDecimals = isFlat
+    ? Math.min(
+        6,
+        Math.max(
+          4,
+          Math.ceil(-Math.log10(spanY / Math.abs(meanY))) + 2,
+        ),
+      )
+    : 2;
+  const formatYVal = (v: number) => v.toFixed(yDecimals);
+
+  /* ── percentage helpers ── */
+  const firstY = points.length > 0 ? points[0].y : 0;
+  const pctAt = (v: number) =>
+    firstY !== 0 ? ((v - firstY) / firstY) * 100 : 0;
+  const formatPct = (v: number) =>
+    `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+  const midY = (minY + maxY) / 2;
+
   const isLight = variant === "light";
   const cardClass = isLight
     ? "w-full overflow-hidden border-2 border-[var(--line)] bg-[#fbfbf8] shadow-[6px_6px_0_rgba(0,0,0,0.08)]"
@@ -59,13 +92,13 @@ export function LineChart({
   const toX = React.useCallback((i: number) => {
     if (points.length <= 1) return padding;
     const t = i / (points.length - 1);
-    return padding + t * (width - padding * 2);
-  }, [points.length, padding, width]);
+    return padding + t * (width - padding - rightPad);
+  }, [points.length, padding, rightPad, width]);
 
   const toY = React.useCallback((y: number) => {
-    const t = (y - minY) / spanY;
+    const t = (y - paddedMin) / paddedSpan;
     return padding + (1 - t) * (height - padding * 2);
-  }, [minY, spanY, padding, height]);
+  }, [paddedMin, paddedSpan, padding, height]);
 
   const d = React.useMemo(() => points
     .map((p, i) => {
@@ -132,7 +165,7 @@ export function LineChart({
               <line
                 key={t}
                 x1={padding}
-                x2={width - padding}
+                x2={width - rightPad}
                 y1={y}
                 y2={y}
                 stroke={gridStroke}
@@ -182,6 +215,28 @@ export function LineChart({
                       );
                     })
                 : null}
+              {showBaseline && points.length > 1 && (
+                <g>
+                  <line
+                    x1={padding}
+                    x2={width - rightPad}
+                    y1={toY(firstY)}
+                    y2={toY(firstY)}
+                    stroke={isLight ? "rgba(0,0,0,0.18)" : "rgba(255,255,255,0.15)"}
+                    strokeWidth={1}
+                    strokeDasharray="5 4"
+                  />
+                  <text
+                    x={width - rightPad + 4}
+                    y={toY(firstY) + 3}
+                    fill={isLight ? "rgba(0,0,0,0.32)" : "rgba(255,255,255,0.28)"}
+                    fontSize={9}
+                    fontStyle="italic"
+                  >
+                    start {formatYVal(firstY)}
+                  </text>
+                </g>
+              )}
               <path d={fillD} fill={`url(#${fillGradId})`} />
               <path
                 d={d}
@@ -206,26 +261,78 @@ export function LineChart({
             </text>
           )}
 
-          {/* clamped bounds to avoid text overlap */}
           {points.length > 0 ? (
-            <text
-              x={padding}
-              y={clamp(toY(maxY) - 6, 12, height - 6)}
-              fill={axisLabelFill}
-              fontSize={11}
-            >
-              {maxY.toFixed(2)}
-            </text>
-          ) : null}
-          {points.length > 0 ? (
-            <text
-              x={padding}
-              y={clamp(toY(minY) + 14, 12, height - 6)}
-              fill={axisLabelFill}
-              fontSize={11}
-            >
-              {minY.toFixed(2)}
-            </text>
+            <>
+              <text
+                x={padding}
+                y={clamp(toY(maxY) - 6, 12, height - 6)}
+                fill={axisLabelFill}
+                fontSize={10}
+              >
+                {formatYVal(maxY)}
+              </text>
+              <text
+                x={width - 4}
+                y={clamp(toY(maxY) - 6, 12, height - 6)}
+                fill={axisLabelFill}
+                fontSize={9.5}
+                textAnchor="end"
+                fontFamily="monospace"
+              >
+                {formatPct(pctAt(maxY))}
+              </text>
+
+              <text
+                x={padding}
+                y={clamp(toY(midY) + 4, 12, height - 6)}
+                fill={axisLabelFill}
+                fontSize={10}
+              >
+                {formatYVal(midY)}
+              </text>
+              <text
+                x={width - 4}
+                y={clamp(toY(midY) + 4, 12, height - 6)}
+                fill={axisLabelFill}
+                fontSize={9.5}
+                textAnchor="end"
+                fontFamily="monospace"
+              >
+                {formatPct(pctAt(midY))}
+              </text>
+
+              <text
+                x={padding}
+                y={clamp(toY(minY) + 14, 12, height - 6)}
+                fill={axisLabelFill}
+                fontSize={10}
+              >
+                {formatYVal(minY)}
+              </text>
+              <text
+                x={width - 4}
+                y={clamp(toY(minY) + 14, 12, height - 6)}
+                fill={axisLabelFill}
+                fontSize={9.5}
+                textAnchor="end"
+                fontFamily="monospace"
+              >
+                {formatPct(pctAt(minY))}
+              </text>
+
+              {isFlat && (
+                <text
+                  x={(padding + width - rightPad) / 2}
+                  y={height / 2 + 24}
+                  fill={isLight ? "rgba(0,0,0,0.22)" : "rgba(255,255,255,0.18)"}
+                  fontSize={10}
+                  textAnchor="middle"
+                  fontStyle="italic"
+                >
+                  &lt; 0.1% range
+                </text>
+              )}
+            </>
           ) : null}
         </svg>
 

@@ -26,7 +26,6 @@ from v4t.contracts.payloads import (
 from v4t.contracts.run_config import LiveConfig, RunMode
 from v4t.db.event_store import append_event
 from v4t.db.models import EventRow
-from v4t.ingest.dexscreener import resolve_spot_market
 from v4t.llm.gateway import LlmGateway, StubDecisionFeatures
 from v4t.orchestrator.prompt_builder import render_user_prompt
 from v4t.orchestrator.run_base import (
@@ -39,6 +38,7 @@ from v4t.orchestrator.run_base import (
     get_system_prompt,
     load_run_and_config,
     mark_run_cancelled,
+    mark_run_finished,
     mark_run_started,
     select_usable_bars,
     validate_decision,
@@ -89,7 +89,7 @@ class _OhlcvBarBuilder:
             self.bar_end = new_end
         elif new_start != self.bar_start:
             # Roll: close previous bar (if it has data).
-            if self.bar_start is not None and self.bar_end is not None and self.c is not None:
+            if self.c is not None:
                 closed = MarketOHLCVPayload(
                     market_id=self.market_id,
                     timeframe=self.timeframe,
@@ -126,41 +126,27 @@ def _fetch_live_price(
     market_id: str,
     rng: random.Random,
     demo_price: Decimal | None,
-) -> tuple[Decimal, dict, Decimal | None]:
-    if cfg.source == "demo":
-        step_bp = rng.randint(-int(cfg.step_bps), int(cfg.step_bps))
-        drift_bp = int(cfg.drift_bps)
-        # price_{t+1} = price_t * (1 + (drift+step)/10000)
-        price = demo_price if demo_price is not None else Decimal(str(cfg.base_price))
-        price = (price * Decimal(10000 + drift_bp + step_bp)) / Decimal(10000)
-        if price <= 0:
-            price = Decimal(str(cfg.base_price))
-        price_q = price.quantize(Decimal("0.000001"))
-        return (
-            price_q,
-            {
-                "source": "demo",
-                "step_bp": step_bp,
-                "drift_bp": drift_bp,
-                "market_id": market_id,
-            },
-            price_q,
-        )
+) -> tuple[Decimal, dict[str, str | int], Decimal]:
+    if cfg.source != "demo":
+        raise ValueError(f"Unknown live.source={cfg.source}")
 
-    if cfg.source == "dexscreener":
-        if not cfg.chain_id or not cfg.pair_id:
-            raise ValueError("live.source=dexscreener requires live.chain_id and live.pair_id")
-        resolved = resolve_spot_market(chain_id=cfg.chain_id, pair_id=cfg.pair_id)
-        return (
-            resolved.base_price,
-            {
-                "source": "dexscreener",
-                "resolved_market_id": resolved.market_id,
-            },
-            demo_price,
-        )
-
-    raise ValueError(f"Unknown live.source={cfg.source}")
+    step_bp = rng.randint(-int(cfg.step_bps), int(cfg.step_bps))
+    drift_bp = int(cfg.drift_bps)
+    price = demo_price if demo_price is not None else Decimal(str(cfg.base_price))
+    price = (price * Decimal(10000 + drift_bp + step_bp)) / Decimal(10000)
+    if price <= 0:
+        price = Decimal(str(cfg.base_price))
+    price_q = price.quantize(Decimal("0.000001"))
+    return (
+        price_q,
+        {
+            "source": "demo",
+            "step_bp": step_bp,
+            "drift_bp": drift_bp,
+            "market_id": market_id,
+        },
+        price_q,
+    )
 
 
 def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = None) -> None:
@@ -191,7 +177,7 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
     last_target = Decimal("0")
     last_mode = PositionMode.spot
     last_leverage = 1
-    memory: list[dict] = []
+    memory: list[dict[str, object]] = []
 
     # Live state caches.
     latest_price: tuple[datetime, Decimal] | None = None
@@ -399,8 +385,9 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
                     try:
                         session.commit()
                     except Exception:
-                        _logger.error("streaming_commit_failed", run_id=str(run_id), exc_info=True)
+                        _logger.exception("streaming_commit_failed run_id=%s", str(run_id))
                         session.rollback()
+                        raise RuntimeError("streaming commit failed") from None
                     last_commit = now_perf
 
             call = gateway.call_decision_streaming(
@@ -551,7 +538,22 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
 
             tick_count += 1
             if max_ticks is not None and tick_count >= max_ticks:
-                mark_run_cancelled(session, run=run)
+                start_equity = Decimal(str(cfg.execution.initial_equity_quote))
+                end_equity = sim.equity_quote(price=price)
+                return_pct = (
+                    ((end_equity / start_equity) - 1) * Decimal("100")
+                    if start_equity != 0
+                    else Decimal("0")
+                )
+                mark_run_finished(
+                    session,
+                    run=run,
+                    run_id=run_id,
+                    source="orchestrator.live",
+                    return_pct=return_pct,
+                    summary_call_id=None,
+                    summary_text=None,
+                )
                 return
     finally:
         sim.close()

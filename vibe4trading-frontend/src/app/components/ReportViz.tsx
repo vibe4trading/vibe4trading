@@ -39,9 +39,9 @@ export function ReportViz({
         <section className="viz-grid">
             <article className="block chart-card">
                 <header>
-                    <h2>10时间段收益率对比 / Return Bars</h2>
+                    <h2>10-Window Return Bars</h2>
                     <span>
-                        模型: {run?.model_key || "GPT-5.1"} ｜ 虚拟币: {run?.market_id || "BTC/USDT"} ｜ 报告模式: HISTORICAL ｜ Starting balance: 1000 USDT
+                        Model: {run?.model_key || "GPT-5.1"} | Pair: {run?.market_id || "BTC/USDT"} | Mode: HISTORICAL | Starting balance: 1000 USDT
                     </span>
                 </header>
                 <svg
@@ -106,8 +106,8 @@ export function ReportViz({
 
             <article className="block chart-card">
                 <header>
-                    <h2>能力雷达 / Radar</h2>
-                    <span>6 维能力六边形</span>
+                    <h2>Capability Radar</h2>
+                    <span>6-Dimension Hexagon</span>
                 </header>
                 <svg viewBox="0 0 320 220" className="radar-chart" aria-label="radar">
                     <polygon
@@ -127,12 +127,12 @@ export function ReportViz({
                     <line x1="248" y1="78" x2="72" y2="162" stroke="#777" />
                 </svg>
                 <div className="radar-legend">
-                    <span>趋势捕捉 86</span>
-                    <span>风控纪律 58</span>
-                    <span>择时能力 72</span>
-                    <span>回撤控制 54</span>
-                    <span>稳定性 68</span>
-                    <span>决策清晰度 80</span>
+                    <span>Trend Capture 86</span>
+                    <span>Risk Discipline 58</span>
+                    <span>Timing 72</span>
+                    <span>Drawdown Control 54</span>
+                    <span>Consistency 68</span>
+                    <span>Decision Clarity 80</span>
                 </div>
             </article>
         </section>

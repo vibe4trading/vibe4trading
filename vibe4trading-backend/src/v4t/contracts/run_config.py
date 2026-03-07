@@ -30,7 +30,7 @@ class ModelConfig(BaseModel):
     key: str
     label: str | None = None
     temperature: float = 0.0
-    max_output_tokens: int = 800
+    max_output_tokens: int = 3000
 
 
 class DatasetRefs(BaseModel):
@@ -51,8 +51,10 @@ class ReplayConfig(BaseModel):
 class SchedulerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    base_interval_seconds: int = 3600
+    base_interval_seconds: int = 14400
     price_tick_seconds: int = 60
+    min_interval_seconds: int = 60
+    early_check_alignment: str | None = None
 
 
 class DecisionConfig(BaseModel):
@@ -116,17 +118,12 @@ class SummaryConfig(BaseModel):
 class LiveConfig(BaseModel):
     """Live ingestion settings.
 
-    MVP keeps this intentionally small: either a deterministic demo stream or a
-    DexScreener polled spot price stream.
+    MVP keeps this intentionally small: a deterministic demo stream.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    source: Literal["demo", "dexscreener"] = "demo"
-
-    # DexScreener params (required when source="dexscreener").
-    chain_id: str | None = None
-    pair_id: str | None = None
+    source: Literal["demo"] = "demo"
 
     # Demo params (used when source="demo").
     base_price: float = 1.0

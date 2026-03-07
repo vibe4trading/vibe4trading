@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import * as React from "react";
 
 import { PromptInput } from "@/app/components/PromptInput";
@@ -51,8 +49,8 @@ export default function RunsPage() {
   const [modelKey, setModelKey] = React.useState("");
   const [promptText, setPromptText] = React.useState("");
 
-  const marketDatasetId = process.env.NEXT_PUBLIC_V4T_MARKET_DATASET_ID ?? "";
-  const sentimentDatasetId = process.env.NEXT_PUBLIC_V4T_SENTIMENT_DATASET_ID ?? "";
+  const marketDatasetId = import.meta.env.VITE_V4T_MARKET_DATASET_ID ?? "";
+  const sentimentDatasetId = import.meta.env.VITE_V4T_SENTIMENT_DATASET_ID ?? "";
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -129,7 +127,7 @@ export default function RunsPage() {
 
     if (!marketDatasetId || !sentimentDatasetId) {
       setError(
-        "Dataset IDs are not configured. Set NEXT_PUBLIC_V4T_MARKET_DATASET_ID and NEXT_PUBLIC_V4T_SENTIMENT_DATASET_ID.",
+        "Dataset IDs are not configured. Set VITE_V4T_MARKET_DATASET_ID and VITE_V4T_SENTIMENT_DATASET_ID.",
       );
       return;
     }
@@ -237,8 +235,8 @@ export default function RunsPage() {
 
           <div className="md:col-span-2 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-zinc-300">
             Datasets are injected via the API for MVP. Configure dataset IDs via
-            <span className="font-mono text-xs text-white"> NEXT_PUBLIC_V4T_MARKET_DATASET_ID</span> and
-            <span className="font-mono text-xs text-white"> NEXT_PUBLIC_V4T_SENTIMENT_DATASET_ID</span>.
+            <span className="font-mono text-xs text-white"> VITE_V4T_MARKET_DATASET_ID</span> and
+            <span className="font-mono text-xs text-white"> VITE_V4T_SENTIMENT_DATASET_ID</span>.
           </div>
 
           <div className="md:col-span-2">
@@ -267,7 +265,7 @@ export default function RunsPage() {
               <div>
                 <div className="flex items-center gap-3">
                   <Link
-                    href={`/runs/${r.run_id}`}
+                    to={`/runs/${r.run_id}`}
                     className="font-display text-xl tracking-tight text-white hover:text-[color:var(--accent)] transition-colors"
                   >
                     {r.market_id}
@@ -302,7 +300,7 @@ export default function RunsPage() {
 
               <div className="flex items-center gap-3">
                 <Link
-                  href={`/runs/${r.run_id}`}
+                  to={`/runs/${r.run_id}`}
                   className="rounded-full border border-white/20 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/10 hover:shadow-[0_0_15px_rgba(255,255,255,0.1)]"
                 >
                   Open

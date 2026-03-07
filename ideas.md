@@ -79,12 +79,12 @@ Non-goals (MVP):
 ### Data & Markets
 | Decision | Choice | Notes |
 |----------|--------|-------|
-| Market data source | DexScreener | DEX aggregator, Solana tokens primarily. Spot-only for MVP. |
+| Market data source | Demo / Freqtrade | Synthetic demo data or Freqtrade feather files. Spot-only for MVP. |
 | Trading universe | Fixed watchlist (10 markets) | Universe is defined as explicit `MarketRef`s (pool/contract ids) for deterministic replay, not LLM-discovered. MVP constraint: every run selects exactly 1 `market_id` from the pinned watchlist. |
 | Instruments | Spot only (MVP) | Spot provides long-only trading. Futures/perps support deferred to reduce MVP complexity. |
 | Chain focus | Solana primarily | Most meme/sentiment-driven tokens, best fit for LLM alpha |
 | Data source strategy | Vendor-only | Rely on vendor APIs; invest in caching/backoff and store enough history ourselves for replay. |
-| Source resolution | Single adapter per category | A run selects exactly one adapter per data category (e.g. market prices). For sentiment, that adapter may aggregate multiple feeds (X KOL list + RSS) but still emits one canonical stream. Avoids cross-vendor reconciliation complexity; compare vendors by running separate datasets. |
+| Source resolution | Single adapter per category | A run selects exactly one adapter per data category (e.g. market prices). For sentiment, that adapter may aggregate multiple feeds (X KOL list) but still emits one canonical stream. Avoids cross-vendor reconciliation complexity; compare vendors by running separate datasets. |
 | Canonical identity | AssetRef + MarketRef | Use `AssetRef` for cross-venue identity. Keep `TokenRef` for on-chain addresses. `MarketRef` binds venue+instrument id to (base, quote) assets. |
 | Vendor payload retention | Raw + normalized | Store raw vendor payloads alongside normalized canonical payloads for debugging and adapter evolution. For very large/list payloads, retain only an aggregated/top-X subset (configurable) to avoid unbounded growth. |
 | Historical importer | Required | Backfill a selected time window from vendor APIs into the event log so benchmarks can run on past periods. |
@@ -105,8 +105,8 @@ Non-goals (MVP):
 | Decision analysis fields | Rationale + confidence | Decision schema includes optional `rationale` string, `confidence` (0-1), and `key_signals` list for dashboard analysis. |
 | Exposure constraints | Gross/Net limits | Enforce gross leverage + net exposure caps across the whole portfolio; cash is implicit residual. |
 | Instrument constraints | Spot long-only | Spot exposures must be `>= 0` and `<= 1.0`. Violations => decision rejected (hold last targets). |
-| Scheduling | Fixed wall-clock cadence | Model is called on a fixed wall-clock base cadence (1 hour) for comparability/progress. No LLM-controlled tick scheduling. |
-| Default interval | 1 hour | Fixed base cadence. |
+| Scheduling | Fixed wall-clock cadence | Model is called on a fixed wall-clock base cadence (4 hours) for comparability/progress. No LLM-controlled tick scheduling. |
+| Default interval | 4 hours | Fixed base cadence. |
 | Budgeting | Track + throttle (MVP) | Track calls/tokens/cost per user/run; enforce concurrency + rate limits (no billing; avoid runaway leaderboard submissions). |
 | Backtesting | MQ historical playback | Backfill/ingest historical market events into the DB, then publish a chosen time window into RabbitMQ to mimic live ingestion (LLM is called live on historical snapshots). |
 | Prompt time masking | Prompt-only offset | Allow shifting timestamps shown to the model (and derived time features) by a user-defined offset to test memorization/leakage. Internal `observed_at`/`event_time` in the replay stream and outputs remain unshifted. |
@@ -158,7 +158,7 @@ Validation rules (v1):
 |----------|--------|-------|
 | Crawler architecture | Independent microservices | Each crawler (price, sentiment, on-chain) is its own service, communicates via RabbitMQ |
 | Exchange abstraction | CCXT-style unified API | Abstract base with `get_price()`, `get_ohlcv()`, `get_trades()`, `get_liquidity()`. Leverage CCXT for CEX if needed. |
-| Sentiment source | Scraper + per-item summarizer | Scrape a curated X/Twitter KOL list + RSS/news into `sentiment.item`. In data prepare (dataset import) and live ingestion, generate a 1:1 `sentiment.item_summary` per item (timestamped at the item time). |
+| Sentiment source | Scraper + per-item summarizer | Scrape a curated X/Twitter KOL list into `sentiment.item`. In data prepare (dataset import) and live ingestion, generate a 1:1 `sentiment.item_summary` per item (timestamped at the item time). |
 | Live sentiment refresh | Periodic | Sentiment is refreshed on each scheduled tick in live mode. |
 | Adapter packaging | In-repo modules | Keep adapters in the repo with explicit registration (no dynamic plugin loading). |
 
@@ -272,7 +272,7 @@ Market data:
 
 Sentiment (raw ingestion + per-item summaries):
 - `sentiment.item` — Raw scraped item (X post or news item), bounded payload (text/title/snippet + URL + timestamps + basic engagement).
-  - Dedupe key (suggested): `{source}:{external_id}` (e.g. `x:tweet:123`, `rss:url:<hash>`)
+  - Dedupe key (suggested): `{source}:{external_id}` (e.g. `x:tweet:123`)
 - `sentiment.item_summary` — Per-item summary/annotation (1:1 with `sentiment.item`). Each summary covers exactly one post/item (no merging across posts).
   - Payload (suggested): `{source, external_id, item_time, item_kind, summary_text, entities?, sentiment_score?, tags?, llm_call_id?}`
   - Dedupe key (suggested): `{source}:{external_id}`
@@ -365,7 +365,7 @@ Draft config shape:
     "max_concurrent_llm_requests": 1
   },
   "scheduler": {
-    "base_interval_seconds": 3600,
+    "base_interval_seconds": 14400,
     "price_tick_seconds": 60
   },
   "decision": {
@@ -540,7 +540,7 @@ class HistoricalMarketDataAdapter(MarketDataAdapter, Protocol):
 ```
 
 Adapter categories:
-- Market data adapters (DexScreener, etc.)
+- Market data adapters (Freqtrade, etc.)
 - Sentiment adapters
 
 ---
@@ -573,8 +573,8 @@ Adapter categories:
               │            │  ┌──┴──┐┌──┴──┐┌──┴──┐
               │            │  │Price ││Sent-││On-  │
               └────────────┘  │Crawl ││iment││Chain│
-                               │(Dex- ││(X/  ││(perps│
-                                │Scr.) ││RSS)   ││data)│
+                               │(demo)││(X/  ││(perps│
+                                │     ││twts) ││data)│
                                └─────┘└─────┘└─────┘
 ```
 
@@ -586,7 +586,7 @@ Adapter categories:
 - `replay` — Reads canonical events for selected dataset ids/time window and publishes them into `ex.replay` with deterministic ordering.
 - `importers` — Backfill per category (spot/perps/sentiment) producing dataset ids.
 - `live crawlers` — Continuous ingestion in live mode (always-on for Live Dashboard; replay runs do not require disabling live feeds).
-- `sentiment` — Scrapes X/RSS, emits `sentiment.item` + `sentiment.item_summary`, and handles on-demand refresh commands like `sentiment.fetch_now`.
+- `sentiment` — Scrapes X, emits `sentiment.item` + `sentiment.item_summary`, and handles on-demand refresh commands like `sentiment.fetch_now`.
 - `llm_gateway` — Provider routing, retries, rate limits, usage/cost accounting, and audit logging to `llm_calls` (returns `call_id` for event references); OpenAI-compatible facade.
 - `arena` (optional) — Expands leaderboard submissions into scenario-runs, aggregates return % + key metrics, and serves leaderboard views.
 
@@ -614,11 +614,11 @@ Adapter categories:
 
 ## Open Questions for Deep Research
 
-1. **DexScreener API limits** — Rate limits, historical data depth, WebSocket availability?
+1. **Historical data depth** — Rate limits, historical data depth, WebSocket availability for potential live data providers?
 2. **Hyperliquid historical data** — Mark/index history, funding rate history, rate limits, and how cleanly it supports backfill for replay. (dYdX is a follow-on adapter.)
 3. **RabbitMQ replay patterns** — Deterministic ordering + idempotency: what is the replay contract (exactly-once not guaranteed), and how do we avoid double-applying events?
 4. **Solana watchlist** — Which ~10 tokens/markets have the most sentiment-driven price action (and which specific pools/markets should be pinned as `MarketRef`s)? Need high volume + high social media correlation.
-5. **LLM cost estimation** — At 1h intervals, 10 tokens (watchlist size) and 1 model per run, what's the daily API cost per run/tournament submission? Context window considerations for market data.
+5. **LLM cost estimation** — At 4h intervals, 10 tokens (watchlist size) and 1 model per run, what's the daily API cost per run/tournament submission? Context window considerations for market data.
 6. **Simulation fidelity** — Slippage model for DEX trades (AMM curve)? How to simulate perps funding rates?
 7. **X/Twitter scraping** — Current state of anti-bot measures? Which KOLs move Solana token prices?
 8. **Hackathon sponsor frameworks** — Which sponsors have agent frameworks we should wrap our logic in? Check Discord for track prizes.
@@ -709,7 +709,7 @@ We reviewed `TraderAlice/OpenAlice` (local checkout: `/home/grider/build/OpenAli
 **Rationale**:
 - MVP complexity: Supporting both spot and perpetual futures adds significant complexity for adapters, simulation, and data alignment
 - Focus: Spot-only allows us to focus on the core LLM benchmarking platform without perps-specific concerns (funding rates, mark prices, liquidation)
-- DexScreener limitation: Our primary data source (DexScreener) is spot-only; Hyperliquid perps would require a separate adapter with different data semantics
+- Data source: Currently using demo/synthetic data and Freqtrade feather files; Hyperliquid perps would require a separate adapter with different data semantics
 - Simplification: Single data source eliminates cross-venue reconciliation, instrument-specific validation, and dual-path simulation logic
 
 **Changes**:

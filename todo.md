@@ -156,14 +156,13 @@ Goal: create datasets by pulling vendor history and writing canonical events dir
   - [x] API creates `datasets` row in `pending`
   - [x] enqueue `dataset_import` job
   - [x] worker runs import, writes canonical events (`dataset_id` scoped), updates dataset status to `ready`/`failed`
-- [x] Spot importer (MVP, DexScreener-seeded synthetic backfill) v1:
+- [x] Spot importer (MVP, synthetic backfill) v1:
   - [x] `market.price` at 1m cadence (synthetic; for fills + valuation)
   - [x] `market.ohlcv` at 1h timeframe (synthetic; for prompt context)
   - [x] dedupe key rules (stable, time-bucketed)
   - [x] set `observed_at = event_time` for backfilled events
-  - [ ] Real historical candle backfill (needs a provider with candles; DexScreener free API lacks it)
+  - [ ] Real historical candle backfill (needs a provider with candles)
 - [x] Sentiment importer v1:
-  - [x] RSS/news backfill for window
   - [x] allow empty dataset (still create dataset_id)
   - [x] write `sentiment.item`
   - [x] generate `sentiment.item_summary` 1:1 using internal LLM module (store `llm_call_id`)
@@ -195,7 +194,7 @@ Goal: consume replay/live events, build snapshots, call LLM, simulate, persist r
   - [x] only use OHLCV after close (`bar_end <= tick_time`)
   - [x] require fresh price for fill pricing (age <= 60s; configurable)
 - [x] Scheduler:
-  - [x] base cadence 1h (anchored, fixed interval)
+  - [x] base cadence 4h (anchored, fixed interval)
 - [x] Prompt builder:
   - [x] Mustache templates (no code execution)
   - [x] bounded market context + derived features
@@ -366,7 +365,6 @@ Crawler placeholder TODO:
 - [x] Repo scaffold + README (“not required for MVP”).
 - [ ] Define adapter interfaces that match `ideas.md` contracts:
   - [ ] `get_price`, `get_ohlcv`, optional perps endpoints
-- [ ] Add one minimal DexScreener adapter stub (no production hardening yet).
 - [ ] Add contract tests using recorded fixtures (so adapters stay deterministic).
 
 ---

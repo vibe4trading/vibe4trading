@@ -8,9 +8,22 @@ from uuid import UUID
 
 import pandas as pd
 
+import re
+
 from v4t.contracts.events import EventEnvelope, make_event
 from v4t.contracts.numbers import decimal_to_str
 from v4t.contracts.payloads import MarketOHLCVPayload, MarketPricePayload
+
+_TF_RE = re.compile(r"^(\d+)([mhd])$", re.IGNORECASE)
+_TF_UNITS = {"m": "minutes", "h": "hours", "d": "days"}
+
+
+def _parse_timeframe(tf: str) -> timedelta:
+    m = _TF_RE.match(tf.strip())
+    if not m:
+        return timedelta(hours=1)
+    value, unit = int(m.group(1)), m.group(2).lower()
+    return timedelta(**{_TF_UNITS[unit]: value})
 
 
 def _ensure_aware_utc(dt: datetime) -> datetime:
@@ -39,7 +52,7 @@ def generate_freqtrade_ohlcv_events(
     for _, row in df.iterrows():
         date_val = pd.Timestamp(row["date"]).to_pydatetime()  # type: ignore
         bar_start = _ensure_aware_utc(date_val)
-        bar_end = bar_start + timedelta(hours=1)
+        bar_end = bar_start + _parse_timeframe(timeframe)
 
         close = Decimal(str(row["close"]))
 

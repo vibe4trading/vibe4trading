@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     # Runtime behavior (not user-modifiable).
 
     replay_base_interval_seconds: int = Field(
-        default=3600,
+        default=14400,
         description="Replay: base interval for scheduler ticks (seconds).",
     )
     replay_price_tick_seconds: int = Field(
@@ -148,21 +148,36 @@ class Settings(BaseSettings):
         description="Max net exposure (best-effort cap).",
     )
 
-    # Vendors
-    dexscreener_base_url: str = "https://api.dexscreener.com"
-    dexscreener_timeout_seconds: float = 10.0
-    sentiment_rss_feeds: str | None = None
-
-    # RSS ingest hardening
-    sentiment_rss_timeout_seconds: float = 10.0
-    sentiment_rss_max_bytes: int = 1_000_000
-    sentiment_rss_allowed_schemes: str = "https,http"
-    sentiment_rss_allow_private_hosts: bool = False
-    sentiment_rss_allowed_hosts: str | None = None
-
     oidc_issuer: str = Field(default="", description="OIDC issuer URL")
     oidc_jwks_url: str = Field(default="", description="OIDC JWKS endpoint URL")
     oidc_audience: str = Field(default="", description="OIDC audience")
+    oidc_client_id: str = Field(
+        default="", description="OIDC client ID for authorization code flow"
+    )
+    oidc_client_secret: str = Field(default="", description="OIDC client secret")
+    oidc_scopes: str = Field(
+        default="openid email profile groups",
+        description="Space-separated OIDC scopes to request.",
+    )
+
+    frontend_url: str = Field(
+        default="http://localhost:5173",
+        description="Frontend base URL for redirects after login/logout.",
+    )
+
+    session_cookie_name: str = Field(
+        default="v4t_session",
+        description="Name of the httpOnly session cookie.",
+    )
+    session_cookie_secure: bool = Field(
+        default=False,
+        description="Set Secure flag on session cookie (True in production with HTTPS).",
+    )
+    session_cookie_domain: str | None = Field(
+        default=None,
+        description="Domain for the session cookie. None = current domain only.",
+    )
+
     daily_run_limit: int = Field(default=3, description="Daily run limit per user")
 
     bypass_auth: bool = Field(default=False, description="Bypass auth for non-production")
@@ -188,6 +203,15 @@ class Settings(BaseSettings):
             "Comma-separated UUIDs of pre-populated spot datasets used by Arena. "
             "When set, Arena runs ignore synthetic scenario datasets and instead use these "
             "datasets grouped by params.market_id, running across the 10 dataset windows."
+        ),
+    )
+
+    data_dir: str = Field(
+        default="",
+        description=(
+            "Base directory for dataset files (feather, tweets, etc.). "
+            "When set, relative feather_path values from the DB are resolved against this directory. "
+            "When empty, paths are used as-is from the database."
         ),
     )
 

@@ -179,9 +179,7 @@ Evidence:
 Supported input patterns include:
 
 - spot demo data
-- DexScreener-seeded synthetic spot data
 - Freqtrade feather files for historical OHLCV
-- RSS news feeds for sentiment
 - tweets-based sentiment datasets
 - empty sentiment datasets for controlled experiments
 
@@ -410,7 +408,7 @@ Evidence:
 1. User starts a live run through `/live/run`
 2. API creates a live-configured run and enqueues it on the `live` queue
 3. Dedicated live worker executes a long-running loop
-4. Price source comes from demo mode or DexScreener
+4. Price source comes from demo mode
 5. On scheduled ticks, the orchestrator builds prompt context and requests a decision
 6. Simulator updates state and snapshots
 7. Run continues until stop is requested
@@ -549,16 +547,12 @@ Evidence:
 ### Data vendors and integrations
 
 - OpenAI-compatible LLM providers
-- DexScreener
-- RSS feeds
 - Freqtrade-generated OHLCV data
 - tweets-based sentiment input
 
 Evidence:
 
 - `vibe4trading-backend/src/v4t/llm/gateway.py`
-- `vibe4trading-backend/src/v4t/ingest/dexscreener.py`
-- `vibe4trading-backend/src/v4t/ingest/rss.py`
 - `vibe4trading-backend/src/v4t/ingest/freqtrade.py`
 - `vibe4trading-backend/src/v4t/ingest/tweets.py`
 
@@ -589,8 +583,7 @@ If you are generating an architecture diagram, the main boxes should be:
 8. Celery Live Worker
 9. Celery Beat
 10. LLM Provider Gateway
-11. DexScreener
-12. RSS / Tweets / Freqtrade data sources
+11. Freqtrade / Tweets data sources
 
 Key arrows:
 
@@ -600,8 +593,7 @@ Key arrows:
 - FastAPI -> Redis/Celery dispatch
 - Celery workers -> Postgres
 - workers -> LLM provider
-- live worker -> DexScreener
-- ingestion -> Freqtrade files / RSS / tweets
+- ingestion -> Freqtrade files / tweets
 - frontend realtime views <- FastAPI via WebSocket/SSE/polling
 
 ## Pitch narrative

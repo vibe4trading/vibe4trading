@@ -250,6 +250,7 @@ def execute_job_or_raise(job_id: UUID, *, celery_task_id: str | None = None) -> 
                 error=repr(exc),
             )
             session.rollback()
+            original_exc = exc
 
             # Update job + parents in a fresh transaction.
             try:
@@ -344,9 +345,15 @@ def execute_job_or_raise(job_id: UUID, *, celery_task_id: str | None = None) -> 
                     max_retries=max_retries,
                     exc=exc,
                 ) from exc
-            except SQLAlchemyError:
+            except SQLAlchemyError as db_exc:
+                _LOG.error(
+                    "job_recovery_db_error",
+                    job_id=str(job.job_id),
+                    original_error=repr(original_exc),
+                    db_error=repr(db_exc),
+                )
                 session.rollback()
-                raise
+                raise original_exc from db_exc
         finally:
             heartbeater.stop()
     finally:

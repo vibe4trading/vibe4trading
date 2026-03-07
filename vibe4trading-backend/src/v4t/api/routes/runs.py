@@ -32,7 +32,7 @@ from v4t.api.schemas import (
 )
 from v4t.api.utils import assert_model_selectable, now
 from v4t.auth.deps import get_current_user
-from v4t.auth.quota import claim_quota
+from v4t.auth.quota import check_quota, increment_quota
 from v4t.benchmark.spec import get_risk_profile
 from v4t.contracts.payloads import MarketPricePayload
 from v4t.contracts.run_config import (
@@ -129,7 +129,7 @@ def create_run(
             detail=f"market_id mismatch: run={req.market_id} market_dataset={market_dataset_market_id}",
         )
 
-    has_quota, runs_used, runs_limit = claim_quota(db, user.user_id)
+    has_quota, runs_used, runs_limit = check_quota(db, user.user_id)
     if not has_quota:
         raise HTTPException(
             status_code=429, detail=f"Daily quota exceeded: {runs_used}/{runs_limit} runs used"
@@ -239,12 +239,22 @@ def create_run(
             )
 
         db.commit()
+        increment_quota(db, user.user_id)
+        db.commit()
 
+        dispatch_failures = 0
         for job in jobs:
             try:
                 dispatch_and_update_job(db, job)
             except Exception as exc:
+                dispatch_failures += 1
                 logger.error("child_run_dispatch_failed", run_id=job.run_id, error=str(exc))
+
+        if dispatch_failures == len(jobs):
+            db.refresh(parent_run)
+            parent_run.status = "failed"
+            parent_run.error = "all child dispatches failed"
+            db.commit()
 
         return to_out(parent_run)
     else:
@@ -262,6 +272,8 @@ def create_run(
 
         job = enqueue_job(db, job_type=JOB_TYPE_RUN_EXECUTE_REPLAY, payload={}, run_id=run.run_id)
 
+        db.commit()
+        increment_quota(db, user.user_id)
         db.commit()
 
         try:
