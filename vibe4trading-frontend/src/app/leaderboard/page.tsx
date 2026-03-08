@@ -4,6 +4,7 @@ import {
     apiJson,
     LeaderboardEntryOut,
     ModelPublicOut,
+    ScenarioSetOut,
 } from "@/app/lib/v4t";
 
 function pct(v: number | null | undefined) {
@@ -31,6 +32,7 @@ export default function LeaderboardPage() {
     const [entries, setEntries] = React.useState<LeaderboardEntryOut[]>([]);
     const [models, setModels] = React.useState<ModelPublicOut[]>([]);
     const [markets, setMarkets] = React.useState<string[]>([]);
+    const [initialEquity, setInitialEquity] = React.useState<number | null>(null);
 
     const [modelFilter, setModelFilter] = React.useState<string>("ALL");
     const [marketFilter, setMarketFilter] = React.useState<string>("ALL");
@@ -46,10 +48,11 @@ export default function LeaderboardPage() {
         void Promise.allSettled([
             apiJson<ModelPublicOut[]>("/models"),
             apiJson<string[]>("/arena/markets"),
+            apiJson<ScenarioSetOut[]>("/arena/scenario_sets"),
         ]).then((results) => {
             if (cancelled) return;
 
-            const [modelsResult, marketsResult] = results;
+            const [modelsResult, marketsResult, scenarioResult] = results;
             const errors: string[] = [];
 
             if (modelsResult.status === "fulfilled") {
@@ -62,6 +65,10 @@ export default function LeaderboardPage() {
                 setMarkets(marketsResult.value);
             } else {
                 errors.push(marketsResult.reason instanceof Error ? marketsResult.reason.message : String(marketsResult.reason));
+            }
+
+            if (scenarioResult.status === "fulfilled" && scenarioResult.value.length > 0) {
+                setInitialEquity(scenarioResult.value[0].initial_equity_quote);
             }
 
             setFilterLoadError(errors.length > 0 ? errors.join(" ") : null);
@@ -199,7 +206,7 @@ export default function LeaderboardPage() {
                             <p>Top models sorted by PnL. Displays up to top 100 based on filters.</p>
                         </div>
                         <div className="lb-head-metrics">
-                            <span>START BALANCE: 10,000 USDT</span>
+                            <span>START BALANCE: {initialEquity != null ? `${initialEquity.toLocaleString()} USDT` : "–"}</span>
                             <span>ENTRIES: {entries.length}</span>
                             <span>UPDATED: Live</span>
                         </div>

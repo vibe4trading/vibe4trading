@@ -1,4 +1,5 @@
 import { Routes, Route, Link } from "react-router-dom";
+import { ErrorBoundary } from "@/app/components/ErrorBoundary";
 import { RouteWrapper } from "@/app/components/RouteWrapper";
 
 import HomePage from "@/app/page";
@@ -16,8 +17,9 @@ import PrivacyPage from "@/app/privacy/page";
 
 export default function App() {
   return (
-    <RouteWrapper>
-      <Routes>
+    <ErrorBoundary>
+      <RouteWrapper>
+        <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/arena" element={<ArenaPage />} />
         <Route path="/arena/submissions/:submissionId" element={<SubmissionDetailPage />} />
@@ -39,7 +41,8 @@ export default function App() {
             </Link>
           </main>
         } />
-      </Routes>
-    </RouteWrapper>
+        </Routes>
+      </RouteWrapper>
+    </ErrorBoundary>
   );
 }

@@ -33,6 +33,7 @@ export function NewRunProvider({ children }: { children: React.ReactNode }) {
   const [promptText, setPromptText] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     apiJson<string[]>("/arena/markets")
@@ -40,7 +41,7 @@ export function NewRunProvider({ children }: { children: React.ReactNode }) {
         setMarkets(rows);
         setMarketId((current) => current || rows[0] || "");
       })
-      .catch((e) => setSubmitError(e instanceof Error ? e.message : String(e)))
+      .catch((e) => setLoadError(e instanceof Error ? e.message : String(e)))
       .finally(() => setMarketsLoaded(true));
 
     apiJson<ModelPublicOut[]>("/models")
@@ -51,7 +52,7 @@ export function NewRunProvider({ children }: { children: React.ReactNode }) {
           return firstSelectableModelKey(rows);
         });
       })
-      .catch((e) => setSubmitError(e instanceof Error ? e.message : String(e)))
+      .catch((e) => setLoadError(e instanceof Error ? e.message : String(e)))
       .finally(() => setModelsLoaded(true));
   }, []);
 
@@ -121,6 +122,7 @@ export function NewRunProvider({ children }: { children: React.ReactNode }) {
         onSubmit={submitNewRun}
         submitting={submitting}
         submitError={submitError}
+        loadError={loadError}
       />
     </NewRunContext.Provider>
   );

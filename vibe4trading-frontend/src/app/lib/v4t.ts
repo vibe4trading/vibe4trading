@@ -94,34 +94,58 @@ export type AdminModelAccessUpdateRequest = {
 };
 
 export type RunConfigSnapshot = {
+  schema_version?: 1;
   mode: "replay" | "live";
   run_kind?: string;
   visibility?: string;
 
   market_id: string;
+  risk_level?: number | null;
+  holding_period?: string | null;
   model?: {
     key?: string;
     label?: string | null;
+    temperature?: number;
+    max_output_tokens?: number;
   };
   datasets?: {
     market_dataset_id?: string | null;
     sentiment_dataset_id?: string | null;
   };
 
+  live?: {
+    source?: string;
+    base_price?: number;
+    drift_bps?: number;
+    step_bps?: number;
+  };
+
   scheduler?: {
     base_interval_seconds?: number;
     price_tick_seconds?: number;
+    min_interval_seconds?: number;
+    early_check_alignment?: string | null;
   };
 
   replay?: {
+    advance_mode?: string;
+    max_concurrent_llm_requests?: number;
     pace_seconds_per_base_tick?: number;
+  };
+
+  decision?: {
+    missing_market_policy?: string;
   };
 
   prompt?: {
     prompt_text?: string;
+    system_prompt_override?: string | null;
     lookback_bars?: number;
     timeframe?: string;
     include?: string[];
+    masking?: {
+      time_offset_seconds?: number;
+    };
   };
 
   execution?: {
@@ -129,6 +153,12 @@ export type RunConfigSnapshot = {
     gross_leverage_cap?: number;
     net_exposure_cap?: number;
     initial_equity_quote?: number;
+    funding_rate_per_8h?: number;
+  };
+
+  summary?: {
+    prompt_key?: string;
+    model_key?: string | null;
   };
 };
 

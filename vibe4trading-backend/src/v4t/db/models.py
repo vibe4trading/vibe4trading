@@ -178,6 +178,7 @@ class RunRow(Base):
     )
 
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="pending")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
     stop_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

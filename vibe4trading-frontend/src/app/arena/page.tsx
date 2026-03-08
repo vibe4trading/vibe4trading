@@ -36,7 +36,6 @@ export default function ArenaPage() {
     setRefreshError(null);
     apiJson<ArenaSubmissionIndexOut>("/arena/submissions")
       .then((res) => {
-        setRefreshError(null);
         setSubs((current) => mergeSubmissions(current, res.items));
         setSubsCursor(res.next_cursor);
         setSubsHasMore(res.has_more);

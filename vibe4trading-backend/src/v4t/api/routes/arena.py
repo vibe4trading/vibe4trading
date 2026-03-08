@@ -449,6 +449,8 @@ def get_submission(submission_id: UUID, db: Session = Depends(get_db)) -> ArenaS
     row = db.get(ArenaSubmissionRow, submission_id)
     if row is None:
         raise HTTPException(status_code=404, detail="submission not found")
+    if row.visibility != "public":
+        raise HTTPException(status_code=404, detail="submission not found")
 
     run_rows = {
         r.run_id: r

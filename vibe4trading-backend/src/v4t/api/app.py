@@ -53,7 +53,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     allowed_origins = [settings.frontend_url.rstrip("/")]
     if "localhost" in settings.frontend_url or "127.0.0.1" in settings.frontend_url:
-        allowed_origins.append("http://localhost:3000")
+        allowed_origins.append("http://localhost:5173")
 
     app.add_middleware(
         CORSMiddleware,

@@ -40,6 +40,7 @@ from v4t.orchestrator.run_base import (
     get_system_prompt,
     load_run_and_config,
     mark_run_cancelled,
+    mark_run_failed,
     mark_run_finished,
     mark_run_started,
     select_usable_bars,
@@ -576,5 +577,33 @@ def execute_replay_run(
                 session.commit()
                 if finalize_submission_report and len(finished) == len(rows) and rows:
                     generate_submission_report(session, submission_id=link.submission_id)
+    except Exception as exc:
+        _logger.exception("replay_run_failed run_id=%s", str(run_id))
+        try:
+            session.rollback()
+            session.refresh(run)
+            mark_run_failed(
+                session,
+                run=run,
+                run_id=run_id,
+                source="orchestrator.replay",
+                error=str(exc),
+            )
+            if run.kind == "tournament":
+                link = (
+                    session.execute(
+                        select(ArenaSubmissionRunRow).where(ArenaSubmissionRunRow.run_id == run_id)
+                    )
+                    .scalars()
+                    .one_or_none()
+                )
+                if link is not None:
+                    link.status = "failed"
+                    link.error = str(exc)
+                    link.ended_at = now()
+                    link.updated_at = now()
+                    session.commit()
+        except Exception:
+            _logger.exception("replay_run_failed_cleanup_error run_id=%s", str(run_id))
     finally:
         sim.close()

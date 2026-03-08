@@ -63,9 +63,22 @@ def _ensure_indexes(engine: Engine) -> None:
             connection.execute(text(ddl))
 
 
+def _ensure_runs_error_column(engine: Engine) -> None:
+    with engine.begin() as connection:
+        try:
+            connection.execute(text("ALTER TABLE runs ADD COLUMN IF NOT EXISTS error TEXT"))
+            return
+        except (OperationalError, ProgrammingError):
+            inspector = inspect(connection)
+            run_columns = {column["name"] for column in inspector.get_columns("runs")}
+            if "error" not in run_columns:
+                connection.execute(text("ALTER TABLE runs ADD COLUMN error TEXT"))
+
+
 def init_db(engine: Engine) -> None:
     # MVP bootstrap: create tables if missing. Alembic can take over later.
     Base.metadata.create_all(bind=engine)
     _ensure_users_model_allowlist_override_column(engine)
     _ensure_llm_models_api_key_column(engine)
+    _ensure_runs_error_column(engine)
     _ensure_indexes(engine)

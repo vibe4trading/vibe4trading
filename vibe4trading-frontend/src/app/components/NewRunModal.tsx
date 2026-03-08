@@ -25,6 +25,7 @@ type NewRunModalProps = {
   onSubmit: () => void;
   submitting?: boolean;
   submitError?: string | null;
+  loadError?: string | null;
 };
 
 export function NewRunModal({
@@ -43,6 +44,7 @@ export function NewRunModal({
   onSubmit,
   submitting,
   submitError,
+  loadError,
 }: NewRunModalProps) {
   const [error, setError] = React.useState<string | null>(null);
   const firstFieldRef = React.useRef<HTMLSelectElement | null>(null);
@@ -144,6 +146,11 @@ export function NewRunModal({
 
         <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto px-6 py-6 md:px-8 md:py-7">
+            {loadError ? (
+              <div className="mb-5 border border-[#b58a3e] bg-[#f5efd7] px-4 py-3 text-[12px] uppercase tracking-[0.14em] text-[#7a5f1e]">
+                Failed to load configuration: {loadError}
+              </div>
+            ) : null}
             {error || submitError ? (
               <div className="mb-5 border border-[#ae4032] bg-[#f5dfd7] px-4 py-3 text-[12px] uppercase tracking-[0.14em] text-[#8f2d22]">
                 {error ?? submitError}

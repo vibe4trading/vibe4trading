@@ -32,7 +32,7 @@ from v4t.api.schemas import (
 )
 from v4t.api.utils import assert_model_selectable, now
 from v4t.auth.deps import get_current_user
-from v4t.auth.quota import check_quota, increment_quota
+from v4t.auth.quota import claim_quota
 from v4t.benchmark.spec import get_risk_profile
 from v4t.contracts.payloads import MarketPricePayload
 from v4t.contracts.run_config import (
@@ -129,7 +129,7 @@ def create_run(
             detail=f"market_id mismatch: run={req.market_id} market_dataset={market_dataset_market_id}",
         )
 
-    has_quota, runs_used, runs_limit = check_quota(db, user.user_id)
+    has_quota, runs_used, runs_limit = claim_quota(db, user.user_id)
     if not has_quota:
         raise HTTPException(
             status_code=429, detail=f"Daily quota exceeded: {runs_used}/{runs_limit} runs used"
@@ -239,8 +239,6 @@ def create_run(
             )
 
         db.commit()
-        increment_quota(db, user.user_id)
-        db.commit()
 
         dispatch_failures = 0
         for job in jobs:
@@ -272,8 +270,6 @@ def create_run(
 
         job = enqueue_job(db, job_type=JOB_TYPE_RUN_EXECUTE_REPLAY, payload={}, run_id=run.run_id)
 
-        db.commit()
-        increment_quota(db, user.user_id)
         db.commit()
 
         try:
@@ -505,20 +501,12 @@ def stream_run_events(
         nonlocal cursor_ts, cursor_event_id
 
         while True:
-            with new_session() as stream_db:
-                stmt = select(EventRow).where(
-                    EventRow.run_id == run_id, EventRow.event_type.in_(interest)
-                )
-                if cursor_ts is not None and cursor_event_id is not None:
-                    stmt = stmt.where(
-                        (EventRow.ingested_at > cursor_ts)
-                        | (
-                            (EventRow.ingested_at == cursor_ts)
-                            & (EventRow.event_id > UUID(cursor_event_id))
-                        )
-                    )
-                stmt = stmt.order_by(EventRow.ingested_at, EventRow.event_id).limit(500)
-                rows = list(stream_db.execute(stmt).scalars().all())
+            rows = _select_events(
+                run_id=run_id,
+                interest=interest,
+                cursor_ts=cursor_ts,
+                cursor_event_id=cursor_event_id,
+            )
 
             if rows:
                 idle_started = None
@@ -527,12 +515,7 @@ def stream_run_events(
                     cursor_event_id = str(r.event_id)
 
                     sse_id = f"{r.ingested_at.isoformat()}|{r.event_id}"
-
-                    event_name = r.event_type
-                    if event_name.startswith("llm.stream_"):
-                        event_name = event_name.replace("llm.stream_", "llm_")
-                    elif event_name == "portfolio.snapshot":
-                        event_name = "portfolio"
+                    event_name = _map_event_name(r.event_type)
 
                     if r.event_type in {"run.finished", "run.failed"}:
                         finished_seen = True

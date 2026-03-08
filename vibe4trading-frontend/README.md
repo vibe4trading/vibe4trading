@@ -16,6 +16,8 @@ Opens on [http://localhost:5173](http://localhost:5173).
 | --- | --- | --- |
 | `VITE_API_BASE_URL` | `http://localhost:8000` | Backend API base URL |
 | `VITE_V4T_WS_BASE_URL` | `ws://localhost:8000` | WebSocket base URL for realtime updates |
+| `VITE_V4T_MARKET_DATASET_ID` | (required) | Dataset ID for market data |
+| `VITE_V4T_SENTIMENT_DATASET_ID` | (required) | Dataset ID for sentiment data |
 
 ## Key Routes
 
