@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import * as React from "react";
 
 import { PromptInput } from "@/app/components/PromptInput";
+import { SEO } from "@/app/components/SEO";
 import { useRealtimeRefresh } from "@/app/lib/realtime";
 import { apiJson, ModelPublicOut, RunIndexOut, RunOut } from "@/app/lib/v4t";
 
@@ -164,6 +165,7 @@ export default function RunsPage() {
 
   return (
     <div className="flex flex-col gap-8 animate-rise">
+      <SEO title="My Runs" description="Your benchmark run history." noindex />
       <div className="flex items-end justify-between gap-4">
         <div>
           <p className="text-xs font-bold tracking-widest text-[color:var(--accent)]">

@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import * as React from "react";
+
+import { SEO } from "@/app/components/SEO";
 import {
     apiJson,
     LeaderboardEntryOut,
@@ -143,6 +145,11 @@ export default function LeaderboardPage() {
 
     return (
         <main className="leaderboard-page-main animate-rise">
+            <SEO
+                title="Leaderboard — Top AI Trading Strategies Ranked"
+                description="See which AI trading strategies perform best across crypto market scenarios. Ranked by total return, Sharpe ratio, max drawdown, and win rate."
+                canonicalPath="/leaderboard"
+            />
             {/* PAGE HEADER */}
             <section className="leaderboard-screen-head block">
                 <div className="lb-title-line">

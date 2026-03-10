@@ -1,6 +1,13 @@
+import { SEO } from "@/app/components/SEO";
+
 export default function PrivacyPage() {
   return (
     <main className="privacy-page-main">
+      <SEO
+        title="Privacy Policy — Vibe4Trading"
+        description="Vibe4Trading privacy policy. How we handle your data."
+        canonicalPath="/privacy"
+      />
       <section className="block privacy-card">
         <h1>PRIVACY POLICY</h1>
         <p className="privacy-updated">Last updated: March 6, 2026</p>

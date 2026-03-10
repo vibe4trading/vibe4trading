@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import * as React from "react";
 
+import { SEO } from "@/app/components/SEO";
 import { useAuth } from "@/auth";
 import { useNewRunModal } from "@/app/components/NewRunProvider";
 import { useRealtimeRefresh } from "@/app/lib/realtime";
@@ -129,6 +130,11 @@ export default function ArenaPage() {
 
   return (
     <main className="trials-page-main animate-rise">
+      <SEO
+        title="Strategy Arena — Submit & Benchmark AI Trading Strategies"
+        description="Submit your AI trading strategy and benchmark it across 10 real market scenarios. Get scored on returns, Sharpe ratio, drawdown, and more."
+        canonicalPath="/arena"
+      />
       <section className="trials-head block">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>

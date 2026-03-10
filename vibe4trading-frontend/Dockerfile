@@ -12,6 +12,9 @@ RUN pnpm run build
 
 FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
-RUN echo 'server { listen 3000; root /usr/share/nginx/html; location / { try_files $uri /index.html; } }' > /etc/nginx/conf.d/default.conf
+COPY nginx/default.conf /etc/nginx/templates/default.conf.template
+ENV PRERENDER_FRONTEND_URL=http://frontend:3000
+ENV V4T_API_BASE_URL=http://api:8000
+ENV NGINX_ENVSUBST_FILTER=PRERENDER_FRONTEND_URL|V4T_API_BASE_URL
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD wget -qO- http://localhost:3000/ || exit 1

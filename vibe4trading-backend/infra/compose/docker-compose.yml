@@ -118,5 +118,22 @@ services:
       "uv run celery -A v4t.worker.celery_app:celery_app beat --loglevel=info",
     ]
 
+  prerender:
+    image: prerender/prerender:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - PRERENDER_NUM_WORKERS=2
+      - PRERENDER_NUM_ITERATIONS=40
+      - PRERENDER_MEMORY_CACHE=0
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    mem_limit: 512m
+
 volumes:
   pg_data:

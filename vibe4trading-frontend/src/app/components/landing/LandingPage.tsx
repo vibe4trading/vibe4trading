@@ -1,5 +1,7 @@
+import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
 
+import { SEO } from "@/app/components/SEO";
 import { AsciiDitherAnimation } from "./AsciiDitherAnimation";
 import { Typewriter } from "./Typewriter";
 import { useScrollReveal } from "./useScrollReveal";
@@ -450,6 +452,35 @@ function FooterSection() {
 export function LandingPage() {
   return (
     <main className="relative h-[calc(100vh-76px)] overflow-y-auto scroll-smooth snap-y snap-mandatory">
+      <Helmet>
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Organization",
+          "name": "Vibe4Trading",
+          "url": "https://vibe4trading.ai",
+          "description": "AI crypto strategy benchmarking platform. Test if your AI trading strategy actually works.",
+          "foundingDate": "2025"
+        })}</script>
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "WebApplication",
+          "name": "Vibe4Trading",
+          "url": "https://vibe4trading.ai",
+          "applicationCategory": "FinanceApplication",
+          "operatingSystem": "Web",
+          "description": "Benchmark LLM-powered trading agents across 10 real crypto market scenarios. Compare performance on a public leaderboard.",
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+          }
+        })}</script>
+      </Helmet>
+      <SEO
+        title="Vibe4Trading — AI Crypto Strategy Benchmarking"
+        description="Test if your AI trading strategy actually works. Benchmark LLM agents across 10 real crypto market scenarios with fixed rules and data. Free."
+        canonicalPath="/"
+      />
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute inset-0 bg-[linear-gradient(180deg,#020304_0%,#05070b_52%,#020203_100%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(255,255,255,0.1),transparent_20%),radial-gradient(circle_at_78%_62%,rgba(255,255,255,0.08),transparent_18%),radial-gradient(circle_at_42%_78%,rgba(255,255,255,0.05),transparent_24%)]" />

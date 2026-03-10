@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /runs
+Disallow: /admin
+Disallow: /live
+
+Sitemap: https://vibe4trading.ai/sitemap.xml

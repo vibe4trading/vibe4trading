@@ -1,6 +1,13 @@
+import { SEO } from "@/app/components/SEO";
+
 export default function ContactPage() {
   return (
     <main className="contact-page-main">
+      <SEO
+        title="Contact — Vibe4Trading"
+        description="Get in touch with the Vibe4Trading team."
+        canonicalPath="/contact"
+      />
       <section className="block contact-card">
         <h1>CONTACT US</h1>
         <p>For partnerships, technical support, or product feedback, reach out through the channels below.</p>

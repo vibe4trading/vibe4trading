@@ -1,6 +1,9 @@
+import { SEO } from "@/app/components/SEO";
+
 export default function LivePage() {
   return (
     <main className="flex flex-col items-center justify-center min-h-[70vh] gap-6 select-none">
+      <SEO title="Live Mode" description="Real-time paper trading." noindex />
       <style>{`
         .scene {
           position: relative;

@@ -3,6 +3,7 @@ import * as React from "react";
 import { useParams } from "react-router-dom";
 
 import { CircularLoading } from "@/app/components/CircularLoading";
+import { SEO } from "@/app/components/SEO";
 import { LineChart } from "@/app/components/LineChart";
 import { useRealtimeRefresh } from "@/app/lib/realtime";
 import {
@@ -248,6 +249,7 @@ export default function RunDetailPage() {
 
   return (
     <main className="layout animate-rise">
+      <SEO title="Run Detail" description="Benchmark run results and analysis." noindex />
       <section className="left-column">
         <article className="hero-card block">
           <div className="hero-meta">

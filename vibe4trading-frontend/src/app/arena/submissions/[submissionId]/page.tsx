@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useParams } from "react-router-dom";
 import * as React from "react";
 
+import { SEO } from "@/app/components/SEO";
 import { useRealtimeRefresh } from "@/app/lib/realtime";
 import { storyCards } from "@/app/lib/report-data";
 import { getSubmissionStatusDisplay } from "@/app/lib/submissionStatus";
@@ -457,6 +458,7 @@ export default function SubmissionDetailPage() {
 
   return (
     <>
+      <SEO title="Submission Detail" description="Arena submission results." noindex />
       <main className="layout animate-rise">
         <section className="left-column">
           <article className="hero-card block" data-tour="submission-hero-card">

@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { SEO } from "@/app/components/SEO";
 import {
   AdminModelAccessIndexOut,
   AdminModelAccessUpdateRequest,
@@ -187,6 +188,7 @@ export default function AdminModelsPage() {
 
   return (
     <main className="trials-page-main">
+      <SEO title="Admin: Models" description="Model registry management." noindex />
       <section className="trials-head block">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>

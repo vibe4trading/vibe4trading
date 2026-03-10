@@ -3,6 +3,7 @@ import * as React from "react";
 import { useParams } from "react-router-dom";
 
 import { LineChart } from "@/app/components/LineChart";
+import { SEO } from "@/app/components/SEO";
 import {
   apiJson,
   getApiBaseUrl,
@@ -391,6 +392,7 @@ export default function RunWatchPage() {
 
   return (
     <div className="animate-rise flex flex-col gap-6">
+      <SEO title="Watch Run" description="Live run progress." noindex />
       {error ? (
         <div className="flex items-center justify-between gap-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm text-red-300">
           <span>{error}</span>

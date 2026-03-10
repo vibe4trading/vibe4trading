@@ -215,16 +215,17 @@ async function startWeb(opts: {
   marketDatasetId: string;
   sentimentDatasetId: string;
 }) {
+  const wsOrigin = opts.backendOrigin.replace(/^http/, "ws");
   const env = {
     ...process.env,
-    V4T_API_BASE_URL: opts.backendOrigin,
-    PORT: String(opts.port),
+    VITE_API_BASE_URL: opts.backendOrigin,
+    VITE_V4T_WS_BASE_URL: wsOrigin,
+    VITE_V4T_MARKET_DATASET_ID: opts.marketDatasetId,
+    VITE_V4T_SENTIMENT_DATASET_ID: opts.sentimentDatasetId,
     NODE_ENV: "test",
-    NEXT_PUBLIC_V4T_MARKET_DATASET_ID: opts.marketDatasetId,
-    NEXT_PUBLIC_V4T_SENTIMENT_DATASET_ID: opts.sentimentDatasetId,
   } satisfies NodeJS.ProcessEnv;
 
-  const child = spawn("pnpm", ["exec", "next", "dev", "--webpack", "-p", String(opts.port)], {
+  const child = spawn("pnpm", ["exec", "vite", "--port", String(opts.port), "--host", "127.0.0.1"], {
     cwd: opts.projectDir,
     env,
     stdio: "inherit",

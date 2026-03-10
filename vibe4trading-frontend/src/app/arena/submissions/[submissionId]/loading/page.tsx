@@ -9,6 +9,7 @@ import {
   readSubmissionLoadingSnapshot,
   SubmissionLoadingSnapshot,
 } from "@/app/lib/submissionLoading";
+import { SEO } from "@/app/components/SEO";
 import { apiJson, ArenaSubmissionDetailOut } from "@/app/lib/v4t";
 
 const TERMINAL_STATUSES = new Set(["finished", "failed", "cancelled"]);
@@ -122,6 +123,8 @@ export default function SubmissionLoadingPage() {
   }
 
   return (
+    <>
+    <SEO title="Processing" description="Submission in progress." noindex />
     <SubmissionLoadingScreen
       submissionId={submissionId}
       pairLabel={pairName(snapshot?.marketId ?? data?.market_id)}
@@ -142,5 +145,6 @@ export default function SubmissionLoadingPage() {
       onViewReport={viewReport}
       onReadyToNavigate={handleReadyToNavigate}
     />
+    </>
   );
 }
