@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { gotoPath } from "./ui-helpers";
+import { gotoPath, summonDemoArenaSubmission } from "./ui-helpers";
 
 /**
  * Interactive tour E2E tests.
@@ -147,6 +147,97 @@ test.describe("Interactive tours", () => {
     }
   });
 
+  test.describe("Submission Detail Tour", () => {
+    test("Submission Detail tour auto-triggers on first visit", async ({ page }) => {
+      // Create a finished submission using summonDemoArenaSubmission
+      const submissionId = await summonDemoArenaSubmission(page);
+
+      // We're already on the submission detail page after summonDemoArenaSubmission
+      // Clear the tour completion flag
+      await page.evaluate(() => {
+        const stored: string[] = JSON.parse(localStorage.getItem("v4t_tour_completed") || "[]");
+        localStorage.setItem(
+          "v4t_tour_completed",
+          JSON.stringify(stored.filter((id) => id !== "submission-detail-v1")),
+        );
+      });
+
+      // Reload to trigger auto-start
+      await page.reload();
+
+      // Wait for page data to load (tour waits for data)
+      await expect(page.locator('[data-tour="submission-hero-card"]')).toBeVisible({ timeout: 10_000 });
+
+      // Wait for Driver.js popover (600ms delay + render time)
+      const popover = page.locator(POPOVER);
+      await expect(popover).toBeVisible({ timeout: TOUR_APPEAR_TIMEOUT });
+
+      // Assert first step title
+      await expect(page.locator(TITLE)).toContainText("Trial Score");
+
+      // Click through all 6 steps
+      await page.locator(NEXT_BTN).click();
+      await expect(page.locator(TITLE)).toContainText("Key Metrics");
+
+      await page.locator(NEXT_BTN).click();
+      await expect(page.locator(TITLE)).toContainText("AI Report");
+
+      await page.locator(NEXT_BTN).click();
+      await expect(page.locator(TITLE)).toContainText("Window Returns");
+
+      await page.locator(NEXT_BTN).click();
+      await expect(page.locator(TITLE)).toContainText("Window Performance");
+
+      await page.locator(NEXT_BTN).click();
+      await expect(page.locator(TITLE)).toContainText("Inspect a Window");
+
+      // Last step: click "Done"
+      await page.locator(DONE_BTN).click();
+      await expect(popover).not.toBeVisible();
+    });
+
+    test("Submission Detail tour does NOT re-trigger on second visit", async ({ page }) => {
+      // After previous test, localStorage should contain "submission-detail-v1"
+      // Navigate to any submission detail page
+      const submissionId = await summonDemoArenaSubmission(page);
+
+      // Wait longer than auto-trigger delay
+      await page.waitForTimeout(1_500);
+
+      // Assert Driver.js popover does NOT appear
+      await expect(page.locator(POPOVER)).not.toBeVisible();
+    });
+
+    test("Submission Detail tour can be manually launched from TourButton", async ({ page }) => {
+      // Navigate to submission detail page
+      const submissionId = await summonDemoArenaSubmission(page);
+
+      // Wait for page to settle
+      await page.waitForTimeout(1_000);
+
+      // Click TourButton
+      const tourButton = page.locator('button[aria-haspopup="menu"]').filter({ hasText: "?" });
+      await tourButton.click();
+
+      // Click "Submission Report Tour" menu item
+      const submissionTourOption = page.locator('[role="menuitem"]').filter({ hasText: "Submission Report Tour" });
+      await submissionTourOption.click();
+
+      // Wait for tour to start
+      const popover = page.locator(POPOVER);
+      await expect(popover).toBeVisible({ timeout: TOUR_APPEAR_TIMEOUT });
+
+      // Assert first step
+      await expect(page.locator(TITLE)).toContainText("Trial Score");
+
+      // Dismiss tour
+      const closeBtn = page.locator(CLOSE_BTN);
+      if (await closeBtn.isVisible().catch(() => false)) {
+        await closeBtn.click();
+      }
+    });
+  });
+
   test("Tour navigation: next, prev, and done buttons work correctly", async ({ page }) => {
     // Use the trials tour (4 steps) to test full navigation
     await gotoPath(page, "/arena");
@@ -184,22 +275,23 @@ test.describe("Interactive tours", () => {
     await expect(popover).not.toBeVisible();
   });
 
-  test("TourButton opens dropdown with 3 tour options", async ({ page }) => {
+  test("TourButton opens dropdown with 4 tour options", async ({ page }) => {
     await gotoPath(page, "/arena");
 
     // Find and click the TourButton (the "?" help button)
     const tourButton = page.locator('button[aria-haspopup="menu"]').filter({ hasText: "?" });
     await tourButton.click();
 
-    // Assert dropdown menu is visible with 3 options
+    // Assert dropdown menu is visible with 4 options
     const menu = page.locator('[role="menu"]');
     await expect(menu).toBeVisible();
 
     const menuItems = menu.locator('[role="menuitem"]');
-    await expect(menuItems).toHaveCount(3);
+    await expect(menuItems).toHaveCount(4);
     await expect(menuItems.nth(0)).toContainText("Trials Tour");
     await expect(menuItems.nth(1)).toContainText("Leaderboard Tour");
     await expect(menuItems.nth(2)).toContainText("Arena Submission Tour");
+    await expect(menuItems.nth(3)).toContainText("Submission Report Tour");
   });
 
   test("TourButton can manually launch a tour", async ({ page }) => {

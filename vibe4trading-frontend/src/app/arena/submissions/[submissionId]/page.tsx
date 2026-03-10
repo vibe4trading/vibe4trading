@@ -11,6 +11,10 @@ import {
   ArenaScenarioRunOut,
   ArenaSubmissionDetailOut,
 } from "@/app/lib/v4t";
+import { useProductTour } from "@/app/hooks/useProductTour";
+import { useTourPersistence } from "@/app/hooks/useTourPersistence";
+import { useTourContext } from "@/app/components/TourProvider";
+import { submissionDetailSteps } from "@/app/tours/submission-detail-tour";
 
 function pairName(marketId: string | null | undefined) {
   if (!marketId) return "–";
@@ -332,6 +336,10 @@ export default function SubmissionDetailPage() {
   const [selectedCode, setSelectedCode] = React.useState<string | null>(null);
   const [highlightedCode, setHighlightedCode] = React.useState<string | null>(null);
 
+  const detailPersistence = useTourPersistence("submission-detail-v1");
+  const detailTour = useProductTour(submissionDetailSteps);
+  const { activeTour, stopTour } = useTourContext();
+
   const refresh = React.useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -357,6 +365,23 @@ export default function SubmissionDetailPage() {
     pollIntervalMs: 2500,
     refresh,
   });
+
+  React.useEffect(() => {
+    if (data && !detailPersistence.hasCompleted()) {
+      const timeoutId = window.setTimeout(() => {
+        detailTour.start();
+        detailPersistence.markCompleted();
+      }, 600);
+      return () => window.clearTimeout(timeoutId);
+    }
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  React.useEffect(() => {
+    if (activeTour === "submission-detail-v1") {
+      detailTour.start();
+      stopTour();
+    }
+  }, [activeTour]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const slots = React.useMemo<WindowSlot[]>(() => {
     const total = data?.windows_total ?? data?.runs.length ?? 0;
@@ -434,7 +459,7 @@ export default function SubmissionDetailPage() {
     <>
       <main className="layout animate-rise">
         <section className="left-column">
-          <article className="hero-card block">
+          <article className="hero-card block" data-tour="submission-hero-card">
             <div className="hero-meta">
               TRIAL REPORT / {data?.model_key ?? "LOADING"} / {pairName(data?.market_id)} / {fmt(data?.created_at)}
             </div>
@@ -486,7 +511,7 @@ export default function SubmissionDetailPage() {
             </section>
           ) : null}
 
-          <section className="metric-grid">
+          <section className="metric-grid" data-tour="submission-metric-grid">
             <article className="metric block">
               <h3>Total Return</h3>
               <p className={`value ${pctTone(data?.total_return_pct)}`}>{pct(data?.total_return_pct)}</p>
@@ -515,7 +540,7 @@ export default function SubmissionDetailPage() {
           </section>
 
           {report ? (
-            <>
+            <div data-tour="submission-report">
               {report.roast ? (
                 <section className="block" style={{ borderLeft: "4px solid var(--red, #d44)", paddingLeft: "16px" }}>
                   <div className="hero-meta">THE ROAST</div>
@@ -548,11 +573,11 @@ export default function SubmissionDetailPage() {
                   </ul>
                 </article>
               </section>
-            </>
+            </div>
           ) : null}
 
           <section className="viz-grid">
-            <article className="block chart-card">
+            <article className="block chart-card" data-tour="submission-returns-chart">
               <header>
                 <h2>Window Returns</h2>
                 <span>
@@ -678,7 +703,7 @@ export default function SubmissionDetailPage() {
         </section>
 
         <aside className="right-column">
-          <section className="heatlog-panel">
+          <section className="heatlog-panel" data-tour="submission-heatlog">
             <header className="heatlog-header">
               <div>WINDOW PERFORMANCE</div>
             </header>
@@ -702,6 +727,7 @@ export default function SubmissionDetailPage() {
                 <article
                   key={slot.code}
                   className={`heatlog-row ${isActive ? "is-active" : ""}`}
+                  data-tour={slot.index === 0 ? "submission-window-row" : undefined}
                   role="button"
                   tabIndex={0}
                   onClick={() => run ? setSelectedCode(slot.code) : null}

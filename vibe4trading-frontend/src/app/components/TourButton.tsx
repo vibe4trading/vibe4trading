@@ -5,6 +5,7 @@ const TOURS = [
   { id: "trials-v1", label: "Trials Tour" },
   { id: "leaderboard-v1", label: "Leaderboard Tour" },
   { id: "arena-submission-v1", label: "Arena Submission Tour" },
+  { id: "submission-detail-v1", label: "Submission Report Tour" },
 ] as const;
 
 interface TourButtonProps {
