@@ -3,6 +3,10 @@ import * as React from "react";
 import { PromptInput } from "@/app/components/PromptInput";
 import { useModalA11y } from "@/app/hooks/useModalA11y";
 import { ModelPublicOut } from "@/app/lib/v4t";
+import { useProductTour } from "@/app/hooks/useProductTour";
+import { useTourPersistence } from "@/app/hooks/useTourPersistence";
+import { useTourContext } from "@/app/components/TourProvider";
+import { arenaSubmissionSteps } from "@/app/tours/arena-submission-tour";
 
 function pairName(marketId: string) {
   const parts = marketId.split(":");
@@ -65,6 +69,27 @@ export function NewRunModal({
     if (!open) return;
     setError(null);
   }, [open, marketId, modelKey, promptText]);
+
+  const arenaPersistence = useTourPersistence("arena-submission-v1");
+  const arenaTour = useProductTour(arenaSubmissionSteps);
+  const { activeTour, stopTour } = useTourContext();
+
+  React.useEffect(() => {
+    if (open && !arenaPersistence.hasCompleted()) {
+      const timeoutId = window.setTimeout(() => {
+        arenaTour.start();
+        arenaPersistence.markCompleted();
+      }, 600);
+      return () => window.clearTimeout(timeoutId);
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  React.useEffect(() => {
+    if (activeTour === "arena-submission-v1") {
+      arenaTour.start();
+      stopTour();
+    }
+  }, [activeTour]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!open) return null;
 
@@ -159,7 +184,7 @@ export function NewRunModal({
 
             <div className="grid gap-5">
               <div className="grid gap-4 md:grid-cols-2">
-                <label className="grid gap-2">
+                <label className="grid gap-2" data-tour="arena-pair-selector">
                   <span className="text-[11px] uppercase tracking-[0.22em] text-[#585858]">Pair</span>
                   <div className="relative">
                     <select
@@ -190,7 +215,7 @@ export function NewRunModal({
                   </div>
                 </label>
 
-                <label className="grid gap-2">
+                <label className="grid gap-2" data-tour="arena-model-selector">
                   <span className="text-[11px] uppercase tracking-[0.22em] text-[#585858]">AI Model</span>
                   <div className="relative">
                     <select
@@ -258,6 +283,7 @@ export function NewRunModal({
                   type="submit"
                   disabled={Boolean(submitting) || !arenaConfigured || !selectableModelsConfigured}
                   className="border border-[#161616] bg-[#161616] px-6 py-3 text-[11px] uppercase tracking-[0.26em] text-[#f7f3eb] transition-colors hover:bg-[#303030] disabled:cursor-not-allowed disabled:opacity-60"
+                  data-tour="arena-submit-button"
                 >
                   {submitting ? "Starting..." : "Start Run ->"}
                 </button>

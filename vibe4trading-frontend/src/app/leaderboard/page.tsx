@@ -6,6 +6,10 @@ import {
     ModelPublicOut,
     ScenarioSetOut,
 } from "@/app/lib/v4t";
+import { useProductTour } from "@/app/hooks/useProductTour";
+import { useTourPersistence } from "@/app/hooks/useTourPersistence";
+import { useTourContext } from "@/app/components/TourProvider";
+import { leaderboardSteps } from "@/app/tours/leaderboard-tour";
 
 function pct(v: number | null | undefined) {
     if (v == null || Number.isNaN(v)) return "\u2013";
@@ -41,6 +45,27 @@ export default function LeaderboardPage() {
     const [refreshError, setRefreshError] = React.useState<string | null>(null);
     const [filterLoadError, setFilterLoadError] = React.useState<string | null>(null);
     const [selectedId, setSelectedId] = React.useState<string | null>(null);
+
+    const leaderboardPersistence = useTourPersistence("leaderboard-v1");
+    const leaderboardTour = useProductTour(leaderboardSteps);
+    const { activeTour, stopTour } = useTourContext();
+
+    React.useEffect(() => {
+        if (!leaderboardPersistence.hasCompleted()) {
+            const timeoutId = window.setTimeout(() => {
+                leaderboardTour.start();
+                leaderboardPersistence.markCompleted();
+            }, 500);
+            return () => window.clearTimeout(timeoutId);
+        }
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    React.useEffect(() => {
+        if (activeTour === "leaderboard-v1") {
+            leaderboardTour.start();
+            stopTour();
+        }
+    }, [activeTour]); // eslint-disable-line react-hooks/exhaustive-deps
 
     React.useEffect(() => {
         let cancelled = false;
@@ -132,7 +157,7 @@ export default function LeaderboardPage() {
                     Ranking based on composite PnL across historical events. Tiebreakers: Sharpe, then Max DD. Each filter shows up to Top 100.
                 </p>
 
-                <div className="lb-filter-grid">
+                <div className="lb-filter-grid" data-tour="leaderboard-filters">
                     <label>
                         Model
                         <select
@@ -171,7 +196,7 @@ export default function LeaderboardPage() {
             )}
 
             {/* KPI CARDS */}
-            <section className="lb-kpi-grid">
+            <section className="lb-kpi-grid" data-tour="leaderboard-kpi-cards">
                 <article className="lb-kpi-card">
                     <span>Filtered Results</span>
                     <strong>{entries.length}</strong>
@@ -212,7 +237,7 @@ export default function LeaderboardPage() {
                         </div>
                     </header>
 
-                    <div className="lb-scroll-shell">
+                    <div className="lb-scroll-shell" data-tour="leaderboard-table">
                         <div className="lb-row lb-row-head">
                             <span>RANK</span>
                             <span>MODEL</span>
@@ -251,7 +276,7 @@ export default function LeaderboardPage() {
                 </section>
 
                 {/* RIGHT: SIDE PANEL */}
-                <aside className="lb-side-panel block">
+                <aside className="lb-side-panel block" data-tour="leaderboard-side-panel">
                     {selected ? (
                         <>
                             <h3>Strategy Details</h3>

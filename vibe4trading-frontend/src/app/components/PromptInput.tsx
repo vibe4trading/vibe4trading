@@ -98,7 +98,7 @@ export function PromptInput({
 
   return (
     <div className="space-y-4">
-      <div className={isLight ? "flex gap-0 border border-[#2f2f2f]/30" : "flex gap-2"}>
+      <div className={isLight ? "flex gap-0 border border-[#2f2f2f]/30" : "flex gap-2"} data-tour="arena-prompt-mode">
         <button
           type="button"
           onClick={() => handleModeSwitch("noob")}
@@ -128,7 +128,7 @@ export function PromptInput({
       </div>
 
       {mode === "noob" ? (
-        <div className={`space-y-4 ${panelClass}`}>
+        <div className={`space-y-4 ${panelClass}`} data-tour="arena-beginner-dropdowns">
           <div className={isLight ? "grid gap-4 md:grid-cols-3" : "space-y-4"}>
             <div>
               <label className={labelClass}>Trading Style</label>

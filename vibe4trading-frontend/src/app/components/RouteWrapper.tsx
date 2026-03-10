@@ -3,6 +3,7 @@ import { useEffect } from "react";
 
 import { NewRunProvider } from "./NewRunProvider";
 import { SiteHeader } from "./SiteHeader";
+import { TourProvider } from "./TourProvider";
 
 export function RouteWrapper({ children }: { children: React.ReactNode }) {
     const { pathname } = useLocation();
@@ -20,11 +21,13 @@ export function RouteWrapper({ children }: { children: React.ReactNode }) {
     }, [isHome]);
 
     return (
-        <NewRunProvider>
-            <div className={isHome ? "home-canvas" : "canvas"}>
-                <SiteHeader isHome={isHome} />
-                {children}
-            </div>
-        </NewRunProvider>
+        <TourProvider>
+            <NewRunProvider>
+                <div className={isHome ? "home-canvas" : "canvas"}>
+                    <SiteHeader isHome={isHome} />
+                    {children}
+                </div>
+            </NewRunProvider>
+        </TourProvider>
     );
 }

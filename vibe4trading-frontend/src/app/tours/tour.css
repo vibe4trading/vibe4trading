@@ -1,0 +1,96 @@
+/* ============================================================
+   Driver.js — vibe4trading brutalist theme overrides
+   Flat, monospace, square-edged. No soft corners.
+   ============================================================ */
+
+/* ---- Overlay ---- */
+.driver-overlay {
+  background: rgba(10, 10, 10, 0.62) !important;
+}
+
+/* ---- Popover container ---- */
+.driver-popover {
+  font-family: "DotGothic16", monospace;
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-radius: 0;
+  color: var(--ink);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  max-width: 360px;
+  padding: 16px;
+}
+
+/* ---- Title ---- */
+.driver-popover-title {
+  font-family: "DotGothic16", monospace;
+  font-size: 20px;
+  letter-spacing: 0.4px;
+  color: var(--ink);
+}
+
+/* ---- Description ---- */
+.driver-popover-description {
+  font-family: "DotGothic16", monospace;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ---- Navigation buttons ---- */
+.driver-popover-navigation-btns {
+  gap: 6px;
+}
+
+.driver-popover-footer button {
+  font-family: "DotGothic16", monospace;
+  border: 2px solid var(--line);
+  border-radius: 0;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 14px;
+  padding: 6px 14px;
+  cursor: crosshair;
+  text-shadow: none;
+  transition: background-color 120ms ease;
+}
+
+.driver-popover-footer button:hover {
+  background: #dfe8ff;
+}
+
+/* ---- Close button ---- */
+.driver-popover-close-btn {
+  font-size: 16px;
+  color: var(--muted);
+  border: none;
+  background: none;
+}
+
+.driver-popover-close-btn:hover {
+  color: var(--ink);
+  background: none;
+}
+
+/* ---- Progress text ---- */
+.driver-popover-progress-text {
+  font-family: "DotGothic16", monospace;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ---- Arrow — match popover background per side ---- */
+.driver-popover-arrow-side-left.driver-popover-arrow {
+  border-left-color: var(--panel);
+}
+
+.driver-popover-arrow-side-right.driver-popover-arrow {
+  border-right-color: var(--panel);
+}
+
+.driver-popover-arrow-side-top.driver-popover-arrow {
+  border-top-color: var(--panel);
+}
+
+.driver-popover-arrow-side-bottom.driver-popover-arrow {
+  border-bottom-color: var(--panel);
+}

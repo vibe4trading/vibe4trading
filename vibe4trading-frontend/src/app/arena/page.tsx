@@ -6,6 +6,10 @@ import { useNewRunModal } from "@/app/components/NewRunProvider";
 import { useRealtimeRefresh } from "@/app/lib/realtime";
 import { getSubmissionStatusDisplay } from "@/app/lib/submissionStatus";
 import { apiJson, ArenaSubmissionIndexOut, ArenaSubmissionOut } from "@/app/lib/v4t";
+import { useProductTour } from "@/app/hooks/useProductTour";
+import { useTourPersistence } from "@/app/hooks/useTourPersistence";
+import { useTourContext } from "@/app/components/TourProvider";
+import { trialsSteps } from "@/app/tours/trials-tour";
 
 function mergeSubmissions(current: ArenaSubmissionOut[], fresh: ArenaSubmissionOut[]) {
   const freshIds = new Set(fresh.map((submission) => submission.submission_id));
@@ -35,6 +39,27 @@ export default function ArenaPage() {
   const [refreshError, setRefreshError] = React.useState<string | null>(null);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
+
+  const trialsPersistence = useTourPersistence("trials-v1");
+  const trialsTour = useProductTour(trialsSteps);
+  const { activeTour, stopTour } = useTourContext();
+
+  React.useEffect(() => {
+    if (!trialsPersistence.hasCompleted()) {
+      const timeoutId = window.setTimeout(() => {
+        trialsTour.start();
+        trialsPersistence.markCompleted();
+      }, 500);
+      return () => window.clearTimeout(timeoutId);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  React.useEffect(() => {
+    if (activeTour === "trials-v1") {
+      trialsTour.start();
+      stopTour();
+    }
+  }, [activeTour]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshSubmissions = React.useCallback(() => {
     setRefreshError(null);
@@ -110,14 +135,14 @@ export default function ArenaPage() {
             <h1>TRIALS / Historical Prompt Records</h1>
             <p>Open any submission to inspect the full report across the scenario set.</p>
           </div>
-          <button type="button" className="newrun-action-btn" onClick={openNewRun}>
+          <button type="button" className="newrun-action-btn" data-tour="trials-new-run-button" onClick={openNewRun}>
             Start a new run
           </button>
         </div>
         {refreshError && <p className="text-red-600 mt-2">{refreshError}</p>}
       </section>
 
-      <section className="trials-list block">
+      <section className="trials-list block" data-tour="trials-submissions-list">
         {subs.length === 0 && !refreshError && (
           <div className="p-4 text-center text-[#555]">No recent runs found.</div>
         )}

@@ -4,6 +4,7 @@ import { type FocusEvent, useCallback, useEffect, useRef, useState } from "react
 import { useAuth } from "@/auth";
 
 import { useNewRunModal } from "@/app/components/NewRunProvider";
+import TourButton from "@/app/components/TourButton";
 import { apiJson, type MeApiTokenOut } from "@/app/lib/v4t";
 
 type TokenStatus =
@@ -139,7 +140,7 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
       <nav className="nav-links">
         <Link to="/" className={pathname === "/" ? "active" : ""}>HOME</Link>
         <Link to="/arena" className={pathname === "/arena" || pathname.startsWith("/arena/") ? "active" : ""}>TRIALS</Link>
-        <Link to="/leaderboard" className={pathname === "/leaderboard" ? "active" : ""}>LEADERBOARD</Link>
+        <Link to="/leaderboard" data-tour="trials-leaderboard-link" className={pathname === "/leaderboard" ? "active" : ""}>LEADERBOARD</Link>
         <Link to="/live" className={pathname === "/live" ? "active" : ""}>LIVE</Link>
         <Link to="/contact" className={pathname === "/contact" ? "active" : ""}>CONTACT US</Link>
         {me?.is_admin && (
@@ -148,8 +149,9 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
       </nav>
 
       <div className="top-actions">
+        <TourButton isHome={isHome} />
         {status === "authenticated" && me?.quota && (
-          <span className="user-chip">
+          <span className="user-chip" data-tour="trials-quota-chip">
             TODAY: {me.quota.runs_used}/{me.quota.runs_limit}
           </span>
         )}
