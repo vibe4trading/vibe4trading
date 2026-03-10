@@ -5,7 +5,7 @@ export default function ContactPage() {
     <main className="contact-page-main">
       <SEO
         title="Contact — Vibe4Trading"
-        description="Get in touch with the Vibe4Trading team."
+        description="Get in touch with the Vibe4Trading team. Building the Web4 future where Web3 meets AI."
         canonicalPath="/contact"
       />
       <section className="block contact-card">

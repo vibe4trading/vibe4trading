@@ -458,7 +458,7 @@ export function LandingPage() {
           "@type": "Organization",
           "name": "Vibe4Trading",
           "url": "https://vibe4trading.ai",
-          "description": "AI crypto strategy benchmarking platform. Test if your AI trading strategy actually works.",
+          "description": "Web4 AI trading agent benchmark platform. Where Web3 crypto markets meet AI-powered autonomous trading strategies.",
           "foundingDate": "2025"
         })}</script>
         <script type="application/ld+json">{JSON.stringify({
@@ -468,7 +468,7 @@ export function LandingPage() {
           "url": "https://vibe4trading.ai",
           "applicationCategory": "FinanceApplication",
           "operatingSystem": "Web",
-          "description": "Benchmark LLM-powered trading agents across 10 real crypto market scenarios. Compare performance on a public leaderboard.",
+          "description": "The first Web4 benchmark platform. Stress-test LLM-powered trading agents across 10 real crypto market scenarios. Web3 + AI = Web4.",
           "offers": {
             "@type": "Offer",
             "price": "0",
@@ -477,8 +477,8 @@ export function LandingPage() {
         })}</script>
       </Helmet>
       <SEO
-        title="Vibe4Trading — AI Crypto Strategy Benchmarking"
-        description="Test if your AI trading strategy actually works. Benchmark LLM agents across 10 real crypto market scenarios with fixed rules and data. Free."
+        title="Vibe4Trading — Web4 AI Trading Agent Benchmarks"
+        description="Web4 = Web3 + AI. Benchmark autonomous AI trading agents across 10 real crypto market scenarios. Stress-test LLM strategies with fixed rules and data. Free."
         canonicalPath="/"
       />
       <div className="pointer-events-none absolute inset-0">

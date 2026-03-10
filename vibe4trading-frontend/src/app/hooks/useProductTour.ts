@@ -3,6 +3,7 @@ import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
 import "@/app/tours/tour.css";
 import type { DriveStep, Config } from "driver.js";
+import { isPrerendering } from "@/app/lib/prerender";
 
 export function useProductTour(
   steps: DriveStep[],
@@ -11,6 +12,8 @@ export function useProductTour(
   const driverRef = useRef<ReturnType<typeof driver> | null>(null);
 
   const start = useCallback(() => {
+    if (isPrerendering()) return;
+
     driverRef.current?.destroy();
 
     const driverObj = driver({

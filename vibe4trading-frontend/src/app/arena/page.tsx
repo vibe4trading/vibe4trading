@@ -131,8 +131,8 @@ export default function ArenaPage() {
   return (
     <main className="trials-page-main animate-rise">
       <SEO
-        title="Strategy Arena — Submit & Benchmark AI Trading Strategies"
-        description="Submit your AI trading strategy and benchmark it across 10 real market scenarios. Get scored on returns, Sharpe ratio, drawdown, and more."
+        title="Strategy Arena — Web4 AI Trading Agent Benchmarks"
+        description="Submit your AI trading agent to the Web4 arena. Benchmark across 10 real crypto market scenarios. Scored on returns, Sharpe ratio, drawdown, and more. Web3 + AI."
         canonicalPath="/arena"
       />
       <section className="trials-head block">

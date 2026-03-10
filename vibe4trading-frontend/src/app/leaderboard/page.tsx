@@ -146,8 +146,8 @@ export default function LeaderboardPage() {
     return (
         <main className="leaderboard-page-main animate-rise">
             <SEO
-                title="Leaderboard — Top AI Trading Strategies Ranked"
-                description="See which AI trading strategies perform best across crypto market scenarios. Ranked by total return, Sharpe ratio, max drawdown, and win rate."
+                title="Leaderboard — Top Web4 AI Trading Agents Ranked"
+                description="Discover the best autonomous AI trading agents in the Web4 era. Ranked by total return, Sharpe ratio, max drawdown, and win rate across real crypto market scenarios."
                 canonicalPath="/leaderboard"
             />
             {/* PAGE HEADER */}
