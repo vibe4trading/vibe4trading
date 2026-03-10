@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import * as React from "react";
 
+import { useAuth } from "@/auth";
 import { useNewRunModal } from "@/app/components/NewRunProvider";
 import { useRealtimeRefresh } from "@/app/lib/realtime";
 import { getSubmissionStatusDisplay } from "@/app/lib/submissionStatus";
@@ -26,11 +27,14 @@ function pairName(marketId: string) {
 
 export default function ArenaPage() {
   const { openNewRun } = useNewRunModal();
+  const { user } = useAuth();
+  const isAdmin = Boolean(user?.is_admin);
   const [subs, setSubs] = React.useState<ArenaSubmissionOut[]>([]);
   const [subsCursor, setSubsCursor] = React.useState<string | null>(null);
   const [subsHasMore, setSubsHasMore] = React.useState(false);
   const [refreshError, setRefreshError] = React.useState<string | null>(null);
   const [loadingMore, setLoadingMore] = React.useState(false);
+  const [deletingId, setDeletingId] = React.useState<string | null>(null);
 
   const refreshSubmissions = React.useCallback(() => {
     setRefreshError(null);
@@ -65,6 +69,27 @@ export default function ArenaPage() {
     refreshSubmissions();
   }, [refreshSubmissions]);
 
+  async function handleDeleteSubmission(submissionId: string) {
+    const confirmed = window.confirm(
+      "Permanently delete this trial and all its runs, events, and LLM calls? This cannot be undone.",
+    );
+    if (!confirmed) return;
+
+    setDeletingId(submissionId);
+    setRefreshError(null);
+    try {
+      await apiJson<{ deleted: boolean }>(
+        `/admin/arena/submissions/${submissionId}`,
+        { method: "DELETE" },
+      );
+      setSubs((current) => current.filter((s) => s.submission_id !== submissionId));
+    } catch (e) {
+      setRefreshError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   const hasActiveSubmissions = React.useMemo(
     () => subs.some((row) => row.status === "pending" || row.status === "running"),
     [subs],
@@ -96,7 +121,7 @@ export default function ArenaPage() {
         {subs.length === 0 && !refreshError && (
           <div className="p-4 text-center text-[#555]">No recent runs found.</div>
         )}
-        {subs.map((row) => (
+        {subs.map((row) =>
           (() => {
             const statusDisplay = getSubmissionStatusDisplay({
               status: row.status,
@@ -104,33 +129,50 @@ export default function ArenaPage() {
             });
 
             return (
-              <Link
-                key={row.submission_id}
-                to={`/arena/submissions/${row.submission_id}`}
-                className="trial-row"
-              >
-                <div className="trial-meta">
-                  <strong>{row.submission_id.slice(0, 8)}</strong>
-                  <span>{fmt(row.created_at)}</span>
-                </div>
-                <div className="trial-main">
-                  <p className="trial-prompt">Scenario: {row.scenario_set_key}</p>
-                  <div className="trial-tags">
-                    <span>Model: {row.model_key}</span>
-                    <span>Pair: {pairName(row.market_id)}</span>
-                    {row.status && <span>Status: {statusDisplay.label}</span>}
-                    {statusDisplay.isQueued ? <span>Waiting for worker</span> : null}
-                    {row.windows_total > 0 && (
-                      <span>
-                        Progress: {row.windows_completed}/{row.windows_total}
-                      </span>
-                    )}
+              <div key={row.submission_id} className="relative">
+                <Link
+                  to={`/arena/submissions/${row.submission_id}`}
+                  className="trial-row"
+                >
+                  <div className="trial-meta">
+                    <strong>{row.submission_id.slice(0, 8)}</strong>
+                    <span>{fmt(row.created_at)}</span>
                   </div>
-                </div>
-              </Link>
+                  <div className="trial-main">
+                    <p className="trial-prompt">Scenario: {row.scenario_set_key}</p>
+                    <div className="trial-tags">
+                      <span>Model: {row.model_key}</span>
+                      <span>Pair: {pairName(row.market_id)}</span>
+                      {row.status && <span>Status: {statusDisplay.label}</span>}
+                      {statusDisplay.isQueued ? <span>Waiting for worker</span> : null}
+                      {row.windows_total > 0 && (
+                        <span>
+                          Progress: {row.windows_completed}/{row.windows_total}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="absolute top-2 right-2 border-2 px-2 py-1 text-sm"
+                    style={{
+                      color: "var(--red)",
+                      borderColor: "var(--red)",
+                      background: "var(--panel)",
+                      cursor: "pointer",
+                    }}
+                    disabled={deletingId === row.submission_id}
+                    onClick={() => handleDeleteSubmission(row.submission_id)}
+                  >
+                    {deletingId === row.submission_id ? "Deleting\u2026" : "Delete"}
+                  </button>
+                )}
+              </div>
             );
-          })()
-        ))}
+          })(),
+        )}
         {subsHasMore ? (
           <div className="flex justify-center pt-4">
             <button
