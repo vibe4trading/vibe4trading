@@ -1,5 +1,9 @@
 /// <reference types="vite/client" />
 
+interface Window {
+  prerenderReady?: boolean;
+}
+
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL: string;
   readonly VITE_V4T_WS_BASE_URL: string;

@@ -1,6 +1,9 @@
 import { SEO } from "@/app/components/SEO";
+import { usePrerenderReady } from "@/app/hooks/usePrerenderReady";
 
 export default function PrivacyPage() {
+  usePrerenderReady(true);
+
   return (
     <main className="privacy-page-main">
       <SEO

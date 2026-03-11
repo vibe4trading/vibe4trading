@@ -16,5 +16,6 @@ COPY nginx/default.conf /etc/nginx/templates/default.conf.template
 ENV PRERENDER_FRONTEND_URL=http://frontend:3000
 ENV V4T_API_BASE_URL=http://api:8000
 ENV NGINX_ENVSUBST_FILTER=PRERENDER_FRONTEND_URL|V4T_API_BASE_URL
+RUN mkdir -p /var/cache/nginx/prerender && chown nginx:nginx /var/cache/nginx/prerender
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD wget -qO- http://localhost:3000/ || exit 1

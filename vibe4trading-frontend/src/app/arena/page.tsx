@@ -8,6 +8,7 @@ import { useNewRunModal } from "@/app/components/NewRunProvider";
 import { useRealtimeRefresh } from "@/app/lib/realtime";
 import { getSubmissionStatusDisplay } from "@/app/lib/submissionStatus";
 import { apiJson, ArenaSubmissionIndexOut, ArenaSubmissionOut } from "@/app/lib/v4t";
+import { usePrerenderReady } from "@/app/hooks/usePrerenderReady";
 import { useProductTour } from "@/app/hooks/useProductTour";
 import { useTourPersistence } from "@/app/hooks/useTourPersistence";
 import { useTourContext } from "@/app/components/TourProvider";
@@ -41,6 +42,7 @@ export default function ArenaPage() {
   const [refreshError, setRefreshError] = React.useState<string | null>(null);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
+  const [initialLoadDone, setInitialLoadDone] = React.useState(false);
 
   const trialsPersistence = useTourPersistence("trials-v1");
   const trialsTour = useProductTour(trialsSteps);
@@ -71,7 +73,8 @@ export default function ArenaPage() {
         setSubsCursor(res.next_cursor);
         setSubsHasMore(res.has_more);
       })
-      .catch((e) => setRefreshError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => setRefreshError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setInitialLoadDone(true));
   }, []);
 
   async function loadMoreSubmissions() {
@@ -121,6 +124,8 @@ export default function ArenaPage() {
     () => subs.some((row) => row.status === "pending" || row.status === "running"),
     [subs],
   );
+
+  usePrerenderReady(initialLoadDone);
 
   useRealtimeRefresh({
     wsPath: hasActiveSubmissions ? "/runs/ws" : null,

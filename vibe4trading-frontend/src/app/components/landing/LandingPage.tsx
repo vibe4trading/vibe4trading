@@ -2,6 +2,7 @@ import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
 
 import { SEO } from "@/app/components/SEO";
+import { usePrerenderReady } from "@/app/hooks/usePrerenderReady";
 import { AsciiDitherAnimation } from "./AsciiDitherAnimation";
 import { Typewriter } from "./Typewriter";
 import { useScrollReveal } from "./useScrollReveal";
@@ -450,6 +451,8 @@ function FooterSection() {
 }
 
 export function LandingPage() {
+  usePrerenderReady(true);
+
   return (
     <main className="relative h-[calc(100vh-76px)] overflow-y-auto scroll-smooth snap-y snap-mandatory">
       <Helmet>

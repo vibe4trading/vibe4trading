@@ -10,6 +10,7 @@ import {
     ScenarioSetOut,
 } from "@/app/lib/v4t";
 import { useProductTour } from "@/app/hooks/useProductTour";
+import { usePrerenderReady } from "@/app/hooks/usePrerenderReady";
 import { useTourPersistence } from "@/app/hooks/useTourPersistence";
 import { useTourContext } from "@/app/components/TourProvider";
 import { leaderboardSteps } from "@/app/tours/leaderboard-tour";
@@ -48,6 +49,7 @@ export default function LeaderboardPage() {
     const [refreshError, setRefreshError] = React.useState<string | null>(null);
     const [filterLoadError, setFilterLoadError] = React.useState<string | null>(null);
     const [selectedId, setSelectedId] = React.useState<string | null>(null);
+    const [initialLoadDone, setInitialLoadDone] = React.useState(false);
 
     const leaderboardPersistence = useTourPersistence("leaderboard-v1");
     const leaderboardTour = useProductTour(leaderboardSteps);
@@ -131,6 +133,7 @@ export default function LeaderboardPage() {
             setRefreshError(e instanceof Error ? e.message : String(e));
         } finally {
             setRefreshing(false);
+            setInitialLoadDone(true);
         }
     }, [modelFilter, marketFilter]);
 
@@ -138,6 +141,8 @@ export default function LeaderboardPage() {
         const timer = setTimeout(() => { refresh(); }, 300);
         return () => clearTimeout(timer);
     }, [refresh]);
+
+    usePrerenderReady(initialLoadDone);
 
     const selected = entries.find((e) => e.submission_id === selectedId) ?? null;
     const selectedRank = selected ? entries.indexOf(selected) + 1 : 0;

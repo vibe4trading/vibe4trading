@@ -6,6 +6,10 @@ import { AuthProvider } from "@/auth";
 import App from "@/App";
 import "@/app/globals.css";
 
+// Initialize prerender readiness flag before React mounts.
+// Prerender service will wait for this to become `true` before capturing.
+window.prerenderReady = false;
+
 createRoot(document.getElementById("root")!).render(
   <HelmetProvider>
     <StrictMode>

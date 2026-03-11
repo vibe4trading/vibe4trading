@@ -35,7 +35,9 @@ export default function App() {
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="*" element={
           <main className="mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center px-6 py-24 text-center">
-            <SEO title="Page Not Found" description="The requested page does not exist." noindex />
+            <SEO title="Page Not Found" description="The requested page does not exist." noindex>
+              <meta name="prerender-status-code" content="404" />
+            </SEO>
             <h1 className="text-5xl font-bold tracking-tight text-white">404</h1>
             <p className="mt-4 text-lg text-zinc-400">Page not found</p>
             <Link to="/" className="mt-8 inline-block border border-zinc-600 px-6 py-3 text-sm font-medium uppercase tracking-widest text-zinc-300 transition-colors hover:border-white hover:text-white">

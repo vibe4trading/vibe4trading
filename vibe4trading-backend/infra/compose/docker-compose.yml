@@ -119,13 +119,17 @@ services:
     ]
 
   prerender:
-    image: prerender/prerender:latest
+    image: tvanro/prerender-alpine:7.2.0
     ports:
       - "3001:3000"
     environment:
-      - PRERENDER_NUM_WORKERS=2
-      - PRERENDER_NUM_ITERATIONS=40
-      - PRERENDER_MEMORY_CACHE=0
+      - MEMORY_CACHE=1
+      - CACHE_MAXSIZE=200
+      - CACHE_TTL=3600                    # seconds
+      - PAGE_LOAD_TIMEOUT=30000           # milliseconds
+      - WAIT_AFTER_LAST_REQUEST=1000      # milliseconds
+      - PAGE_DONE_CHECK_INTERVAL=300      # milliseconds
+      - BROWSER_TRY_RESTART_PERIOD=3600000 # milliseconds (1 hour)
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       interval: 30s

@@ -1,7 +1,10 @@
 import { SEO } from "@/app/components/SEO";
+import { usePrerenderReady } from "@/app/hooks/usePrerenderReady";
 import { Helmet } from "react-helmet-async";
 
 export default function ContactPage() {
+  usePrerenderReady(true);
+
   return (
     <main className="contact-page-main">
       <SEO

@@ -30,7 +30,7 @@ async function getFreePort(): Promise<number> {
 }
 
 function repoRootFromProject(projectDir: string) {
-  return path.resolve(projectDir, "..", "..", "..");
+  return path.resolve(projectDir, "..");
 }
 
 function resolveFeatherPath(repoRoot: string) {

@@ -47,16 +47,23 @@ test.describe("SEO", () => {
   test("homepage has OG tags", async ({ page }) => {
     await gotoPath(page, "/");
     const ogTitle = page.locator('meta[property="og:title"]');
-    await expect(ogTitle).toBeAttached();
+    await expect(ogTitle.first()).toBeAttached();
+    const content = await ogTitle.first().getAttribute("content");
+    expect(content).toContain("Vibe4Trading");
   });
 
   test("homepage has JSON-LD structured data", async ({ page }) => {
     await gotoPath(page, "/");
     const jsonLd = page.locator('script[type="application/ld+json"]');
-    await expect(jsonLd).toBeAttached();
-    const content = await jsonLd.textContent();
-    expect(content).toBeTruthy();
-    expect(content).toContain("Organization");
+    await expect(jsonLd.first()).toBeAttached();
+    const count = await jsonLd.count();
+    expect(count).toBeGreaterThanOrEqual(1);
+    const allContents: string[] = [];
+    for (let i = 0; i < count; i++) {
+      allContents.push((await jsonLd.nth(i).textContent()) ?? "");
+    }
+    const combined = allContents.join("");
+    expect(combined).toContain("Organization");
   });
 
   test("auth-gated route has noindex", async ({ page }) => {
