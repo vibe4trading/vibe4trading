@@ -10,7 +10,7 @@
 
 /* ---- Popover container ---- */
 .driver-popover {
-  font-family: "DotGothic16", monospace;
+  font-family: "Inter", system-ui, sans-serif;
   background: var(--panel);
   border: 2px solid var(--line);
   border-radius: 0;
@@ -22,7 +22,7 @@
 
 /* ---- Title ---- */
 .driver-popover-title {
-  font-family: "DotGothic16", monospace;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 20px;
   letter-spacing: 0.4px;
   color: var(--ink);
@@ -30,7 +30,7 @@
 
 /* ---- Description ---- */
 .driver-popover-description {
-  font-family: "DotGothic16", monospace;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 15px;
   line-height: 1.5;
   color: var(--muted);
@@ -42,7 +42,7 @@
 }
 
 .driver-popover-footer button {
-  font-family: "DotGothic16", monospace;
+  font-family: "Inter", system-ui, sans-serif;
   border: 2px solid var(--line);
   border-radius: 0;
   background: var(--panel);
@@ -73,7 +73,7 @@
 
 /* ---- Progress text ---- */
 .driver-popover-progress-text {
-  font-family: "DotGothic16", monospace;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 13px;
   color: var(--muted);
 }

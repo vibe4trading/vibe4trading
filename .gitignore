@@ -53,6 +53,7 @@ demo_webpage/
 designed_pages/
 lovable_pages/
 sentiment_raw/
+.sisyphus/
 
 # Debug logs
 npm-debug.log*

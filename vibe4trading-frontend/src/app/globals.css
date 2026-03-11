@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=DotGothic16&display=swap");
 @import "tailwindcss";
 
 :root {
@@ -24,7 +23,7 @@ input, textarea {
 
 body {
   margin: 0;
-  font-family: "DotGothic16", monospace;
+  font-family: "Inter", system-ui, sans-serif;
   background: var(--bg);
   color: var(--ink);
 }
@@ -907,7 +906,7 @@ body.with-entry-bar {
 }
 
 .trial-meta strong {
-  font-size: 56px;
+  font-size: 28px;
   line-height: 1;
 }
 
