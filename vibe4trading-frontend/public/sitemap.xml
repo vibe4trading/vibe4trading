@@ -2,27 +2,22 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://vibe4trading.ai/</loc>
-    <changefreq>weekly</changefreq>
-    <priority>1.0</priority>
+    <lastmod>2026-03-11</lastmod>
   </url>
   <url>
     <loc>https://vibe4trading.ai/arena</loc>
-    <changefreq>daily</changefreq>
-    <priority>0.9</priority>
+    <lastmod>2026-03-11</lastmod>
   </url>
   <url>
     <loc>https://vibe4trading.ai/leaderboard</loc>
-    <changefreq>daily</changefreq>
-    <priority>0.9</priority>
+    <lastmod>2026-03-11</lastmod>
   </url>
   <url>
     <loc>https://vibe4trading.ai/contact</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.3</priority>
+    <lastmod>2026-03-11</lastmod>
   </url>
   <url>
     <loc>https://vibe4trading.ai/privacy</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.2</priority>
+    <lastmod>2026-03-11</lastmod>
   </url>
 </urlset>

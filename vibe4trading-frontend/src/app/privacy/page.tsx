@@ -4,7 +4,7 @@ export default function PrivacyPage() {
   return (
     <main className="privacy-page-main">
       <SEO
-        title="Privacy Policy — Vibe4Trading"
+        title="Privacy Policy"
         description="Vibe4Trading privacy policy. How we handle your data on the Web4 AI trading benchmark platform."
         canonicalPath="/privacy"
       />

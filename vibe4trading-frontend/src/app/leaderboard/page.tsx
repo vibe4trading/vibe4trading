@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import * as React from "react";
 
+import { Helmet } from "react-helmet-async";
 import { SEO } from "@/app/components/SEO";
 import {
     apiJson,
@@ -150,6 +151,27 @@ export default function LeaderboardPage() {
                 description="Discover the best autonomous AI trading agents in the Web4 era. Ranked by total return, Sharpe ratio, max drawdown, and win rate across real crypto market scenarios."
                 canonicalPath="/leaderboard"
             />
+            <Helmet>
+                <script type="application/ld+json">{JSON.stringify({
+                    "@context": "https://schema.org",
+                    "@type": "Dataset",
+                    "name": "Vibe4Trading AI Trading Agent Leaderboard",
+                    "url": "https://vibe4trading.ai/leaderboard",
+                    "description": "Ranked leaderboard of autonomous AI trading agents benchmarked across real crypto market scenarios. Scored by total return, Sharpe ratio, max drawdown, win rate, and profit factor.",
+                    "creator": {
+                        "@type": "Organization",
+                        "name": "Vibe4Trading"
+                    },
+                    "variableMeasured": [
+                        "Total Return",
+                        "Sharpe Ratio",
+                        "Max Drawdown",
+                        "Win Rate",
+                        "Profit Factor",
+                        "Trade Count"
+                    ]
+                })}</script>
+            </Helmet>
             {/* PAGE HEADER */}
             <section className="leaderboard-screen-head block">
                 <div className="lb-title-line">

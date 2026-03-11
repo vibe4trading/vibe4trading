@@ -1,13 +1,30 @@
 import { SEO } from "@/app/components/SEO";
+import { Helmet } from "react-helmet-async";
 
 export default function ContactPage() {
   return (
     <main className="contact-page-main">
       <SEO
-        title="Contact — Vibe4Trading"
+        title="Contact"
         description="Get in touch with the Vibe4Trading team. Building the Web4 future where Web3 meets AI."
         canonicalPath="/contact"
       />
+      <Helmet>
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "ContactPage",
+          "name": "Contact Vibe4Trading",
+          "url": "https://vibe4trading.ai/contact",
+          "description": "Get in touch with the Vibe4Trading team for partnerships, support, or feedback.",
+          "mainEntity": {
+            "@type": "Organization",
+            "name": "Vibe4Trading",
+            "email": "info@vibe4trading.ai",
+            "url": "https://vibe4trading.ai",
+            "sameAs": ["https://x.com/vibe4trading"]
+          }
+        })}</script>
+      </Helmet>
       <section className="block contact-card">
         <h1>CONTACT US</h1>
         <p>For partnerships, technical support, or product feedback, reach out through the channels below.</p>

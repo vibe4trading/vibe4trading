@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import * as React from "react";
 
+import { Helmet } from "react-helmet-async";
 import { SEO } from "@/app/components/SEO";
 import { useAuth } from "@/auth";
 import { useNewRunModal } from "@/app/components/NewRunProvider";
@@ -135,6 +136,22 @@ export default function ArenaPage() {
         description="Submit your AI trading agent to the Web4 arena. Benchmark across 10 real crypto market scenarios. Scored on returns, Sharpe ratio, drawdown, and more. Web3 + AI."
         canonicalPath="/arena"
       />
+      <Helmet>
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "WebApplication",
+          "name": "Vibe4Trading Strategy Arena",
+          "url": "https://vibe4trading.ai/arena",
+          "applicationCategory": "FinanceApplication",
+          "operatingSystem": "Web",
+          "description": "Submit your AI trading agent to the arena. Benchmark across 10 real crypto market scenarios scored on returns, Sharpe ratio, drawdown, and more.",
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+          }
+        })}</script>
+      </Helmet>
       <section className="trials-head block">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>

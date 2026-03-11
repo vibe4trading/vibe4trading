@@ -1,6 +1,7 @@
 import { Routes, Route, Link } from "react-router-dom";
 import { ErrorBoundary } from "@/app/components/ErrorBoundary";
 import { RouteWrapper } from "@/app/components/RouteWrapper";
+import { SEO } from "@/app/components/SEO";
 
 import HomePage from "@/app/page";
 import ArenaPage from "@/app/arena/page";
@@ -34,6 +35,7 @@ export default function App() {
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="*" element={
           <main className="mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center px-6 py-24 text-center">
+            <SEO title="Page Not Found" description="The requested page does not exist." noindex />
             <h1 className="text-5xl font-bold tracking-tight text-white">404</h1>
             <p className="mt-4 text-lg text-zinc-400">Page not found</p>
             <Link to="/" className="mt-8 inline-block border border-zinc-600 px-6 py-3 text-sm font-medium uppercase tracking-widest text-zinc-300 transition-colors hover:border-white hover:text-white">

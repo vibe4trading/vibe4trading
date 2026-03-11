@@ -76,4 +76,95 @@ test.describe("SEO", () => {
 
     expect(homeCanonical).not.toBe(arenaCanonical);
   });
+
+  test("site.webmanifest is accessible and valid", async ({ page }) => {
+    const { webOrigin } = origins();
+    const res = await page.request.get(`${webOrigin}/site.webmanifest`);
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.name).toBe("Vibe4Trading");
+    expect(body.theme_color).toBe("#020304");
+    expect(body.icons).toHaveLength(3);
+  });
+
+  test("apple-touch-icon.png is accessible", async ({ page }) => {
+    const { webOrigin } = origins();
+    const res = await page.request.get(`${webOrigin}/apple-touch-icon.png`);
+    expect(res.status()).toBe(200);
+  });
+
+  test("favicon PNGs are accessible", async ({ page }) => {
+    const { webOrigin } = origins();
+    const res16 = await page.request.get(`${webOrigin}/favicon-16x16.png`);
+    expect(res16.status()).toBe(200);
+    const res32 = await page.request.get(`${webOrigin}/favicon-32x32.png`);
+    expect(res32.status()).toBe(200);
+  });
+
+  test("noscript content contains navigation links", async ({ page }) => {
+    const { webOrigin } = origins();
+    const res = await page.request.get(webOrigin);
+    const html = await res.text();
+    expect(html).toContain("<noscript>");
+    expect(html).toContain("/arena");
+    expect(html).toContain("/leaderboard");
+    expect(html).toContain("/contact");
+    expect(html).toContain("/privacy");
+  });
+
+  test("theme-color meta tag is present", async ({ page }) => {
+    await gotoPath(page, "/");
+    const themeColor = page.locator('meta[name="theme-color"]');
+    await expect(themeColor).toBeAttached();
+    const content = await themeColor.getAttribute("content");
+    expect(content).toBe("#020304");
+  });
+
+  test("sitemap has lastmod and no changefreq or priority", async ({ page }) => {
+    const { webOrigin } = origins();
+    const res = await page.request.get(`${webOrigin}/sitemap.xml`);
+    expect(res.status()).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("<lastmod>");
+    expect(body).not.toContain("<changefreq>");
+    expect(body).not.toContain("<priority>");
+  });
+
+  test("arena page has WebApplication JSON-LD", async ({ page }) => {
+    await gotoPath(page, "/arena");
+    const jsonLd = page.locator('script[type="application/ld+json"]');
+    await expect(jsonLd.first()).toBeAttached();
+    const content = await jsonLd.first().textContent();
+    expect(content).toContain("WebApplication");
+  });
+
+  test("leaderboard page has Dataset JSON-LD", async ({ page }) => {
+    await gotoPath(page, "/leaderboard");
+    const jsonLd = page.locator('script[type="application/ld+json"]');
+    await expect(jsonLd.first()).toBeAttached();
+    const content = await jsonLd.first().textContent();
+    expect(content).toContain("Dataset");
+  });
+
+  test("contact page has ContactPage JSON-LD", async ({ page }) => {
+    await gotoPath(page, "/contact");
+    const jsonLd = page.locator('script[type="application/ld+json"]');
+    await expect(jsonLd.first()).toBeAttached();
+    const content = await jsonLd.first().textContent();
+    expect(content).toContain("ContactPage");
+  });
+
+  test("404 page has noindex", async ({ page }) => {
+    await gotoPath(page, "/nonexistent-route-xyz");
+    const noindex = page.locator('meta[name="robots"][content*="noindex"]');
+    await expect(noindex).toBeAttached();
+  });
+
+  test("twitter:site meta tag is present on homepage", async ({ page }) => {
+    await gotoPath(page, "/");
+    const twitterSite = page.locator('meta[name="twitter:site"]');
+    await expect(twitterSite).toBeAttached();
+    const content = await twitterSite.getAttribute("content");
+    expect(content).toBe("@vibe4trading");
+  });
 });

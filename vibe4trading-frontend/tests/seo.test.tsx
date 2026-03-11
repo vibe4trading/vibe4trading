@@ -3,6 +3,9 @@ import { render, cleanup, waitFor } from "@testing-library/react";
 import { HelmetProvider } from "react-helmet-async";
 import { MemoryRouter } from "react-router-dom";
 import { SEO } from "../src/app/components/SEO";
+import { NewRunProvider } from "../src/app/components/NewRunProvider";
+import { TourProvider } from "../src/app/components/TourProvider";
+import { AuthProvider } from "../src/auth";
 
 beforeAll(() => {
   const mockIntersectionObserver = vi.fn().mockImplementation((callback: IntersectionObserverCallback) => ({
@@ -151,6 +154,106 @@ describe("SEO", () => {
       const types = contents.map((c) => c["@type"]);
       expect(types).toContain("Organization");
       expect(types).toContain("WebApplication");
+    });
+  });
+
+  it("renders twitter:site meta tag", async () => {
+    renderWithProviders(<SEO title="Test" description="desc" />);
+
+    await waitFor(() => {
+      expect(getMeta("name", "twitter:site")?.getAttribute("content")).toBe(
+        "@vibe4trading",
+      );
+    });
+  });
+
+  it("Contact page has correct title without double suffix", async () => {
+    const ContactPage = (await import("../src/app/contact/page")).default;
+    renderWithProviders(<ContactPage />);
+
+    await waitFor(() => {
+      expect(document.title).toBe("Contact | Vibe4Trading");
+    });
+  });
+
+  it("Arena page has WebApplication JSON-LD", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ items: [], next_cursor: null, has_more: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const ArenaPage = (await import("../src/app/arena/page")).default;
+    renderWithProviders(
+      <AuthProvider>
+        <TourProvider>
+          <NewRunProvider>
+            <ArenaPage />
+          </NewRunProvider>
+        </TourProvider>
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      const jsonLdScripts = document.querySelectorAll(
+        'script[type="application/ld+json"]',
+      );
+      expect(jsonLdScripts.length).toBeGreaterThanOrEqual(1);
+      const contents = Array.from(jsonLdScripts).map((s) =>
+        JSON.parse(s.textContent || "{}"),
+      );
+      const types = contents.map((c) => c["@type"]);
+      expect(types).toContain("WebApplication");
+    });
+
+    fetchSpy.mockRestore();
+  });
+
+  it("Leaderboard page has Dataset JSON-LD", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const LeaderboardPage = (await import("../src/app/leaderboard/page")).default;
+    renderWithProviders(
+      <TourProvider>
+        <LeaderboardPage />
+      </TourProvider>,
+    );
+
+    await waitFor(() => {
+      const jsonLdScripts = document.querySelectorAll(
+        'script[type="application/ld+json"]',
+      );
+      expect(jsonLdScripts.length).toBeGreaterThanOrEqual(1);
+      const contents = Array.from(jsonLdScripts).map((s) =>
+        JSON.parse(s.textContent || "{}"),
+      );
+      const types = contents.map((c) => c["@type"]);
+      expect(types).toContain("Dataset");
+    });
+
+    fetchSpy.mockRestore();
+  });
+
+  it("Contact page has ContactPage JSON-LD", async () => {
+    const ContactPage = (await import("../src/app/contact/page")).default;
+    renderWithProviders(<ContactPage />);
+
+    await waitFor(() => {
+      const jsonLdScripts = document.querySelectorAll(
+        'script[type="application/ld+json"]',
+      );
+      expect(jsonLdScripts.length).toBeGreaterThanOrEqual(1);
+      const contents = Array.from(jsonLdScripts).map((s) =>
+        JSON.parse(s.textContent || "{}"),
+      );
+      const types = contents.map((c) => c["@type"]);
+      expect(types).toContain("ContactPage");
     });
   });
 });
