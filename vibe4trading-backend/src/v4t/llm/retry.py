@@ -34,10 +34,10 @@ def compute_backoff_seconds(*, attempt: int, exc: Exception) -> float:
                 except Exception:
                     pass
 
-    base = 0.05
-    cap = 2.0
+    base = 1.0
+    cap = 32.0
     raw = min(cap, base * (2 ** max(0, attempt - 1)))
-    jitter = random.uniform(0.8, 1.2)
+    jitter = random.uniform(0.7, 1.3)
     return max(0.0, raw * jitter)
 
 

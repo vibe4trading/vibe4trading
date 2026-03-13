@@ -75,6 +75,13 @@ class Settings(BaseSettings):
         ),
     )
 
+    window_breakdown_concurrency: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Maximum concurrent LLM calls for window breakdown operations.",
+    )
+
     # LLM budgets / guardrails (0 disables that budget).
     # These are best-effort caps to avoid runaway spend in MVP.
     llm_max_decision_calls_per_run: int = 500

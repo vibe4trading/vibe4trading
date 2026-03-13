@@ -22,6 +22,16 @@ class ArenaSubmissionReportKeyMetrics(BaseModel):
     window_return_dispersion_pct: float | None = None
 
 
+class WindowBreakdown(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    window_story: str = Field(min_length=150, max_length=250)
+    what_worked: list[str] = Field(min_length=3, max_length=5)
+    what_didnt_work: list[str] = Field(min_length=3, max_length=5)
+    improvement_areas: list[str] = Field(min_length=3, max_length=5)
+    key_takeaway: str = Field(min_length=1)
+
+
 class ArenaSubmissionReportWindow(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -40,6 +50,7 @@ class ArenaSubmissionReportWindow(BaseModel):
     acceptance_rate_pct: float | None = None
     avg_confidence: float | None = None
     avg_target_exposure_pct: float | None = None
+    breakdown: WindowBreakdown | None = None
 
 
 class ArenaSubmissionReportWindowHighlight(BaseModel):

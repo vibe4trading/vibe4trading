@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 import math
 import statistics
+
+# pyright: reportUnusedFunction=false
 from collections import defaultdict
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
@@ -18,13 +21,15 @@ from v4t.contracts.arena_report import (
     ArenaSubmissionReportNarrative,
     ArenaSubmissionReportWindow,
     ArenaSubmissionReportWindowHighlight,
+    WindowBreakdown,
 )
 from v4t.contracts.payloads import (
     LlmDecisionPayload,
     PortfolioSnapshotPayload,
     SimFillPayload,
 )
-from v4t.db.models import ArenaSubmissionRow, ArenaSubmissionRunRow, EventRow, RunRow
+from v4t.db.engine import new_session
+from v4t.db.models import ArenaSubmissionRow, ArenaSubmissionRunRow, EventRow, LlmCallRow, RunRow
 from v4t.llm.gateway import LlmGateway
 from v4t.settings import get_settings
 from v4t.utils.datetime import now
@@ -129,6 +134,9 @@ def generate_submission_report(
         if window.return_pct is not None:
             per_window_returns.append(window.return_pct)
         windows.append(window)
+
+    gateway = LlmGateway()
+    windows = _generate_window_breakdowns(session, submission, windows, gateway)
 
     key_metrics = ArenaSubmissionReportKeyMetrics(
         total_return_pct=_round_float(_to_float(submission.total_return_pct), 2),
@@ -388,6 +396,38 @@ _TRADE_STYLE_JUDGE_PROMPT = (
     "}"
 )
 
+_WINDOW_BREAKDOWN_PROMPT = (
+    "You are an educational trading coach analyzing a specific time window. "
+    "Your goal is to help traders understand what happened during this period and learn from it.\n\n"
+    "You may only use raw fields from the input JSON. Do not infer or fabricate data.\n\n"
+    "## Input Structure\n"
+    '{"bars":[{"timestamp":string,"open":number,"high":number,"low":number,"close":number,"volume":number}],'
+    '"decisions":[{"timestamp":string,"target_exposure":number,"reasoning":string}],'
+    '"window_metrics":{"return_pct":number,"sharpe_ratio":number,"num_trades":number,"win_rate_pct":number}}\n\n'
+    "## Output Fields\n\n"
+    "Return ONLY a valid JSON object with these fields:\n\n"
+    "- window_story: 2-3 paragraph narrative describing what happened in this window. "
+    "Reference price action, key decisions, and outcomes. Be direct and data-driven.\n"
+    "- what_worked: array of 3-5 specific observations about successful decisions or favorable conditions. "
+    "Cite concrete examples from the data.\n"
+    "- what_didnt_work: array of 3-5 specific observations about unsuccessful decisions or challenges. "
+    "Be honest but constructive.\n"
+    "- improvement_areas: array of 3-5 actionable suggestions for better performance in similar conditions.\n"
+    "- key_takeaway: single sentence summarizing the most important lesson from this window.\n\n"
+    "## Special Cases\n"
+    "If no trades occurred (num_trades = 0), analyze whether staying flat was wise given market conditions "
+    "or if it represented a missed opportunity.\n\n"
+    "## Output Format\n"
+    "Return ONLY this JSON:\n"
+    "{"
+    '"window_story":"<2-3 paragraphs>",'
+    '"what_worked":["<observation 1>","<observation 2>","<observation 3>"],'
+    '"what_didnt_work":["<observation 1>","<observation 2>","<observation 3>"],'
+    '"improvement_areas":["<suggestion 1>","<suggestion 2>","<suggestion 3>"],'
+    '"key_takeaway":"<single sentence>"'
+    "}"
+)
+
 
 def _generate_llm_report(
     session: Session,
@@ -463,6 +503,157 @@ def _generate_llm_report(
         worst_window=fallback.worst_window,
         windows=windows,
     )
+
+
+def _generate_window_breakdowns(
+    session: Session,
+    submission: ArenaSubmissionRow,
+    windows: list[ArenaSubmissionReportWindow],
+    gateway: LlmGateway,
+) -> list[ArenaSubmissionReportWindow]:  # pyright: ignore[reportUnusedFunction]
+    if not windows:
+        return windows
+
+    import structlog
+
+    log = structlog.get_logger("arena.window_breakdown")
+
+    settings = get_settings()
+    report_model_key = settings.llm_report_model or submission.model_key
+    max_workers = max(1, min(settings.window_breakdown_concurrency, len(windows)))
+    run_ids_by_scenario = {
+        link.scenario_index: link.run_id
+        for link in session.execute(
+            select(ArenaSubmissionRunRow).where(
+                ArenaSubmissionRunRow.submission_id == submission.submission_id
+            )
+        )
+        .scalars()
+        .all()
+    }
+
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_cost = 0.0
+    fallback_count = 0
+
+    def _fallback_for_window(window: ArenaSubmissionReportWindow) -> dict[str, Any]:
+        return _build_fallback_window_breakdown(
+            window.return_pct,
+            window.sharpe_ratio,
+            window.num_trades,
+            window.win_rate_pct,
+        )
+
+    def _coerce_breakdown(
+        window: ArenaSubmissionReportWindow, payload: dict[str, Any]
+    ) -> WindowBreakdown:
+        try:
+            return WindowBreakdown.model_validate(payload)
+        except Exception:
+            return WindowBreakdown.model_construct(**_fallback_for_window(window))
+
+    def _build_window_prompt_payload(window: ArenaSubmissionReportWindow) -> WindowBreakdown:
+        run_id = run_ids_by_scenario.get(window.scenario_index)
+        if run_id is None:
+            raise ValueError(
+                f"missing run_id for submission_id={submission.submission_id} scenario_index={window.scenario_index}"
+            )
+
+        worker_session = new_session()
+        try:
+            breakdown_data = _load_window_breakdown_data(
+                worker_session,
+                run_id=run_id,
+                window_start=window.window_code,
+                window_end=window.label,
+            )
+            payload = {
+                "bars": breakdown_data.get("ohlcv_bars", []),
+                "decisions": [
+                    {
+                        "timestamp": decision.get("tick_time"),
+                        "target_exposure": _to_float(decision.get("target")) or 0.0,
+                        "reasoning": "",
+                        "confidence": _to_float(decision.get("confidence")),
+                        "accepted": bool(decision.get("accepted", False)),
+                    }
+                    for decision in breakdown_data.get("decisions", [])
+                ],
+                "window_metrics": {
+                    "return_pct": window.return_pct or 0.0,
+                    "sharpe_ratio": window.sharpe_ratio or 0.0,
+                    "num_trades": window.num_trades,
+                    "win_rate_pct": window.win_rate_pct or 0.0,
+                },
+            }
+            fallback_breakdown = _fallback_for_window(window)
+            call_id, response_json, used_fallback = gateway.call_window_breakdown(
+                worker_session,
+                submission_id=submission.submission_id,
+                window_code=window.window_code,
+                observed_at=now(),
+                model_key=report_model_key,
+                system_prompt=_WINDOW_BREAKDOWN_PROMPT,
+                user_prompt=json.dumps(payload, ensure_ascii=True, indent=2),
+                fallback_breakdown=fallback_breakdown,
+                max_output_tokens=900,
+            )
+
+            call_row = worker_session.get(LlmCallRow, call_id) if call_id else None
+            usage = call_row.usage if call_row else None
+            input_tokens = usage.get("prompt_tokens", 0) if usage else 0
+            output_tokens = usage.get("completion_tokens", 0) if usage else 0
+            cost = (input_tokens * 0.015 / 1000) + (output_tokens * 0.075 / 1000)
+
+            nonlocal total_input_tokens, total_output_tokens, total_cost, fallback_count
+            total_input_tokens += input_tokens
+            total_output_tokens += output_tokens
+            total_cost += cost
+            if used_fallback:
+                fallback_count += 1
+
+            log.info(
+                "window_breakdown_complete",
+                window_code=window.window_code,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cost_usd=round(cost, 4),
+                used_fallback=used_fallback,
+            )
+
+            worker_session.commit()
+            return _coerce_breakdown(window, response_json)
+        except Exception:
+            worker_session.rollback()
+            return _coerce_breakdown(window, _fallback_for_window(window))
+        finally:
+            worker_session.close()
+
+    with ThreadPoolExecutor(
+        max_workers=max_workers,
+        thread_name_prefix="arena-window-breakdown",
+    ) as executor:
+        future_map: dict[Future[WindowBreakdown], ArenaSubmissionReportWindow] = {
+            executor.submit(_build_window_prompt_payload, window): window for window in windows
+        }
+        for future in as_completed(future_map):
+            window = future_map[future]
+            try:
+                window.breakdown = future.result()
+            except Exception:
+                window.breakdown = _coerce_breakdown(window, _fallback_for_window(window))
+
+    log.info(
+        "window_breakdown_summary",
+        total_windows=len(windows),
+        total_input_tokens=total_input_tokens,
+        total_output_tokens=total_output_tokens,
+        total_cost_usd=round(total_cost, 4),
+        fallback_count=fallback_count,
+    )
+
+    return windows
 
 
 def _build_submission_style_context(
@@ -719,6 +910,106 @@ def _event_payload_dict(row: EventRow) -> dict[str, Any]:
     if isinstance(payload, dict):
         return cast(dict[str, Any], payload)
     return {}
+
+
+def _load_window_breakdown_data(
+    session: Session,
+    run_id: UUID,
+    window_start: str,
+    window_end: str,
+) -> dict[str, Any]:
+    ohlcv_rows = list(
+        session.execute(
+            select(EventRow)
+            .where(
+                EventRow.run_id == run_id,
+                EventRow.event_type == "market.ohlcv",
+            )
+            .order_by(EventRow.observed_at)
+        )
+        .scalars()
+        .all()
+    )
+    ohlcv_bars = [_event_payload_dict(row) for row in ohlcv_rows]
+    if len(ohlcv_bars) > 50:
+        ohlcv_bars = ohlcv_bars[-50:]
+
+    decision_rows = list(
+        session.execute(
+            select(EventRow)
+            .where(
+                EventRow.run_id == run_id,
+                EventRow.event_type == "llm.decision",
+            )
+            .order_by(EventRow.observed_at)
+        )
+        .scalars()
+        .all()
+    )
+    decisions: list[dict[str, Any]] = []
+    for row in decision_rows:
+        payload = LlmDecisionPayload.model_validate(_event_payload_dict(row))
+        if payload.accepted:
+            decisions.append(
+                {
+                    "target": payload.target,
+                    "confidence": payload.confidence,
+                    "accepted": payload.accepted,
+                    "tick_time": row.observed_at.isoformat(),
+                }
+            )
+
+    return {
+        "ohlcv_bars": ohlcv_bars,
+        "decisions": decisions,
+        "window_metrics": {},
+    }
+
+
+def _build_fallback_window_breakdown(
+    return_pct: float | None,
+    sharpe_ratio: float | None,
+    num_trades: int,
+    win_rate_pct: float | None,
+) -> dict[str, Any]:
+    if num_trades == 0:
+        story = "Well done keeping calm during this period. No trades were executed, showing discipline in uncertain market conditions."
+        return {
+            "window_story": story,
+            "what_worked": ["Maintained discipline", "Avoided overtrading", "Preserved capital"],
+            "what_didnt_work": [
+                "No opportunities identified",
+                "Possibly too conservative",
+                "Limited market engagement",
+            ],
+            "improvement_areas": [
+                "Consider more flexible entry criteria",
+                "Review signal sensitivity",
+                "Balance caution with opportunity",
+            ],
+            "key_takeaway": "Discipline is valuable, but ensure it doesn't prevent all action.",
+        }
+
+    story = f"This window had {num_trades} trades with {return_pct or 0:.2f}% return. Sharpe: {sharpe_ratio or 0:.2f}. Win rate: {win_rate_pct or 0:.1f}%."
+    return {
+        "window_story": story,
+        "what_worked": [
+            "Executed trades consistently",
+            "Maintained position discipline",
+            "Followed strategy rules",
+        ],
+        "what_didnt_work": [
+            "Limited performance optimization",
+            "Generic execution pattern",
+            "Missed deeper insights",
+        ],
+        "improvement_areas": [
+            "Refine entry timing",
+            "Optimize position sizing",
+            "Enhance risk management",
+        ],
+        "key_takeaway": "Solid execution foundation with room for tactical refinement.",
+    }
 
 
 def _build_fallback_report(

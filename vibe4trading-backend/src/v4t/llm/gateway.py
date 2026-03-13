@@ -30,6 +30,12 @@ from v4t.utils.datetime import now
 
 _LOG: Final = structlog.get_logger("llm.gateway")
 
+# Circuit breaker state for window breakdown calls
+_window_breakdown_circuit_failures = 0
+_window_breakdown_circuit_opened_at: float | None = None
+_CIRCUIT_BREAKER_THRESHOLD = 5
+_CIRCUIT_BREAKER_TIMEOUT_SECONDS = 60.0
+
 
 def _extract_usage(data: dict[str, Any]) -> dict[str, Any] | None:
     usage_any = data.get("usage")
@@ -723,6 +729,154 @@ class LlmGateway:
             )
 
         return call.call_id, resp_parsed or fallback_report, used_fallback
+
+    def call_window_breakdown(
+        self,
+        session: Session,
+        *,
+        submission_id: UUID,
+        window_code: str,
+        observed_at: datetime,
+        model_key: str,
+        system_prompt: str,
+        user_prompt: str,
+        fallback_breakdown: dict[str, Any],
+        max_output_tokens: int = 900,
+    ) -> tuple[UUID, dict[str, Any], bool]:
+        from v4t.contracts.arena_report import WindowBreakdown
+
+        req = self._build_request(
+            model_key=model_key,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=0.0,
+            max_output_tokens=max_output_tokens,
+        )
+        fallback_raw = json.dumps(fallback_breakdown, separators=(",", ":"))
+
+        if self._use_stub(session, model_key):
+            call = self._record_call(
+                session,
+                run_id=None,
+                dataset_id=None,
+                purpose="arena.window_breakdown",
+                observed_at=observed_at,
+                prompt=req,
+                response_raw=fallback_raw,
+                response_parsed=fallback_breakdown,
+                usage=None,
+                latency_ms=0,
+                error="stub_window_breakdown",
+            )
+            return call.call_id, fallback_breakdown, True
+
+        if not self._model_allowed(session, model_key):
+            call = self._record_call(
+                session,
+                run_id=None,
+                dataset_id=None,
+                purpose="arena.window_breakdown",
+                observed_at=observed_at,
+                prompt=req,
+                response_raw=fallback_raw,
+                response_parsed=fallback_breakdown,
+                usage=None,
+                latency_ms=0,
+                error=f"model_not_allowed: {model_key}",
+            )
+            return call.call_id, fallback_breakdown, True
+
+        base_url, api_key = self._resolve_transport(session, model_key)
+        if base_url is None or not api_key:
+            call = self._record_call(
+                session,
+                run_id=None,
+                dataset_id=None,
+                purpose="arena.window_breakdown",
+                observed_at=observed_at,
+                prompt=req,
+                response_raw=fallback_raw,
+                response_parsed=fallback_breakdown,
+                usage=None,
+                latency_ms=0,
+                error="llm_not_configured",
+            )
+            return call.call_id, fallback_breakdown, True
+
+        global _window_breakdown_circuit_failures, _window_breakdown_circuit_opened_at
+
+        if _window_breakdown_circuit_opened_at is not None:
+            elapsed = time.perf_counter() - _window_breakdown_circuit_opened_at
+            if elapsed < _CIRCUIT_BREAKER_TIMEOUT_SECONDS:
+                call = self._record_call(
+                    session,
+                    run_id=None,
+                    dataset_id=None,
+                    purpose="arena.window_breakdown",
+                    observed_at=observed_at,
+                    prompt=req,
+                    response_raw=fallback_raw,
+                    response_parsed=fallback_breakdown,
+                    usage=None,
+                    latency_ms=0,
+                    error="circuit_breaker_open",
+                )
+                return call.call_id, fallback_breakdown, True
+            _window_breakdown_circuit_opened_at = None
+            _window_breakdown_circuit_failures = 0
+
+        url, headers = self._api_url_and_headers(base_url, api_key)
+
+        started = time.perf_counter()
+        resp_raw: str | None = None
+        resp_parsed: dict[str, Any] | None = None
+        usage: dict[str, Any] | None = None
+        error: str | None = None
+        used_fallback = False
+        try:
+            data = call_with_retry(
+                url=url,
+                headers=headers,
+                req=req,
+                timeout_seconds=float(self.settings.llm_timeout_seconds),
+                max_retries=3,
+            )
+            usage = _extract_usage(data)
+            content_any = _extract_message_content(data)
+            resp_raw = content_any
+            obj, _candidate = extract_first_json_object_text(content_any)
+            resp_parsed = obj
+            WindowBreakdown.model_validate(obj)
+            _window_breakdown_circuit_failures = 0
+        except Exception as exc:  # noqa: BLE001
+            error = repr(exc)
+            resp_raw = fallback_raw
+            resp_parsed = fallback_breakdown
+            used_fallback = True
+            _window_breakdown_circuit_failures += 1
+            if _window_breakdown_circuit_failures >= _CIRCUIT_BREAKER_THRESHOLD:
+                _window_breakdown_circuit_opened_at = time.perf_counter()
+                _LOG.warning(
+                    "window_breakdown_circuit_breaker_opened",
+                    consecutive_failures=_window_breakdown_circuit_failures,
+                )
+        finally:
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            call = self._record_call(
+                session,
+                run_id=None,
+                dataset_id=None,
+                purpose="arena.window_breakdown",
+                observed_at=observed_at,
+                prompt=req,
+                response_raw=resp_raw,
+                response_parsed=resp_parsed,
+                usage=usage,
+                latency_ms=latency_ms,
+                error=error,
+            )
+
+        return call.call_id, resp_parsed or fallback_breakdown, used_fallback
 
     def call_sentiment_item_summary(
         self,
