@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
+from _pytest.monkeypatch import MonkeyPatch
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from v4t.arena.runner import ALL_MARKETS_SENTINEL, execute_arena_submission
 from v4t.db.models import ArenaSubmissionRow, ArenaSubmissionRunRow, DatasetRow
 from v4t.settings import get_settings
 
 
-def test_arena_submission_benchmark_all_markets_creates_100_runs(db_session, monkeypatch) -> None:
+def test_arena_submission_benchmark_all_markets_creates_100_runs(
+    db_session: Session, monkeypatch: MonkeyPatch
+) -> None:
     base = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
     ids: list[str] = []
     for market_idx in range(10):
@@ -45,8 +50,6 @@ def test_arena_submission_benchmark_all_markets_creates_100_runs(db_session, mon
         prompt_template_id=None,
         prompt_vars={
             "prompt_text": "Trade the benchmark.",
-            "risk_level": 3,
-            "holding_period": "swing",
             "system_prompt": None,
         },
         visibility="public",
@@ -71,14 +74,15 @@ def test_arena_submission_benchmark_all_markets_creates_100_runs(db_session, mon
     assert sub.windows_total == 100
     assert sub.windows_completed == 100
 
-    runs = list(
+    runs = cast(
+        list[ArenaSubmissionRunRow],
         db_session.execute(
             select(ArenaSubmissionRunRow).where(
                 ArenaSubmissionRunRow.submission_id == sub.submission_id
             )
         )
         .scalars()
-        .all()
+        .all(),
     )
     assert len(runs) == 100
     assert all(r.status == "finished" for r in runs)

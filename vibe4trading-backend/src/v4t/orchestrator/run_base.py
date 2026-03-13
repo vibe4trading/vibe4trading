@@ -14,7 +14,6 @@ from v4t.benchmark.spec import (
     PositionMode,
     benchmark_system_prompt,
     build_strategy_prompt,
-    get_risk_profile,
 )
 from v4t.contracts.events import make_event
 from v4t.contracts.numbers import decimal_to_str, parse_decimal
@@ -25,6 +24,7 @@ from v4t.contracts.payloads import (
     RunFailedPayload,
     RunFinishedPayload,
     RunStartedPayload,
+    SentimentItemPayload,
     SentimentItemSummaryPayload,
     SimFillPayload,
     SimFillSide,
@@ -52,6 +52,12 @@ class ValidatedDecision:
     rationale: str | None
 
 
+@dataclass(frozen=True)
+class SentimentPromptItem:
+    payload: SentimentItemPayload
+    raw_payload: dict[str, Any] | None = None
+
+
 def get_system_prompt(cfg: RunConfigSnapshot) -> str:
     return benchmark_system_prompt(cfg.prompt.system_prompt_override)
 
@@ -62,6 +68,104 @@ def get_strategy_prompt(cfg: RunConfigSnapshot) -> str:
         risk_level=cfg.risk_level,
         holding_period=cfg.holding_period,
     )
+
+
+def _coerce_sentiment_metadata(raw_payload: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(raw_payload, dict):
+        return {}
+
+    out: dict[str, Any] = {}
+    for key, value in raw_payload.items():
+        if value is None or isinstance(value, (str, int, float, bool)):
+            out[key] = value
+    return out
+
+
+def _build_sentiment_tags(item: SentimentPromptItem) -> list[str]:
+    tags = [item.payload.source, str(item.payload.item_kind)]
+    handle = item.raw_payload.get("handle") if isinstance(item.raw_payload, dict) else None
+    if isinstance(handle, str) and handle.strip():
+        tags.append(handle.strip())
+    return tags
+
+
+def _build_sentiment_prompt_items(
+    *,
+    tick_time: datetime,
+    mask_offset: timedelta,
+    sentiment_items: list[SentimentPromptItem],
+    sentiment_summaries: list[SentimentItemSummaryPayload],
+) -> list[dict[str, Any]]:
+    recent_items: dict[str, SentimentPromptItem] = {}
+    for item in sentiment_items:
+        if item.payload.item_time <= tick_time:
+            recent_items[item.payload.external_id] = item
+
+    recent_summaries: dict[str, SentimentItemSummaryPayload] = {}
+    for summary in sentiment_summaries:
+        if summary.item_time <= tick_time:
+            recent_summaries[summary.external_id] = summary
+
+    merged: list[dict[str, Any]] = []
+    for external_id, item in recent_items.items():
+        summary = recent_summaries.get(external_id)
+        summary_text = (summary.summary_text or "").strip() if summary is not None else ""
+        uses_full_text = not bool(summary_text)
+        effective_text = item.payload.text.strip() if uses_full_text else summary_text
+        effective_item_time = summary.item_time if summary is not None else item.payload.item_time
+        effective_source = summary.source if summary is not None else item.payload.source
+        effective_kind = summary.item_kind if summary is not None else item.payload.item_kind
+        effective_tags = (
+            list(summary.tags)
+            if summary is not None and summary.tags
+            else _build_sentiment_tags(item)
+        )
+
+        merged.append(
+            {
+                "item_time": effective_item_time,
+                "summary_text": effective_text,
+                "tags": effective_tags,
+                "sentiment_score": summary.sentiment_score if summary is not None else None,
+                "source": effective_source,
+                "external_id": external_id,
+                "item_kind": str(effective_kind),
+                "url": item.payload.url,
+                "metadata": _coerce_sentiment_metadata(item.raw_payload),
+                "uses_full_text": uses_full_text,
+            }
+        )
+
+    for external_id, summary in recent_summaries.items():
+        if external_id in recent_items:
+            continue
+        merged.append(
+            {
+                "item_time": summary.item_time,
+                "summary_text": summary.summary_text,
+                "tags": list(summary.tags),
+                "sentiment_score": summary.sentiment_score,
+                "source": summary.source,
+                "external_id": external_id,
+                "item_kind": str(summary.item_kind),
+                "url": None,
+                "metadata": {},
+                "uses_full_text": False,
+            }
+        )
+
+    merged.sort(key=lambda entry: entry["item_time"])
+    merged = merged[-20:]
+
+    out: list[dict[str, Any]] = []
+    for entry in merged:
+        item_time = entry["item_time"]
+        masked_item_time = (
+            item_time + mask_offset if mask_offset.total_seconds() != 0 else item_time
+        ).isoformat()
+        out.append({**entry, "item_time": masked_item_time})
+
+    return out
 
 
 def load_run_and_config(
@@ -235,30 +339,24 @@ def build_prompt_context(
     ohlcv_bars: list[MarketOHLCVPayload] | None,
     closes: list[str],
     features: dict[str, Any] | None,
+    sentiment_items: list[SentimentPromptItem],
     sentiment_summaries: list[SentimentItemSummaryPayload],
     portfolio_view: dict[str, str],
     memory: list[dict[str, Any]],
 ) -> dict[str, Any]:
     prompt_tick_time = tick_time + mask_offset
-    recent_summaries = [s for s in sentiment_summaries if s.item_time <= tick_time]
-    recent_summaries = recent_summaries[-20:]
 
     ctx = build_default_prompt_context(
         market_id=market_id,
         tick_time=prompt_tick_time,
         closes=closes,
         features=features,
-        sentiment_summaries=[
-            {
-                "item_time": (s.item_time + mask_offset).isoformat()
-                if mask_offset.total_seconds() != 0
-                else s.item_time.isoformat(),
-                "summary_text": s.summary_text,
-                "tags": s.tags,
-                "sentiment_score": s.sentiment_score,
-            }
-            for s in recent_summaries
-        ],
+        sentiment_summaries=_build_sentiment_prompt_items(
+            tick_time=tick_time,
+            mask_offset=mask_offset,
+            sentiment_items=sentiment_items,
+            sentiment_summaries=sentiment_summaries,
+        ),
         portfolio=portfolio_view,
         memory=mask_decision_memory(memory, mask_offset),
     )
@@ -307,7 +405,6 @@ def validate_decision(
     gross_leverage_cap: Decimal,
     net_exposure_cap: Decimal,
     call_error: str | None,
-    risk_level: int | None,
 ) -> ValidatedDecision:
     accepted = True
     reject_reason: str | None = None
@@ -322,35 +419,21 @@ def validate_decision(
         reject_reason = f"llm_error: {call_error}"[:300]
 
     if accepted:
-        profile = get_risk_profile(risk_level)
         proposed_mode = PositionMode(decision.mode)
         proposed_target = Decimal(decision.target)
         proposed_leverage = int(decision.leverage)
-        if profile is not None:
-            if proposed_mode not in profile.mode_allowed:
-                accepted = False
-                reject_reason = "mode not allowed for risk_level"
-            elif proposed_mode == PositionMode.spot and proposed_leverage != 1:
-                accepted = False
-                reject_reason = "spot leverage must be 1"
-            elif proposed_mode == PositionMode.spot and proposed_target < 0:
-                accepted = False
-                reject_reason = "spot exposure must be >= 0"
-            elif proposed_mode == PositionMode.spot and proposed_target > Decimal("1"):
-                accepted = False
-                reject_reason = "spot exposure must be <= 1"
-            elif abs(proposed_target) > profile.max_abs_exposure:
-                accepted = False
-                reject_reason = "exposure exceeds risk_level cap"
-            elif proposed_leverage > profile.max_leverage:
-                accepted = False
-                reject_reason = "leverage exceeds risk_level cap"
-            elif proposed_target < 0 and not profile.short_allowed:
-                accepted = False
-                reject_reason = "shorting not allowed for risk_level"
-            elif abs(proposed_target) > Decimal(proposed_leverage):
-                accepted = False
-                reject_reason = "exposure exceeds leverage"
+        if proposed_mode == PositionMode.spot and proposed_leverage != 1:
+            accepted = False
+            reject_reason = "spot leverage must be 1"
+        elif proposed_mode == PositionMode.spot and proposed_target < 0:
+            accepted = False
+            reject_reason = "spot exposure must be >= 0"
+        elif proposed_mode == PositionMode.spot and proposed_target > Decimal("1"):
+            accepted = False
+            reject_reason = "spot exposure must be <= 1"
+        elif abs(proposed_target) > Decimal(proposed_leverage):
+            accepted = False
+            reject_reason = "exposure exceeds leverage"
         if accepted:
             if abs(proposed_target) > gross_leverage_cap:
                 accepted = False
@@ -456,27 +539,58 @@ def write_portfolio_snapshot(
     extra_payload: dict[str, str | int | None] | None = None,
 ) -> None:
     normalized_extra = dict(extra_payload or {})
-    for field in {
-        "position_qty_base",
-        "entry_price",
-        "current_price",
-        "liquidation_price",
-        "unrealized_pnl",
-        "unrealized_pnl_pct",
-        "funding_cost_accumulated",
-        "stop_loss_price",
-        "take_profit_price",
-    }:
-        value = normalized_extra.get(field)
+
+    def _decimal_field(name: str) -> str | None:
+        value = normalized_extra.get(name)
         if isinstance(value, str):
-            normalized_extra[field] = decimal_to_str(parse_decimal(value))
+            return decimal_to_str(parse_decimal(value))
+        return None
+
+    def _position_mode_field() -> Literal["spot", "futures", "none"] | None:
+        value = normalized_extra.get("position_mode")
+        if value == "spot":
+            return "spot"
+        if value == "futures":
+            return "futures"
+        if value == "none":
+            return "none"
+        return None
+
+    def _position_direction_field() -> Literal["long", "short", "flat"] | None:
+        value = normalized_extra.get("position_direction")
+        if value == "long":
+            return "long"
+        if value == "short":
+            return "short"
+        if value == "flat":
+            return "flat"
+        return None
+
+    position_mode = _position_mode_field()
+    position_direction = _position_direction_field()
+
+    position_leverage_raw = normalized_extra.get("position_leverage")
+    position_leverage: int | None = (
+        position_leverage_raw if isinstance(position_leverage_raw, int) else None
+    )
 
     snap_payload = PortfolioSnapshotPayload(
         snapshot_time=tick_time,
         equity_quote=decimal_to_str(equity),
         cash_quote=decimal_to_str(cash),
         positions_base={market_id: decimal_to_str(position_base)},
-        **normalized_extra,
+        position_mode=position_mode,
+        position_direction=position_direction,
+        position_qty_base=_decimal_field("position_qty_base"),
+        position_leverage=position_leverage,
+        entry_price=_decimal_field("entry_price"),
+        current_price=_decimal_field("current_price"),
+        liquidation_price=_decimal_field("liquidation_price"),
+        unrealized_pnl=_decimal_field("unrealized_pnl"),
+        unrealized_pnl_pct=_decimal_field("unrealized_pnl_pct"),
+        funding_cost_accumulated=_decimal_field("funding_cost_accumulated"),
+        stop_loss_price=_decimal_field("stop_loss_price"),
+        take_profit_price=_decimal_field("take_profit_price"),
     ).model_dump(mode="json")
     append_event(
         session,

@@ -433,7 +433,6 @@ def test_tournament_full_workflow_persists_replayable_llm_data(
                         "Trade BTC hourly. Return ONLY valid JSON with schema_version=2, target, mode, leverage, "
                         "stop_loss_pct, take_profit_pct, confidence, key_signals, and rationale."
                     ),
-                    "risk_level": 3,
                     "visibility": "public",
                 },
             )
@@ -485,7 +484,7 @@ def test_tournament_full_workflow_persists_replayable_llm_data(
         assert cfg.market_id == market_id
         assert cfg.model.key == "fake-env-gpt"
         assert cfg.datasets.market_dataset_id == dataset.dataset_id
-        assert cfg.risk_level == 3
+        assert cfg.risk_level is None
 
     decision_calls = list(
         db_session.execute(

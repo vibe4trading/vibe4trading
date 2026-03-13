@@ -366,8 +366,6 @@ def create_submission(
         prompt_template_id=None,
         prompt_vars={
             "prompt_text": req.prompt_text,
-            "risk_level": req.risk_level,
-            "holding_period": req.holding_period.value,
             "system_prompt": req.system_prompt,
         },
         visibility=req.visibility,

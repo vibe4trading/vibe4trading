@@ -63,7 +63,6 @@ class StubDecisionFeatures(BaseModel):
 
     market_id: str
     closes: list[str]  # decimal strings
-    risk_level: int | None = None
 
 
 @dataclass
@@ -874,10 +873,6 @@ class LlmGateway:
 
         leverage = 1
         mode = "spot"
-        if features.risk_level is not None and int(features.risk_level) >= 3 and target > 0:
-            mode = "futures"
-            leverage = 2
-            target = Decimal("2.0")
         return LlmDecisionOutput(
             schema_version=2,
             target=target,

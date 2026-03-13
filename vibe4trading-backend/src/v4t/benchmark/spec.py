@@ -179,20 +179,11 @@ def build_strategy_prompt(
     risk_level: int | None,
     holding_period: HoldingPeriod | None,
 ) -> str:
-    parts: list[str] = []
     base = (base_prompt or "").strip()
     if base:
-        parts.append(base)
+        return base
 
-    if risk_level is not None and risk_level in RISK_LEVEL_PROMPTS:
-        parts.append(RISK_LEVEL_PROMPTS[int(risk_level)])
-
-    if holding_period is not None and holding_period in HOLDING_PERIOD_PROMPTS:
-        parts.append(HOLDING_PERIOD_PROMPTS[holding_period])
-
-    if not parts:
-        return "Analyze the market data and decide target exposure."
-    return "\n\n".join(parts)
+    return "Analyze the market data and decide target exposure."
 
 
 def benchmark_system_prompt(system_prompt_override: str | None) -> str:

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
+
+
+def _compact_text(value: Any) -> str:
+    return " ".join(str(value or "").split())
 
 
 def _normalize_includes(includes: list[str] | None) -> set[str]:
@@ -59,12 +63,13 @@ def render_user_prompt(
     lines.append(f"tick_time={tick_time}")
 
     if "latest_price" in inc:
-        lp = context.get("latest_price")
+        latest_price = context.get("latest_price")
         lines.append("")
         lines.append("Latest price:")
-        if isinstance(lp, dict):
-            lines.append(f"- observed_at={lp.get('observed_at')}")
-            lines.append(f"- price={lp.get('price')}")
+        if isinstance(latest_price, dict):
+            latest_price_map = cast(dict[str, Any], latest_price)
+            lines.append(f"- observed_at={latest_price_map.get('observed_at')}")
+            lines.append(f"- price={latest_price_map.get('price')}")
         else:
             lines.append("(none)")
 
@@ -78,19 +83,20 @@ def render_user_prompt(
         header += " (oldest->newest):"
         lines.append(header)
         if isinstance(bars, list) and bars:
-            for b in bars:
-                if not isinstance(b, dict):
+            for raw_bar in cast(list[Any], bars):
+                if not isinstance(raw_bar, dict):
                     continue
-                bar_start = b.get("bar_start")
-                bar_end = b.get("bar_end")
-                o = b.get("o")
-                h = b.get("h")
-                l = b.get("l")
-                c = b.get("c")
-                vb = b.get("volume_base")
-                vq = b.get("volume_quote")
+                bar = cast(dict[str, Any], raw_bar)
+                bar_start = bar.get("bar_start")
+                bar_end = bar.get("bar_end")
+                o = bar.get("o")
+                h = bar.get("h")
+                l = bar.get("l")
+                c = bar.get("c")
+                volume_base = bar.get("volume_base")
+                volume_quote = bar.get("volume_quote")
                 lines.append(
-                    f"- {bar_start} -> {bar_end} O={o} H={h} L={l} C={c} volume_base={vb} volume_quote={vq}"
+                    f"- {bar_start} -> {bar_end} O={o} H={h} L={l} C={c} volume_base={volume_base} volume_quote={volume_quote}"
                 )
         else:
             lines.append("(none)")
@@ -100,8 +106,8 @@ def render_user_prompt(
         lines.append("")
         lines.append("Recent closes (oldest->newest):")
         if isinstance(closes, list) and closes:
-            for c in closes:
-                lines.append(f"- {c}")
+            for close in cast(list[Any], closes):
+                lines.append(f"- {close}")
         else:
             lines.append("(none)")
 
@@ -110,8 +116,9 @@ def render_user_prompt(
         lines.append("")
         lines.append("Features:")
         if isinstance(features, dict) and features:
-            for k in sorted(features.keys()):
-                lines.append(f"- {k}={features.get(k)}")
+            feature_map = cast(dict[str, Any], features)
+            for key in sorted(feature_map.keys()):
+                lines.append(f"- {key}={feature_map.get(key)}")
         else:
             lines.append("(none)")
 
@@ -120,7 +127,8 @@ def render_user_prompt(
         lines.append("")
         lines.append("Portfolio:")
         if isinstance(portfolio, dict) and portfolio:
-            for k in (
+            portfolio_map = cast(dict[str, Any], portfolio)
+            for key in (
                 "equity_quote",
                 "cash_quote",
                 "position_mode",
@@ -136,46 +144,77 @@ def render_user_prompt(
                 "stop_loss_price",
                 "take_profit_price",
             ):
-                if k in portfolio:
-                    lines.append(f"- {k}={portfolio.get(k)}")
+                if key in portfolio_map:
+                    lines.append(f"- {key}={portfolio_map.get(key)}")
         else:
             lines.append("(none)")
 
     if "sentiment" in inc:
-        ss = context.get("sentiment_summaries")
+        sentiment_summaries = context.get("sentiment_summaries")
         lines.append("")
         lines.append("Recent sentiment summaries:")
-        if isinstance(ss, list) and ss:
-            for s in ss:
-                if not isinstance(s, dict):
+        if isinstance(sentiment_summaries, list) and sentiment_summaries:
+            for raw_summary in cast(list[Any], sentiment_summaries):
+                if not isinstance(raw_summary, dict):
                     continue
-                item_time = s.get("item_time")
-                summary_text = s.get("summary_text")
-                tags = s.get("tags")
-                score = s.get("sentiment_score")
-                tag_str = ",".join(tags) if isinstance(tags, list) else ""
+                sentiment_item = cast(dict[str, Any], raw_summary)
+                item_time = sentiment_item.get("item_time")
+                summary_text = _compact_text(sentiment_item.get("summary_text"))
+                tags = sentiment_item.get("tags")
+                score = sentiment_item.get("sentiment_score")
+                source = _compact_text(sentiment_item.get("source"))
+                item_kind = _compact_text(sentiment_item.get("item_kind"))
+                external_id = _compact_text(sentiment_item.get("external_id"))
+                url = _compact_text(sentiment_item.get("url"))
+                raw_metadata = sentiment_item.get("metadata")
+                metadata = (
+                    cast(dict[str, Any], raw_metadata) if isinstance(raw_metadata, dict) else {}
+                )
+                metadata_str = " ".join(
+                    f"{key}={metadata[key]}"
+                    for key in sorted(metadata.keys())
+                    if metadata.get(key) is not None
+                )
+                text_label = "full_text" if sentiment_item.get("uses_full_text") else "summary"
+                tag_str = (
+                    ",".join(tag for tag in cast(list[Any], tags) if isinstance(tag, str))
+                    if isinstance(tags, list)
+                    else ""
+                )
                 score_str = f" score={score}" if score is not None else ""
-                lines.append(f"- {item_time} {summary_text} tags=[{tag_str}]{score_str}")
+                details = [
+                    f"source={source}" if source else "",
+                    f"kind={item_kind}" if item_kind else "",
+                    f"external_id={external_id}" if external_id else "",
+                    f"url={url}" if url else "",
+                    metadata_str,
+                ]
+                detail_str = " ".join(part for part in details if part)
+                detail_suffix = f" {detail_str}" if detail_str else ""
+                lines.append(
+                    f"- {item_time} {text_label}={summary_text}{detail_suffix} tags=[{tag_str}]{score_str}"
+                )
         else:
             lines.append("(none)")
 
     if "memory" in inc:
-        mem = context.get("memory")
+        memory = context.get("memory")
         lines.append("")
         lines.append("Recent decisions:")
-        if isinstance(mem, list) and mem:
-            for m in mem:
-                if not isinstance(m, dict):
+        if isinstance(memory, list) and memory:
+            for raw_item in cast(list[Any], memory):
+                if not isinstance(raw_item, dict):
                     continue
-                accepted = m.get("accepted")
-                targets = m.get("targets")
-                target = m.get("target")
-                mode = m.get("mode")
-                leverage = m.get("leverage")
-                confidence = m.get("confidence")
-                reject_reason = m.get("reject_reason")
-                key_signals = m.get("key_signals")
-                rationale = m.get("rationale")
+                memory_item = cast(dict[str, Any], raw_item)
+                accepted = memory_item.get("accepted")
+                targets = memory_item.get("targets")
+                target = memory_item.get("target")
+                mode = memory_item.get("mode")
+                leverage = memory_item.get("leverage")
+                confidence = memory_item.get("confidence")
+                reject_reason = memory_item.get("reject_reason")
+                key_signals = memory_item.get("key_signals")
+                rationale = memory_item.get("rationale")
                 lines.append(
                     "- accepted="
                     + str(accepted)

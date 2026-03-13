@@ -23,6 +23,7 @@ from v4t.contracts.payloads import (
     LlmStreamStartPayload,
     MarketOHLCVPayload,
     MarketPricePayload,
+    SentimentItemPayload,
     SentimentItemSummaryPayload,
 )
 from v4t.contracts.run_config import RunMode
@@ -31,6 +32,7 @@ from v4t.db.models import ArenaSubmissionRow, ArenaSubmissionRunRow, DatasetRow
 from v4t.llm.gateway import LlmGateway, StubDecisionFeatures
 from v4t.orchestrator.prompt_builder import render_user_prompt
 from v4t.orchestrator.run_base import (
+    SentimentPromptItem,
     advance_base_tick,
     append_decision_memory,
     append_sim_fill_event,
@@ -134,6 +136,7 @@ def execute_replay_run(
     # Replay state caches.
     latest_price: tuple[datetime, Decimal] | None = None
     ohlcv_bars: list[MarketOHLCVPayload] = []
+    sentiment_items: list[SentimentPromptItem] = []
     sentiment_summaries: list[SentimentItemSummaryPayload] = []
 
     # Portfolio state (Nautilus-backed).
@@ -203,6 +206,13 @@ def execute_replay_run(
                             price=latest_price[1],
                             funding_rate=Decimal(funding.funding_rate),
                         )
+                elif ev.event_type == "sentiment.item":
+                    sentiment_items.append(
+                        SentimentPromptItem(
+                            payload=SentimentItemPayload.model_validate(ev.payload),
+                            raw_payload=ev.raw_payload,
+                        )
+                    )
                 elif ev.event_type == "sentiment.item_summary":
                     s = SentimentItemSummaryPayload.model_validate(ev.payload)
                     sentiment_summaries.append(s)
@@ -241,6 +251,7 @@ def execute_replay_run(
                 ohlcv_bars=usable_bars,
                 closes=closes,
                 features=features,
+                sentiment_items=sentiment_items,
                 sentiment_summaries=sentiment_summaries,
                 portfolio_view=portfolio_view,
                 memory=memory,
@@ -312,7 +323,6 @@ def execute_replay_run(
                 stub_features=StubDecisionFeatures(
                     market_id=cfg.market_id,
                     closes=closes,
-                    risk_level=cfg.risk_level,
                 ),
                 on_delta=_on_delta,
                 temperature=cfg.model.temperature,
@@ -344,7 +354,6 @@ def execute_replay_run(
                 gross_leverage_cap=Decimal(str(cfg.execution.gross_leverage_cap)),
                 net_exposure_cap=Decimal(str(cfg.execution.net_exposure_cap)),
                 call_error=call.error,
-                risk_level=cfg.risk_level,
             )
 
             # Persist decision event.

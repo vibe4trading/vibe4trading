@@ -17,7 +17,6 @@ from v4t.arena.scenario_sets import (
     ScenarioWindow,
     get_scenario_set,
 )
-from v4t.benchmark.spec import HoldingPeriod, get_risk_profile
 from v4t.contracts.payloads import RunFinishedPayload
 from v4t.contracts.run_config import (
     DatasetRefs,
@@ -140,20 +139,7 @@ def _create_scenario_run(
     timestamp = now()
 
     prompt_text = (submission.prompt_vars or {}).get("prompt_text", DEFAULT_PROMPT_TEXT)
-    risk_level = (submission.prompt_vars or {}).get("risk_level")
-    holding_period_raw = (submission.prompt_vars or {}).get("holding_period")
     system_prompt_override = (submission.prompt_vars or {}).get("system_prompt")
-    risk_profile = get_risk_profile(int(risk_level)) if risk_level is not None else None
-    gross_leverage_cap = (
-        float(risk_profile.max_abs_exposure)
-        if risk_profile is not None
-        else settings.execution_gross_leverage_cap
-    )
-    net_exposure_cap = (
-        float(risk_profile.max_abs_exposure)
-        if risk_profile is not None
-        else settings.execution_net_exposure_cap
-    )
 
     cfg = RunConfigSnapshot(
         mode=RunMode.replay,
@@ -162,8 +148,8 @@ def _create_scenario_run(
         if submission.visibility == "public"
         else RunVisibility.private,
         market_id=market_id,
-        risk_level=int(risk_level) if risk_level is not None else None,
-        holding_period=HoldingPeriod(holding_period_raw) if holding_period_raw else None,
+        risk_level=None,
+        holding_period=None,
         model=ModelConfig(key=submission.model_key),
         datasets=DatasetRefs(
             market_dataset_id=market_dataset_id,
@@ -186,8 +172,8 @@ def _create_scenario_run(
         execution=ExecutionConfig(
             fee_bps=settings.execution_fee_bps,
             initial_equity_quote=settings.execution_initial_equity_quote,
-            gross_leverage_cap=gross_leverage_cap,
-            net_exposure_cap=net_exposure_cap,
+            gross_leverage_cap=settings.execution_gross_leverage_cap,
+            net_exposure_cap=settings.execution_net_exposure_cap,
         ),
     )
 

@@ -10,7 +10,6 @@ from v4t.api.routes.runs import to_out
 from v4t.api.schemas import LiveRunCreateRequest, LiveRunOut, RunOut
 from v4t.api.utils import assert_model_selectable, now
 from v4t.auth.deps import get_current_user
-from v4t.benchmark.spec import get_risk_profile
 from v4t.contracts.run_config import (
     DatasetRefs,
     ExecutionConfig,
@@ -80,23 +79,11 @@ def start_live_run(
         base_price=req.base_price,
     )
 
-    risk_profile = get_risk_profile(req.risk_level)
-    gross_leverage_cap = (
-        float(risk_profile.max_abs_exposure)
-        if risk_profile is not None
-        else settings.execution_gross_leverage_cap
-    )
-    net_exposure_cap = (
-        float(risk_profile.max_abs_exposure)
-        if risk_profile is not None
-        else settings.execution_net_exposure_cap
-    )
-
     cfg = RunConfigSnapshot(
         mode=RunMode.live,
         market_id=req.market_id,
-        risk_level=req.risk_level,
-        holding_period=req.holding_period,
+        risk_level=None,
+        holding_period=None,
         model=ModelConfig(key=req.model_key),
         datasets=DatasetRefs(market_dataset_id=None, sentiment_dataset_id=None),
         live=live_cfg,
@@ -114,8 +101,8 @@ def start_live_run(
         execution=ExecutionConfig(
             fee_bps=settings.execution_fee_bps,
             initial_equity_quote=settings.execution_initial_equity_quote,
-            gross_leverage_cap=gross_leverage_cap,
-            net_exposure_cap=net_exposure_cap,
+            gross_leverage_cap=settings.execution_gross_leverage_cap,
+            net_exposure_cap=settings.execution_net_exposure_cap,
         ),
     )
 

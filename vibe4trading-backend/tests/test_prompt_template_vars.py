@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from v4t.contracts.run_config import (
     DatasetRefs,
+    HoldingPeriod,
     ModelConfig,
     PromptConfig,
     RunConfigSnapshot,
@@ -15,9 +18,10 @@ from v4t.contracts.run_config import (
 from v4t.db.models import DatasetRow, LlmCallRow, RunConfigSnapshotRow, RunRow
 from v4t.ingest.dataset_import import import_dataset
 from v4t.orchestrator.replay_run import execute_replay_run
+from v4t.orchestrator.run_base import get_strategy_prompt
 
 
-def test_prompt_text_passed_to_llm_call(db_session) -> None:
+def test_prompt_text_passed_to_llm_call(db_session: Session) -> None:
     now = datetime.now(UTC)
     start = (now - timedelta(hours=6)).replace(minute=0, second=0, microsecond=0)
     end = now.replace(minute=0, second=0, microsecond=0)
@@ -80,14 +84,15 @@ def test_prompt_text_passed_to_llm_call(db_session) -> None:
 
     execute_replay_run(db_session, run_id=run.run_id)
 
-    calls = list(
+    calls = cast(
+        list[LlmCallRow],
         db_session.execute(
             select(LlmCallRow)
             .where(LlmCallRow.run_id == run.run_id, LlmCallRow.purpose == "decision")
             .order_by(LlmCallRow.observed_at)
         )
         .scalars()
-        .all()
+        .all(),
     )
     assert calls
     user_prompt = calls[0].prompt["messages"][1]["content"]
@@ -98,3 +103,26 @@ def test_prompt_text_passed_to_llm_call(db_session) -> None:
     assert "Recent sentiment summaries" in user_prompt
     assert "Recent decisions" in user_prompt
     assert "Return ONLY a JSON object like:" in user_prompt
+
+
+def test_strategy_prompt_uses_only_base_prompt() -> None:
+    cfg = RunConfigSnapshot(
+        mode=RunMode.replay,
+        market_id="spot:demo:DEMO",
+        risk_level=3,
+        holding_period=HoldingPeriod.swing,
+        model=ModelConfig(key="stub"),
+        datasets=DatasetRefs(market_dataset_id=None, sentiment_dataset_id=None),
+        scheduler=SchedulerConfig(base_interval_seconds=3600, price_tick_seconds=60),
+        prompt=PromptConfig(
+            prompt_text="Use only the custom prompt text.",
+            lookback_bars=72,
+            timeframe="1h",
+        ),
+    )
+
+    strategy_prompt = get_strategy_prompt(cfg)
+
+    assert strategy_prompt == "Use only the custom prompt text."
+    assert "balanced crypto trader" not in strategy_prompt.lower()
+    assert "trading style: swing" not in strategy_prompt.lower()

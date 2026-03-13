@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type PromptMode = "noob" | "pro";
+
 type PromptVariant = "dark" | "light";
 
 interface PromptInputProps {
@@ -14,13 +15,15 @@ const NOOB_TEMPLATE = {
   tradingStyle: ["aggressive", "conservative", "balanced"],
   timeHorizon: ["frequent", "medium-term", "long-term"],
   riskTolerance: ["high", "moderate", "low"],
+} as const;
+
+type NoobSelections = {
+  tradingStyle: (typeof NOOB_TEMPLATE.tradingStyle)[number];
+  timeHorizon: (typeof NOOB_TEMPLATE.timeHorizon)[number];
+  riskTolerance: (typeof NOOB_TEMPLATE.riskTolerance)[number];
 };
 
-function buildNoobPrompt(selections: {
-  tradingStyle: string;
-  timeHorizon: string;
-  riskTolerance: string;
-}) {
+function buildNoobPrompt(selections: NoobSelections) {
   return `You are a trading decision engine. I'm a ${selections.tradingStyle} trader. I play ${selections.timeHorizon} trading with ${selections.riskTolerance} risk tolerance.
 
 Analyze the market data and sentiment, then make trading decisions that fit this style, time horizon, and risk profile.`;
@@ -33,7 +36,7 @@ export function PromptInput({
   variant = "dark",
 }: PromptInputProps) {
   const [mode, setMode] = useState<PromptMode>(initialMode);
-  const [noobSelections, setNoobSelections] = useState({
+  const [noobSelections, setNoobSelections] = useState<NoobSelections>({
     tradingStyle: "balanced",
     timeHorizon: "medium-term",
     riskTolerance: "moderate",
@@ -83,7 +86,10 @@ export function PromptInput({
     : "w-full rounded-2xl border border-white/10 bg-black/40 p-4 font-mono text-sm text-white placeholder-zinc-600 focus:border-[color:var(--accent)] focus:outline-none focus:ring-1 focus:ring-[color:var(--accent)] transition-all";
   const darkToggleClass = "rounded-xl px-4 py-2 text-sm font-medium transition-all";
 
-  const handleNoobChange = (field: keyof typeof noobSelections, nextValue: string) => {
+  const handleNoobChange = <K extends keyof NoobSelections>(
+    field: K,
+    nextValue: NoobSelections[K],
+  ) => {
     const updated = { ...noobSelections, [field]: nextValue };
     setNoobSelections(updated);
     onChange(buildNoobPrompt(updated));
@@ -134,7 +140,12 @@ export function PromptInput({
               <label className={labelClass}>Trading Style</label>
               <select
                 value={noobSelections.tradingStyle}
-                onChange={(e) => handleNoobChange("tradingStyle", e.target.value)}
+                onChange={(e) =>
+                  handleNoobChange(
+                    "tradingStyle",
+                    e.target.value as NoobSelections["tradingStyle"],
+                  )
+                }
                 className={selectClass}
               >
                 {NOOB_TEMPLATE.tradingStyle.map((opt) => (
@@ -149,7 +160,12 @@ export function PromptInput({
               <label className={labelClass}>Time Horizon</label>
               <select
                 value={noobSelections.timeHorizon}
-                onChange={(e) => handleNoobChange("timeHorizon", e.target.value)}
+                onChange={(e) =>
+                  handleNoobChange(
+                    "timeHorizon",
+                    e.target.value as NoobSelections["timeHorizon"],
+                  )
+                }
                 className={selectClass}
               >
                 {NOOB_TEMPLATE.timeHorizon.map((opt) => (
@@ -164,7 +180,12 @@ export function PromptInput({
               <label className={labelClass}>Risk Tolerance</label>
               <select
                 value={noobSelections.riskTolerance}
-                onChange={(e) => handleNoobChange("riskTolerance", e.target.value)}
+                onChange={(e) =>
+                  handleNoobChange(
+                    "riskTolerance",
+                    e.target.value as NoobSelections["riskTolerance"],
+                  )
+                }
                 className={selectClass}
               >
                 {NOOB_TEMPLATE.riskTolerance.map((opt) => (

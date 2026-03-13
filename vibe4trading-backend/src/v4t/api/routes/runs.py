@@ -33,7 +33,6 @@ from v4t.api.schemas import (
 from v4t.api.utils import assert_model_selectable, now
 from v4t.auth.deps import get_current_user
 from v4t.auth.quota import claim_quota
-from v4t.benchmark.spec import get_risk_profile
 from v4t.contracts.payloads import MarketPricePayload
 from v4t.contracts.run_config import (
     DatasetRefs,
@@ -135,23 +134,11 @@ def create_run(
             status_code=429, detail=f"Daily quota exceeded: {runs_used}/{runs_limit} runs used"
         )
 
-    risk_profile = get_risk_profile(req.risk_level)
-    gross_leverage_cap = (
-        float(risk_profile.max_abs_exposure)
-        if risk_profile is not None
-        else settings.execution_gross_leverage_cap
-    )
-    net_exposure_cap = (
-        float(risk_profile.max_abs_exposure)
-        if risk_profile is not None
-        else settings.execution_net_exposure_cap
-    )
-
     cfg = RunConfigSnapshot(
         mode=RunMode.replay,
         market_id=req.market_id,
-        risk_level=req.risk_level,
-        holding_period=req.holding_period,
+        risk_level=None,
+        holding_period=None,
         model=ModelConfig(key=req.model_key),
         datasets=DatasetRefs(
             market_dataset_id=req.market_dataset_id, sentiment_dataset_id=req.sentiment_dataset_id
@@ -170,8 +157,8 @@ def create_run(
         execution=ExecutionConfig(
             fee_bps=settings.execution_fee_bps,
             initial_equity_quote=settings.execution_initial_equity_quote,
-            gross_leverage_cap=gross_leverage_cap,
-            net_exposure_cap=net_exposure_cap,
+            gross_leverage_cap=settings.execution_gross_leverage_cap,
+            net_exposure_cap=settings.execution_net_exposure_cap,
         ),
     )
 
@@ -198,8 +185,8 @@ def create_run(
             child_cfg = RunConfigSnapshot(
                 mode=RunMode.replay,
                 market_id=req.market_id,
-                risk_level=req.risk_level,
-                holding_period=req.holding_period,
+                risk_level=None,
+                holding_period=None,
                 model=ModelConfig(key=pair.model_key),
                 datasets=DatasetRefs(
                     market_dataset_id=req.market_dataset_id,

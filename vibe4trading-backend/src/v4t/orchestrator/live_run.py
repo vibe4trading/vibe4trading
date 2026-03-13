@@ -21,6 +21,7 @@ from v4t.contracts.payloads import (
     LlmStreamStartPayload,
     MarketOHLCVPayload,
     MarketPricePayload,
+    SentimentItemPayload,
     SentimentItemSummaryPayload,
 )
 from v4t.contracts.run_config import LiveConfig, RunMode
@@ -29,6 +30,7 @@ from v4t.db.models import EventRow
 from v4t.llm.gateway import LlmGateway, StubDecisionFeatures
 from v4t.orchestrator.prompt_builder import render_user_prompt
 from v4t.orchestrator.run_base import (
+    SentimentPromptItem,
     advance_base_tick,
     append_decision_memory,
     append_sim_fill_event,
@@ -90,6 +92,7 @@ class _OhlcvBarBuilder:
         elif new_start != self.bar_start:
             # Roll: close previous bar (if it has data).
             if self.c is not None:
+                assert self.bar_end is not None
                 closed = MarketOHLCVPayload(
                     market_id=self.market_id,
                     timeframe=self.timeframe,
@@ -182,6 +185,7 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
     # Live state caches.
     latest_price: tuple[datetime, Decimal] | None = None
     ohlcv_bars: list[MarketOHLCVPayload] = []
+    sentiment_items: list[SentimentPromptItem] = []
     sentiment_summaries: list[SentimentItemSummaryPayload] = []
 
     bar_builder = _OhlcvBarBuilder(market_id=cfg.market_id, timeframe=cfg.prompt.timeframe)
@@ -209,18 +213,29 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
             sentiment_rows = list(
                 session.execute(
                     select(EventRow)
-                    .where(EventRow.event_type == "sentiment.item_summary")
+                    .where(EventRow.event_type.in_(["sentiment.item", "sentiment.item_summary"]))
                     .where(EventRow.run_id == run_id)
                     .order_by(EventRow.observed_at.desc())
-                    .limit(20)
+                    .limit(80)
                 )
                 .scalars()
                 .all()
             )
-            sentiment_summaries = [
-                SentimentItemSummaryPayload.model_validate(r.payload)
-                for r in reversed(sentiment_rows)
-            ]
+            sentiment_items = []
+            sentiment_summaries = []
+            for row in reversed(sentiment_rows):
+                if row.event_type == "sentiment.item":
+                    sentiment_items.append(
+                        SentimentPromptItem(
+                            payload=SentimentItemPayload.model_validate(row.payload),
+                            raw_payload=row.raw_payload,
+                        )
+                    )
+                    continue
+                if row.event_type == "sentiment.item_summary":
+                    sentiment_summaries.append(
+                        SentimentItemSummaryPayload.model_validate(row.payload)
+                    )
 
             # Emit price ticks on a stable cadence (bucketed).
             price_tick_time = floor_time(current_time, step_seconds=price_step)
@@ -334,6 +349,7 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
                 ohlcv_bars=usable_bars,
                 closes=closes,
                 features=features,
+                sentiment_items=sentiment_items,
                 sentiment_summaries=sentiment_summaries,
                 portfolio_view=portfolio_view,
                 memory=memory,
@@ -400,7 +416,6 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
                 stub_features=StubDecisionFeatures(
                     market_id=cfg.market_id,
                     closes=closes,
-                    risk_level=cfg.risk_level,
                 ),
                 on_delta=_on_delta,
                 temperature=cfg.model.temperature,
@@ -432,7 +447,6 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
                 gross_leverage_cap=Decimal(str(cfg.execution.gross_leverage_cap)),
                 net_exposure_cap=Decimal(str(cfg.execution.net_exposure_cap)),
                 call_error=call.error,
-                risk_level=cfg.risk_level,
             )
 
             decision_payload = LlmDecisionPayload(

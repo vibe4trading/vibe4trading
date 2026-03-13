@@ -6,7 +6,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from v4t.benchmark.spec import HoldingPeriod
 from v4t.contracts.arena_report import ArenaSubmissionReport
 
 
@@ -134,8 +133,6 @@ class RunCreateRequest(BaseModel):
     model_token_pairs: list[ModelTokenPair] | None = None
 
     prompt_text: str = "Analyze the market data and decide target exposure."
-    risk_level: int | None = Field(default=None, ge=1, le=5)
-    holding_period: HoldingPeriod | None = None
     system_prompt: str | None = None
 
 
@@ -219,8 +216,6 @@ class LiveRunCreateRequest(BaseModel):
     model_key: str = "stub"
 
     prompt_text: str = "You are a trading assistant. Analyze the market and make decisions."
-    risk_level: int | None = Field(default=None, ge=1, le=5)
-    holding_period: HoldingPeriod | None = None
     system_prompt: str | None = None
 
     # Live ingestion
@@ -271,8 +266,6 @@ class ArenaSubmissionCreateRequest(BaseModel):
     model_key: str = "stub"
 
     prompt_text: str = "Analyze the market data and decide target exposure."
-    risk_level: int = Field(default=3, ge=1, le=5)
-    holding_period: HoldingPeriod = HoldingPeriod.swing
     system_prompt: str | None = None
 
     visibility: Literal["public", "private"] = "public"
