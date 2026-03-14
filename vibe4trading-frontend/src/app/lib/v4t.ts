@@ -289,6 +289,14 @@ export type ArenaSubmissionReportKeyMetrics = {
   window_return_dispersion_pct: number | null;
 };
 
+export type WindowBreakdown = {
+  window_story: string;
+  what_worked: string[];
+  what_didnt_work: string[];
+  improvement_areas: string[];
+  key_takeaway: string;
+};
+
 export type ArenaSubmissionReportWindow = {
   scenario_index: number;
   window_code: string;
@@ -305,6 +313,7 @@ export type ArenaSubmissionReportWindow = {
   acceptance_rate_pct: number | null;
   avg_confidence: number | null;
   avg_target_exposure_pct: number | null;
+  breakdown: WindowBreakdown | null;
 };
 
 export type ArenaSubmissionReportHighlight = {

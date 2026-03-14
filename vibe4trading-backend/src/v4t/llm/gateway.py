@@ -626,7 +626,7 @@ class LlmGateway:
         user_prompt: str,
         fallback_report: dict[str, Any],
         temperature: float = 0.0,
-        max_output_tokens: int = 900,
+        max_output_tokens: int = 16384,
     ) -> tuple[UUID | None, dict[str, Any], bool]:
         req = self._build_request(
             model_key=model_key,
@@ -741,7 +741,7 @@ class LlmGateway:
         system_prompt: str,
         user_prompt: str,
         fallback_breakdown: dict[str, Any],
-        max_output_tokens: int = 900,
+        max_output_tokens: int = 16384,
     ) -> tuple[UUID, dict[str, Any], bool]:
         from v4t.contracts.arena_report import WindowBreakdown
 

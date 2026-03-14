@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,13 +54,23 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
 
     settings = get_settings()
-    allowed_origins = [settings.frontend_url.rstrip("/")]
-    if "localhost" in settings.frontend_url or "127.0.0.1" in settings.frontend_url:
-        allowed_origins.append("http://localhost:5173")
+    allowed_origins = {settings.frontend_url.rstrip("/")}
+    frontend_origin = urlparse(settings.frontend_url)
+    if frontend_origin.hostname in {"localhost", "127.0.0.1"}:
+        scheme = frontend_origin.scheme or "http"
+        port_suffix = f":{frontend_origin.port}" if frontend_origin.port else ""
+        allowed_origins.update(
+            {
+                f"{scheme}://localhost{port_suffix}",
+                f"{scheme}://127.0.0.1{port_suffix}",
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+            }
+        )
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=allowed_origins,
+        allow_origins=sorted(allowed_origins),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

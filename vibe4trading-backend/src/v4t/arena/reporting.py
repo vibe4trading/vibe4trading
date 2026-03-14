@@ -597,7 +597,7 @@ def _generate_window_breakdowns(
                 system_prompt=_WINDOW_BREAKDOWN_PROMPT,
                 user_prompt=json.dumps(payload, ensure_ascii=True, indent=2),
                 fallback_breakdown=fallback_breakdown,
-                max_output_tokens=900,
+                max_output_tokens=16384,
             )
 
             call_row = worker_session.get(LlmCallRow, call_id) if call_id else None

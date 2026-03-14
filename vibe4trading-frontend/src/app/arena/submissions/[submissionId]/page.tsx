@@ -11,6 +11,7 @@ import {
   apiJson,
   ArenaScenarioRunOut,
   ArenaSubmissionDetailOut,
+  ArenaSubmissionReportWindow,
 } from "@/app/lib/v4t";
 import { useProductTour } from "@/app/hooks/useProductTour";
 import { useTourPersistence } from "@/app/hooks/useTourPersistence";
@@ -113,6 +114,7 @@ type WindowSlot = {
   code: string;
   label: string;
   run: ArenaScenarioRunOut | null;
+  reportWindow: ArenaSubmissionReportWindow | null;
 };
 
 type WindowModalProps = {
@@ -129,9 +131,17 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
   if (!slot || !submission) return null;
 
   const run = slot.run;
+  const breakdown = slot.reportWindow?.breakdown ?? null;
   const story = storyCards[slot.code] ?? null;
   const tone = statusMark(run?.status ?? "pending", run?.return_pct);
   const curve = curvePoints(run?.return_pct);
+  const coachingSections = breakdown
+    ? [
+        { title: "What Worked", items: breakdown.what_worked },
+        { title: "What Didn't", items: breakdown.what_didnt_work },
+        { title: "Improve Next", items: breakdown.improvement_areas },
+      ]
+    : [];
 
   const curveMin = Math.min(...curve);
   const curveMax = Math.max(...curve);
@@ -321,6 +331,35 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
                 </Link>
               ) : null}
             </div>
+
+            <div className="modal-card">
+              <div className="modal-card-head">
+                <h4>Window Coaching</h4>
+                <span>{breakdown ? "Imported breakdown" : "Not generated"}</span>
+              </div>
+
+              {breakdown ? (
+                <>
+                  <p className="story-subtitle">{breakdown.key_takeaway}</p>
+                  <p style={{ fontSize: "14px", lineHeight: 1.6, color: "#3b3b3b" }}>{breakdown.window_story}</p>
+                  <div style={{ display: "grid", gap: "12px", marginTop: "16px" }}>
+                    {coachingSections.map((section) => (
+                      <div key={section.title} className="lb-rule-box" style={{ marginTop: 0 }}>
+                        <strong>{section.title}</strong>
+                        {section.items.map((item) => (
+                          <span key={item}>- {item}</span>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p style={{ fontSize: "14px", lineHeight: 1.6, color: "#555" }}>
+                  This window does not have a generated breakdown yet. Once the report pipeline finishes, the imported
+                  coaching notes will appear here.
+                </p>
+              )}
+            </div>
           </section>
         </div>
       </article>
@@ -384,17 +423,20 @@ export default function SubmissionDetailPage() {
     }
   }, [activeTour]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const report = data?.report_json ?? null;
   const slots = React.useMemo<WindowSlot[]>(() => {
     const total = data?.windows_total ?? data?.runs.length ?? 0;
     const runs = [...(data?.runs ?? [])].sort((a, b) => a.scenario_index - b.scenario_index);
     const byIndex = new Map(runs.map((run) => [run.scenario_index, run]));
+    const reportByIndex = new Map((report?.windows ?? []).map((window) => [window.scenario_index, window]));
     return Array.from({ length: total }, (_, index) => ({
       index,
       code: windowCode(index),
       label: windowLabel(data?.scenario_set_key, index),
       run: byIndex.get(index) ?? null,
+      reportWindow: reportByIndex.get(index) ?? null,
     }));
-  }, [data]);
+  }, [data, report?.windows]);
 
   const finishedSlots = React.useMemo(
     () =>
@@ -417,7 +459,6 @@ export default function SubmissionDetailPage() {
 
   const progressPct =
     data && data.windows_total > 0 ? (data.windows_completed / data.windows_total) * 100 : 0;
-  const report = data?.report_json ?? null;
   const score = report?.overall_score ?? fallbackScoreValue(data?.total_return_pct ?? null, winRatePct, progressPct);
   const progressText = data ? `${data.windows_completed}/${data.windows_total}` : "…";
   const statusDisplay = getSubmissionStatusDisplay({
@@ -455,6 +496,13 @@ export default function SubmissionDetailPage() {
   }, [data?.total_return_pct, slots]);
 
   const selectedSlot = slots.find((slot) => slot.code === selectedCode) ?? null;
+  const featuredBreakdownSlot =
+    selectedSlot?.reportWindow?.breakdown
+      ? selectedSlot
+      : bestSlot?.reportWindow?.breakdown
+        ? bestSlot
+        : slots.find((slot) => slot.reportWindow?.breakdown) ?? null;
+  const featuredBreakdown = featuredBreakdownSlot?.reportWindow?.breakdown ?? null;
 
   return (
     <>
@@ -677,6 +725,19 @@ export default function SubmissionDetailPage() {
                 <span>2. Click any window to open the trial-detail modal.</span>
                 <span>3. Public submissions let you drill down into the underlying replay run.</span>
               </div>
+
+              {featuredBreakdown ? (
+                <div className="lb-rule-box" style={{ marginTop: "16px" }}>
+                  <strong>
+                    Window Coaching / {featuredBreakdownSlot?.code ?? "Window"}
+                  </strong>
+                  <span>{featuredBreakdown.key_takeaway}</span>
+                  <span>{featuredBreakdown.window_story}</span>
+                  {featuredBreakdown.what_worked.slice(0, 2).map((item) => (
+                    <span key={item}>Worked: {item}</span>
+                  ))}
+                </div>
+              ) : null}
             </article>
           </section>
 
