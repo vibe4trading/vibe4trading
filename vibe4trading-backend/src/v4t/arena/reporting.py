@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import statistics
+import structlog
 
 # pyright: reportUnusedFunction=false
 from collections import defaultdict
@@ -13,6 +14,8 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+log = structlog.get_logger("arena.reporting")
 
 from v4t.arena.metrics import compute_run_metrics
 from v4t.contracts.arena_report import (
@@ -477,6 +480,9 @@ def _generate_llm_report(
     try:
         narrative = ArenaSubmissionReportNarrative.model_validate(response_json)
     except Exception:
+        log.warning(
+            "invalid_narrative_response", submission_id=str(submission.submission_id), exc_info=True
+        )
         submission.report_call_id = call_id
         return fallback
 
@@ -551,6 +557,7 @@ def _generate_window_breakdowns(
         try:
             return WindowBreakdown.model_validate(payload)
         except Exception:
+            log.warning("invalid_window_breakdown", exc_info=True)
             return WindowBreakdown.model_construct(**_fallback_for_window(window))
 
     def _build_window_prompt_payload(window: ArenaSubmissionReportWindow) -> WindowBreakdown:
@@ -625,6 +632,9 @@ def _generate_window_breakdowns(
             worker_session.commit()
             return _coerce_breakdown(window, response_json)
         except Exception:
+            log.error(
+                "window_breakdown_failed", scenario_index=window.scenario_index, exc_info=True
+            )
             worker_session.rollback()
             return _coerce_breakdown(window, _fallback_for_window(window))
         finally:

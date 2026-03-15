@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _MODEL_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9._:-]{0,127}$")
@@ -221,6 +221,14 @@ class Settings(BaseSettings):
             "When empty, paths are used as-is from the database."
         ),
     )
+
+    @model_validator(mode="after")
+    def validate_secrets(self) -> "Settings":
+        if self.llm_model != "stub" and not self.llm_api_key:
+            raise ValueError("llm_api_key required when llm_model is not stub")
+        if not self.database_url:
+            raise ValueError("database_url is required")
+        return self
 
 
 @lru_cache

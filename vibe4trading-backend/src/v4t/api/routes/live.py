@@ -44,6 +44,7 @@ def _find_latest_live_run(db: Session) -> RunRow | None:
         try:
             cfg = RunConfigSnapshot.model_validate(cfg_row.config)
         except Exception:
+            logger.warning("invalid_run_config", run_id=str(run_row.run_id), exc_info=True)
             continue
         if cfg.mode == RunMode.live:
             return run_row

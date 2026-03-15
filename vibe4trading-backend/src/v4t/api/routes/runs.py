@@ -408,6 +408,7 @@ def _parse_last_event_id(v: str | None) -> tuple[datetime | None, str | None]:
     try:
         return datetime.fromisoformat(ts_s), ev_id
     except Exception:
+        logger.warning("invalid_last_event_id", value=v)
         return None, None
 
 
@@ -456,7 +457,7 @@ def _select_events(
 
 
 @router.get("/{run_id}/stream")
-def stream_run_events(
+async def stream_run_events(
     run_id: UUID,
     request: Request,
 ) -> StreamingResponse:
@@ -480,7 +481,7 @@ def stream_run_events(
     last_id_hdr = request.headers.get("last-event-id")
     cursor_ts, cursor_event_id = _parse_last_event_id(last_id_hdr)
 
-    def gen():
+    async def gen():
         idle_started: float | None = None
         last_keepalive = time.time()
         finished_seen = False
@@ -488,7 +489,8 @@ def stream_run_events(
         nonlocal cursor_ts, cursor_event_id
 
         while True:
-            rows = _select_events(
+            rows = await run_in_threadpool(
+                _select_events,
                 run_id=run_id,
                 interest=interest,
                 cursor_ts=cursor_ts,
@@ -530,7 +532,7 @@ def stream_run_events(
                 if now_t - idle_started >= 5:
                     break
 
-            time.sleep(0.25)
+            await asyncio.sleep(0.25)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 

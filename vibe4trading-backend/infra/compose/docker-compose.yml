@@ -59,6 +59,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
     command: ["sh", "-c", "uv run uvicorn v4t.api.app:app --host 0.0.0.0 --port 8000"]
 
   worker:
