@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -15,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from v4t.contracts.arena_report import ArenaSubmissionReportNarrative
 from v4t.contracts.payloads import LlmDecisionOutput
 from v4t.db.models import LlmCallRow, LlmModelRow
 from v4t.llm.budget import LlmBudgetTracker
@@ -30,9 +30,6 @@ from v4t.utils.datetime import now
 
 _LOG: Final = structlog.get_logger("llm.gateway")
 
-# Circuit breaker state for window breakdown calls
-_window_breakdown_circuit_failures = 0
-_window_breakdown_circuit_opened_at: float | None = None
 _CIRCUIT_BREAKER_THRESHOLD = 5
 _CIRCUIT_BREAKER_TIMEOUT_SECONDS = 60.0
 
@@ -82,6 +79,7 @@ class LlmGateway:
     def __init__(self) -> None:
         self.settings = get_settings()
         self._budget = LlmBudgetTracker()
+        self._window_breakdown_circuit: dict[UUID, tuple[int, float | None]] = {}
 
     def _get_enabled_model_row(self, session: Session, model_key: str) -> LlmModelRow | None:
         return (
@@ -281,6 +279,38 @@ class LlmGateway:
         temperature: float = 0.0,
         max_output_tokens: int = 800,
     ) -> LlmCallResult:
+        if self._budget.exceeded_run(
+            session,
+            run_id=run_id,
+            purpose="decision",
+            limit=int(self.settings.llm_max_decision_calls_per_run),
+        ):
+            req = self._build_request(
+                model_key=model_key,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=temperature,
+                max_output_tokens=max_output_tokens,
+            )
+            call = self._record_call(
+                session,
+                run_id=run_id,
+                dataset_id=None,
+                purpose="decision",
+                observed_at=observed_at,
+                prompt=req,
+                response_raw=None,
+                response_parsed=None,
+                usage=None,
+                latency_ms=0,
+                error="budget_exceeded: max decision calls per run",
+            )
+            return LlmCallResult(
+                call_id=call.call_id,
+                decision=self._empty_decision(),
+                error="budget_exceeded: max decision calls per run",
+            )
+
         if self._use_stub(session, model_key):
             decision = self._stub_decision(stub_features)
             call = self._record_call(
@@ -306,22 +336,30 @@ class LlmGateway:
             return LlmCallResult(call_id=call.call_id, decision=decision, error=None)
 
         if not self._model_allowed(session, model_key):
-            return LlmCallResult(
-                call_id=None,
-                decision=self._empty_decision(),
+            req = self._build_request(
+                model_key=model_key,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=temperature,
+                max_output_tokens=max_output_tokens,
+            )
+            call = self._record_call(
+                session,
+                run_id=run_id,
+                dataset_id=None,
+                purpose="decision",
+                observed_at=observed_at,
+                prompt=req,
+                response_raw=None,
+                response_parsed=None,
+                usage=None,
+                latency_ms=0,
                 error=f"model_not_allowed: {model_key}",
             )
-
-        if self._budget.exceeded_run(
-            session,
-            run_id=run_id,
-            purpose="decision",
-            limit=int(self.settings.llm_max_decision_calls_per_run),
-        ):
             return LlmCallResult(
-                call_id=None,
+                call_id=call.call_id,
                 decision=self._empty_decision(),
-                error="budget_exceeded: max decision calls per run",
+                error=f"model_not_allowed: {model_key}",
             )
 
         base_url, api_key = self._resolve_transport(session, model_key)
@@ -445,67 +483,6 @@ class LlmGateway:
             decision=self._empty_decision(),
             error=last_error,
         )
-
-    def call_decision_streaming(
-        self,
-        session: Session,
-        *,
-        run_id: UUID,
-        observed_at: datetime,
-        model_key: str,
-        system_prompt: str,
-        user_prompt: str,
-        stub_features: StubDecisionFeatures,
-        on_delta: Callable[[str], None],
-        temperature: float = 0.0,
-        max_output_tokens: int = 800,
-    ) -> LlmCallResult:
-        if self._use_stub(session, model_key):
-            decision = self._stub_decision(stub_features)
-            text = decision.model_dump_json()
-            for chunk in _chunk_text(text):
-                on_delta(chunk)
-            call = self._record_call(
-                session,
-                run_id=run_id,
-                dataset_id=None,
-                purpose="decision",
-                observed_at=observed_at,
-                prompt={
-                    "model": "stub",
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "stub_features": stub_features.model_dump(),
-                },
-                response_raw=text,
-                response_parsed=decision.model_dump(mode="json"),
-                usage=None,
-                latency_ms=0,
-                error=None,
-            )
-            return LlmCallResult(call_id=call.call_id, decision=decision, error=None)
-
-        res = self.call_decision(
-            session,
-            run_id=run_id,
-            observed_at=observed_at,
-            model_key=model_key,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            stub_features=stub_features,
-            temperature=temperature,
-            max_output_tokens=max_output_tokens,
-        )
-        if res.error is None:
-            text = json.dumps(res.decision.model_dump(mode="json"), separators=(",", ":"))
-        else:
-            text = f"(error) {res.error}"
-
-        for chunk in _chunk_text(text):
-            on_delta(chunk)
-        return res
 
     def call_summary(
         self,
@@ -707,6 +684,14 @@ class LlmGateway:
             resp_raw = content_any
             obj, _candidate = extract_first_json_object_text(content_any)
             resp_parsed = obj
+
+            # Validate schema before recording success
+            try:
+                ArenaSubmissionReportNarrative.model_validate(obj)
+            except ValidationError as validation_exc:
+                error = f"schema_validation_failed: {validation_exc!r}"
+                resp_parsed = fallback_report
+                used_fallback = True
         except Exception as exc:  # noqa: BLE001
             error = repr(exc)
             resp_raw = fallback_raw
@@ -803,10 +788,10 @@ class LlmGateway:
             )
             return call.call_id, fallback_breakdown, True
 
-        global _window_breakdown_circuit_failures, _window_breakdown_circuit_opened_at
+        failures, opened_at = self._window_breakdown_circuit.get(submission_id, (0, None))
 
-        if _window_breakdown_circuit_opened_at is not None:
-            elapsed = time.perf_counter() - _window_breakdown_circuit_opened_at
+        if opened_at is not None:
+            elapsed = time.perf_counter() - opened_at
             if elapsed < _CIRCUIT_BREAKER_TIMEOUT_SECONDS:
                 call = self._record_call(
                     session,
@@ -822,8 +807,7 @@ class LlmGateway:
                     error="circuit_breaker_open",
                 )
                 return call.call_id, fallback_breakdown, True
-            _window_breakdown_circuit_opened_at = None
-            _window_breakdown_circuit_failures = 0
+            self._window_breakdown_circuit[submission_id] = (0, None)
 
         url, headers = self._api_url_and_headers(base_url, api_key)
 
@@ -847,19 +831,22 @@ class LlmGateway:
             obj, _candidate = extract_first_json_object_text(content_any)
             resp_parsed = obj
             WindowBreakdown.model_validate(obj)
-            _window_breakdown_circuit_failures = 0
+            self._window_breakdown_circuit[submission_id] = (0, None)
         except Exception as exc:  # noqa: BLE001
             error = repr(exc)
             resp_raw = fallback_raw
             resp_parsed = fallback_breakdown
             used_fallback = True
-            _window_breakdown_circuit_failures += 1
-            if _window_breakdown_circuit_failures >= _CIRCUIT_BREAKER_THRESHOLD:
-                _window_breakdown_circuit_opened_at = time.perf_counter()
+            failures += 1
+            if failures >= _CIRCUIT_BREAKER_THRESHOLD:
+                self._window_breakdown_circuit[submission_id] = (failures, time.perf_counter())
                 _LOG.warning(
                     "window_breakdown_circuit_breaker_opened",
-                    consecutive_failures=_window_breakdown_circuit_failures,
+                    submission_id=str(submission_id),
+                    consecutive_failures=failures,
                 )
+            else:
+                self._window_breakdown_circuit[submission_id] = (failures, None)
         finally:
             latency_ms = int((time.perf_counter() - started) * 1000)
             call = self._record_call(
@@ -1069,9 +1056,3 @@ def _retry_prompt(user_prompt: str, err: str | None) -> str:
 
 def _should_retry_structured_exc(exc: Exception) -> bool:
     return isinstance(exc, (ValueError, json.JSONDecodeError, ValidationError))
-
-
-def _chunk_text(text: str, *, chunk_size: int = 48) -> list[str]:
-    if not text:
-        return []
-    return [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]

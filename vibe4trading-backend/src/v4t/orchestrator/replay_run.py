@@ -17,7 +17,6 @@ from v4t.contracts.numbers import decimal_to_str
 from v4t.contracts.payloads import (
     FundingRatePayload,
     LlmDecisionPayload,
-    LlmStreamEndPayload,
     LlmStreamStartPayload,
     MarketOHLCVPayload,
     MarketPricePayload,
@@ -296,22 +295,6 @@ def execute_replay_run(
                     temperature=cfg.model.temperature,
                     max_output_tokens=cfg.model.max_output_tokens,
                 )
-
-            append_event(
-                session,
-                ev=make_event(
-                    event_type="llm.stream_end",
-                    source="orchestrator.replay",
-                    observed_at=tick_time,
-                    dedupe_key=tick_time.isoformat(),
-                    run_id=run_id,
-                    payload=LlmStreamEndPayload(tick_time=tick_time, error=call.error).model_dump(
-                        mode="json"
-                    ),
-                ),
-                dedupe_scope="run",
-            )
-            session.commit()
 
             validated = validate_decision(
                 decision=call.decision,

@@ -157,7 +157,7 @@ class TestCallWindowBreakdown:
             "improvement_areas": ["g", "h", "i"],
             "key_takeaway": "test",
         }
-        
+
         call_id, breakdown, used_fallback = gateway.call_window_breakdown(
             db_session,
             submission_id=uuid4(),
@@ -168,15 +168,13 @@ class TestCallWindowBreakdown:
             user_prompt="test",
             fallback_breakdown=fallback,
         )
-        
+
         assert isinstance(call_id, UUID)
         assert breakdown == fallback
         assert used_fallback is True
 
     @patch("v4t.llm.gateway.call_with_retry")
-    def test_successful_llm_call(
-        self, mock_retry: MagicMock, db_session: Session
-    ) -> None:
+    def test_successful_llm_call(self, mock_retry: MagicMock, db_session: Session) -> None:
         """Successful LLM call returns parsed breakdown."""
         valid_response = {
             "window_story": "B" * 150,
@@ -185,12 +183,12 @@ class TestCallWindowBreakdown:
             "improvement_areas": ["d", "e", "f"],
             "key_takeaway": "success",
         }
-        
+
         mock_retry.return_value = {
             "choices": [{"message": {"content": json.dumps(valid_response)}}],
             "usage": {"total_tokens": 100},
         }
-        
+
         gateway = LlmGateway()
         fallback = {
             "window_story": "A" * 150,
@@ -199,11 +197,12 @@ class TestCallWindowBreakdown:
             "improvement_areas": ["g", "h", "i"],
             "key_takeaway": "fallback",
         }
-        
-        with patch.object(gateway, "_use_stub", return_value=False), \
-             patch.object(gateway, "_model_allowed", return_value=True), \
-             patch.object(gateway, "_resolve_transport", return_value=("http://test", "key")):
-            
+
+        with (
+            patch.object(gateway, "_use_stub", return_value=False),
+            patch.object(gateway, "_model_allowed", return_value=True),
+            patch.object(gateway, "_resolve_transport", return_value=("http://test", "key")),
+        ):
             call_id, breakdown, used_fallback = gateway.call_window_breakdown(
                 db_session,
                 submission_id=uuid4(),
@@ -214,7 +213,7 @@ class TestCallWindowBreakdown:
                 user_prompt="test",
                 fallback_breakdown=fallback,
             )
-        
+
         assert isinstance(call_id, UUID)
         assert breakdown == valid_response
         assert used_fallback is False
@@ -231,12 +230,12 @@ class TestCallWindowBreakdown:
             "improvement_areas": ["d"],
             "key_takeaway": "invalid",
         }
-        
+
         mock_retry.return_value = {
             "choices": [{"message": {"content": json.dumps(invalid_response)}}],
             "usage": {"total_tokens": 100},
         }
-        
+
         gateway = LlmGateway()
         fallback = {
             "window_story": "A" * 150,
@@ -245,11 +244,12 @@ class TestCallWindowBreakdown:
             "improvement_areas": ["g", "h", "i"],
             "key_takeaway": "fallback",
         }
-        
-        with patch.object(gateway, "_use_stub", return_value=False), \
-             patch.object(gateway, "_model_allowed", return_value=True), \
-             patch.object(gateway, "_resolve_transport", return_value=("http://test", "key")):
-            
+
+        with (
+            patch.object(gateway, "_use_stub", return_value=False),
+            patch.object(gateway, "_model_allowed", return_value=True),
+            patch.object(gateway, "_resolve_transport", return_value=("http://test", "key")),
+        ):
             call_id, breakdown, used_fallback = gateway.call_window_breakdown(
                 db_session,
                 submission_id=uuid4(),
@@ -260,18 +260,16 @@ class TestCallWindowBreakdown:
                 user_prompt="test",
                 fallback_breakdown=fallback,
             )
-        
+
         assert isinstance(call_id, UUID)
         assert breakdown == fallback
         assert used_fallback is True
 
     @patch("v4t.llm.gateway.call_with_retry")
-    def test_timeout_returns_fallback(
-        self, mock_retry: MagicMock, db_session: Session
-    ) -> None:
+    def test_timeout_returns_fallback(self, mock_retry: MagicMock, db_session: Session) -> None:
         """Timeout on LLM call returns fallback."""
         mock_retry.side_effect = TimeoutError("Request timeout")
-        
+
         gateway = LlmGateway()
         fallback = {
             "window_story": "A" * 150,
@@ -280,11 +278,12 @@ class TestCallWindowBreakdown:
             "improvement_areas": ["g", "h", "i"],
             "key_takeaway": "fallback",
         }
-        
-        with patch.object(gateway, "_use_stub", return_value=False), \
-             patch.object(gateway, "_model_allowed", return_value=True), \
-             patch.object(gateway, "_resolve_transport", return_value=("http://test", "key")):
-            
+
+        with (
+            patch.object(gateway, "_use_stub", return_value=False),
+            patch.object(gateway, "_model_allowed", return_value=True),
+            patch.object(gateway, "_resolve_transport", return_value=("http://test", "key")),
+        ):
             call_id, breakdown, used_fallback = gateway.call_window_breakdown(
                 db_session,
                 submission_id=uuid4(),
@@ -295,7 +294,7 @@ class TestCallWindowBreakdown:
                 user_prompt="test",
                 fallback_breakdown=fallback,
             )
-        
+
         assert isinstance(call_id, UUID)
         assert breakdown == fallback
         assert used_fallback is True
@@ -309,14 +308,10 @@ class TestCircuitBreaker:
         self, mock_retry: MagicMock, db_session: Session
     ) -> None:
         """Circuit breaker opens after 5 consecutive failures."""
-        import v4t.llm.gateway as gateway_module
-        
-        gateway_module._window_breakdown_circuit_failures = 0  # pyright: ignore[reportPrivateUsage]
-        gateway_module._window_breakdown_circuit_opened_at = None  # pyright: ignore[reportPrivateUsage]
-        
         mock_retry.side_effect = Exception("LLM error")
-        
+
         gateway = LlmGateway()
+        submission_id = uuid4()
         fallback = {
             "window_story": "A" * 150,
             "what_worked": ["a", "b", "c"],
@@ -324,15 +319,16 @@ class TestCircuitBreaker:
             "improvement_areas": ["g", "h", "i"],
             "key_takeaway": "fallback",
         }
-        
-        with patch.object(gateway, "_use_stub", return_value=False), \
-             patch.object(gateway, "_model_allowed", return_value=True), \
-             patch.object(gateway, "_resolve_transport", return_value=("http://test", "key")):
-            
+
+        with (
+            patch.object(gateway, "_use_stub", return_value=False),
+            patch.object(gateway, "_model_allowed", return_value=True),
+            patch.object(gateway, "_resolve_transport", return_value=("http://test", "key")),
+        ):
             for i in range(5):
                 gateway.call_window_breakdown(
                     db_session,
-                    submission_id=uuid4(),
+                    submission_id=submission_id,
                     window_code=f"W{i}",
                     observed_at=datetime.now(UTC),
                     model_key="test-model",
@@ -340,21 +336,19 @@ class TestCircuitBreaker:
                     user_prompt="test",
                     fallback_breakdown=fallback,
                 )
-        
-        assert gateway_module._window_breakdown_circuit_failures == 5  # pyright: ignore[reportPrivateUsage]
-        assert gateway_module._window_breakdown_circuit_opened_at is not None  # pyright: ignore[reportPrivateUsage]
+
+        assert gateway._window_breakdown_circuit[submission_id][0] == 5
+        assert gateway._window_breakdown_circuit[submission_id][1] is not None
 
     @patch("v4t.llm.gateway.call_with_retry")
     def test_circuit_breaker_blocks_calls_when_open(
         self, mock_retry: MagicMock, db_session: Session
     ) -> None:
         """Circuit breaker blocks calls when open."""
-        import v4t.llm.gateway as gateway_module
-        
-        gateway_module._window_breakdown_circuit_failures = 5  # pyright: ignore[reportPrivateUsage]
-        gateway_module._window_breakdown_circuit_opened_at = time.perf_counter()  # pyright: ignore[reportPrivateUsage]
-        
         gateway = LlmGateway()
+        submission_id = uuid4()
+        gateway._window_breakdown_circuit[submission_id] = (5, time.perf_counter())
+
         fallback = {
             "window_story": "A" * 150,
             "what_worked": ["a", "b", "c"],
@@ -362,14 +356,15 @@ class TestCircuitBreaker:
             "improvement_areas": ["g", "h", "i"],
             "key_takeaway": "fallback",
         }
-        
-        with patch.object(gateway, "_use_stub", return_value=False), \
-             patch.object(gateway, "_model_allowed", return_value=True), \
-             patch.object(gateway, "_resolve_transport", return_value=("http://test", "key")):
-            
+
+        with (
+            patch.object(gateway, "_use_stub", return_value=False),
+            patch.object(gateway, "_model_allowed", return_value=True),
+            patch.object(gateway, "_resolve_transport", return_value=("http://test", "key")),
+        ):
             _call_id, _breakdown, used_fallback = gateway.call_window_breakdown(
                 db_session,
-                submission_id=uuid4(),
+                submission_id=submission_id,
                 window_code="W1",
                 observed_at=datetime.now(UTC),
                 model_key="test-model",
@@ -377,7 +372,7 @@ class TestCircuitBreaker:
                 user_prompt="test",
                 fallback_breakdown=fallback,
             )
-        
+
         assert used_fallback is True
         assert mock_retry.call_count == 0
 
@@ -386,11 +381,10 @@ class TestCircuitBreaker:
         self, mock_retry: MagicMock, db_session: Session
     ) -> None:
         """Circuit breaker resets after 60s timeout."""
-        import v4t.llm.gateway as gateway_module
-        
-        gateway_module._window_breakdown_circuit_failures = 5  # pyright: ignore[reportPrivateUsage]
-        gateway_module._window_breakdown_circuit_opened_at = time.perf_counter() - 61.0  # pyright: ignore[reportPrivateUsage]
-        
+        gateway = LlmGateway()
+        submission_id = uuid4()
+        gateway._window_breakdown_circuit[submission_id] = (5, time.perf_counter() - 61.0)
+
         valid_response = {
             "window_story": "B" * 150,
             "what_worked": ["x", "y", "z"],
@@ -398,13 +392,12 @@ class TestCircuitBreaker:
             "improvement_areas": ["d", "e", "f"],
             "key_takeaway": "success",
         }
-        
+
         mock_retry.return_value = {
             "choices": [{"message": {"content": json.dumps(valid_response)}}],
             "usage": {"total_tokens": 100},
         }
-        
-        gateway = LlmGateway()
+
         fallback = {
             "window_story": "A" * 150,
             "what_worked": ["a", "b", "c"],
@@ -412,14 +405,15 @@ class TestCircuitBreaker:
             "improvement_areas": ["g", "h", "i"],
             "key_takeaway": "fallback",
         }
-        
-        with patch.object(gateway, "_use_stub", return_value=False), \
-             patch.object(gateway, "_model_allowed", return_value=True), \
-             patch.object(gateway, "_resolve_transport", return_value=("http://test", "key")):
-            
+
+        with (
+            patch.object(gateway, "_use_stub", return_value=False),
+            patch.object(gateway, "_model_allowed", return_value=True),
+            patch.object(gateway, "_resolve_transport", return_value=("http://test", "key")),
+        ):
             _call_id, _breakdown, _used_fallback = gateway.call_window_breakdown(
                 db_session,
-                submission_id=uuid4(),
+                submission_id=submission_id,
                 window_code="W1",
                 observed_at=datetime.now(UTC),
                 model_key="test-model",
@@ -427,9 +421,9 @@ class TestCircuitBreaker:
                 user_prompt="test",
                 fallback_breakdown=fallback,
             )
-        
-        assert gateway_module._window_breakdown_circuit_opened_at is None  # pyright: ignore[reportPrivateUsage]
-        assert gateway_module._window_breakdown_circuit_failures == 0  # pyright: ignore[reportPrivateUsage]
+
+        assert gateway._window_breakdown_circuit[submission_id][1] is None
+        assert gateway._window_breakdown_circuit[submission_id][0] == 0
         assert mock_retry.call_count == 1
 
     @patch("v4t.llm.gateway.call_with_retry")
@@ -437,11 +431,10 @@ class TestCircuitBreaker:
         self, mock_retry: MagicMock, db_session: Session
     ) -> None:
         """Successful call resets failure counter."""
-        import v4t.llm.gateway as gateway_module
-        
-        gateway_module._window_breakdown_circuit_failures = 3  # pyright: ignore[reportPrivateUsage]
-        gateway_module._window_breakdown_circuit_opened_at = None  # pyright: ignore[reportPrivateUsage]
-        
+        gateway = LlmGateway()
+        submission_id = uuid4()
+        gateway._window_breakdown_circuit[submission_id] = (3, None)
+
         valid_response = {
             "window_story": "B" * 150,
             "what_worked": ["x", "y", "z"],
@@ -449,13 +442,12 @@ class TestCircuitBreaker:
             "improvement_areas": ["d", "e", "f"],
             "key_takeaway": "success",
         }
-        
+
         mock_retry.return_value = {
             "choices": [{"message": {"content": json.dumps(valid_response)}}],
             "usage": {"total_tokens": 100},
         }
-        
-        gateway = LlmGateway()
+
         fallback = {
             "window_story": "A" * 150,
             "what_worked": ["a", "b", "c"],
@@ -463,14 +455,15 @@ class TestCircuitBreaker:
             "improvement_areas": ["g", "h", "i"],
             "key_takeaway": "fallback",
         }
-        
-        with patch.object(gateway, "_use_stub", return_value=False), \
-             patch.object(gateway, "_model_allowed", return_value=True), \
-             patch.object(gateway, "_resolve_transport", return_value=("http://test", "key")):
-            
+
+        with (
+            patch.object(gateway, "_use_stub", return_value=False),
+            patch.object(gateway, "_model_allowed", return_value=True),
+            patch.object(gateway, "_resolve_transport", return_value=("http://test", "key")),
+        ):
             gateway.call_window_breakdown(
                 db_session,
-                submission_id=uuid4(),
+                submission_id=submission_id,
                 window_code="W1",
                 observed_at=datetime.now(UTC),
                 model_key="test-model",
@@ -478,5 +471,5 @@ class TestCircuitBreaker:
                 user_prompt="test",
                 fallback_breakdown=fallback,
             )
-        
-        assert gateway_module._window_breakdown_circuit_failures == 0  # pyright: ignore[reportPrivateUsage]
+
+        assert gateway._window_breakdown_circuit[submission_id][0] == 0

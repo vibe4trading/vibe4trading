@@ -471,9 +471,6 @@ async def stream_run_events(
         "run.started",
         "run.finished",
         "run.failed",
-        "llm.stream_start",
-        "llm.stream_delta",
-        "llm.stream_end",
         "llm.decision",
         "portfolio.snapshot",
     }
@@ -599,8 +596,6 @@ async def ws_run_events(websocket: WebSocket, run_id: UUID) -> None:
         "run.started",
         "run.finished",
         "run.failed",
-        "llm.stream_start",
-        "llm.stream_end",
         "llm.decision",
         "portfolio.snapshot",
     }

@@ -59,7 +59,7 @@ class SentimentPromptItem:
 
 
 def get_system_prompt(cfg: RunConfigSnapshot) -> str:
-    return benchmark_system_prompt(cfg.prompt.system_prompt_override)
+    return benchmark_system_prompt(cfg.prompt.system_prompt_override, cfg.market_id)
 
 
 def get_strategy_prompt(cfg: RunConfigSnapshot) -> str:

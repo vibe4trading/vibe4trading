@@ -34,7 +34,7 @@ class RiskProfile:
 BENCHMARK_SYSTEM_PROMPT = """You are a crypto trading decision engine for a strategy benchmark.
 
 RULES:
-1. You manage exactly ONE position: {TOKEN}/USDT on Binance.
+1. You manage exactly ONE position: {{TOKEN}}/USDT on your exchange.
 2. You can trade SPOT (long only, exposure 0.0 to 1.0) or FUTURES (long/short with leverage).
 3. You receive market data, sentiment signals, portfolio state, and your recent decisions.
 4. You must return ONLY a valid JSON object matching schema_version=2.
@@ -186,8 +186,27 @@ def build_strategy_prompt(
     return "Analyze the market data and decide target exposure."
 
 
-def benchmark_system_prompt(system_prompt_override: str | None) -> str:
+def benchmark_system_prompt(system_prompt_override: str | None, market_id: str) -> str:
     override = (system_prompt_override or "").strip()
     if override:
         return override
-    return BENCHMARK_SYSTEM_PROMPT
+
+    # Extract token from market_id (e.g., "spot:binance:BTCUSDT" -> "BTC")
+    token = "TOKEN"
+    try:
+        parts = market_id.split(":")
+        if len(parts) >= 3:
+            pair = parts[2]  # e.g., "BTCUSDT" or "BTC/USDT"
+            # Handle both formats: "BTCUSDT" and "BTC/USDT"
+            if "/" in pair:
+                token = pair.split("/")[0]
+            else:
+                # Extract base token from pair like "BTCUSDT"
+                for quote in ["USDT", "USDC", "USD", "BTC", "ETH"]:
+                    if pair.endswith(quote):
+                        token = pair[: -len(quote)]
+                        break
+    except Exception:
+        pass
+
+    return BENCHMARK_SYSTEM_PROMPT.replace("{{TOKEN}}", token)

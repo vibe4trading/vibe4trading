@@ -16,8 +16,6 @@ from v4t.contracts.events import make_event
 from v4t.contracts.numbers import decimal_to_str
 from v4t.contracts.payloads import (
     LlmDecisionPayload,
-    LlmStreamDeltaPayload,
-    LlmStreamEndPayload,
     LlmStreamStartPayload,
     MarketOHLCVPayload,
     MarketPricePayload,
@@ -375,38 +373,7 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
             )
             session.commit()
 
-            seq = 0
-            last_commit = time.perf_counter()
-
-            def _on_delta(delta: str, *, _tick_time: datetime = tick_time) -> None:
-                nonlocal seq, last_commit
-                seq += 1
-                append_event(
-                    session,
-                    ev=make_event(
-                        event_type="llm.stream_delta",
-                        source="orchestrator.live",
-                        observed_at=_tick_time,
-                        dedupe_key=f"{_tick_time.isoformat()}:{seq}",
-                        run_id=run_id,
-                        payload=LlmStreamDeltaPayload(
-                            tick_time=_tick_time, seq=seq, delta=delta
-                        ).model_dump(mode="json"),
-                    ),
-                    dedupe_scope="run",
-                )
-
-                now_perf = time.perf_counter()
-                if seq % 20 == 0 or (now_perf - last_commit) >= 0.25:
-                    try:
-                        session.commit()
-                    except Exception:
-                        _logger.exception("streaming_commit_failed run_id=%s", str(run_id))
-                        session.rollback()
-                        raise RuntimeError("streaming commit failed") from None
-                    last_commit = now_perf
-
-            call = gateway.call_decision_streaming(
+            call = gateway.call_decision(
                 session,
                 run_id=run_id,
                 observed_at=tick_time,
@@ -417,26 +384,9 @@ def execute_live_run(session: Session, *, run_id: UUID, max_ticks: int | None = 
                     market_id=cfg.market_id,
                     closes=closes,
                 ),
-                on_delta=_on_delta,
                 temperature=cfg.model.temperature,
                 max_output_tokens=cfg.model.max_output_tokens,
             )
-
-            append_event(
-                session,
-                ev=make_event(
-                    event_type="llm.stream_end",
-                    source="orchestrator.live",
-                    observed_at=tick_time,
-                    dedupe_key=tick_time.isoformat(),
-                    run_id=run_id,
-                    payload=LlmStreamEndPayload(tick_time=tick_time, error=call.error).model_dump(
-                        mode="json"
-                    ),
-                ),
-                dedupe_scope="run",
-            )
-            session.commit()
 
             validated = validate_decision(
                 decision=call.decision,

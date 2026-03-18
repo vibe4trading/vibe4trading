@@ -593,7 +593,7 @@ def _generate_window_breakdowns(
                     {
                         "timestamp": decision.get("tick_time"),
                         "target_exposure": _to_float(decision.get("target")) or 0.0,
-                        "reasoning": "",
+                        "reasoning": decision.get("rationale", ""),
                         "confidence": _to_float(decision.get("confidence")),
                         "accepted": bool(decision.get("accepted", False)),
                     }
