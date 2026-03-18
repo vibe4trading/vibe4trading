@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _MODEL_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9._:-]{0,127}$")
@@ -43,6 +43,17 @@ class Settings(BaseSettings):
     )
 
     log_level: str = "info"
+
+    otlp_endpoint: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "OTLP_ENDPOINT",
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+        ),
+    )
+    otlp_auth_header: str | None = Field(default=None, validation_alias="OTLP_AUTH_HEADER")
+    otlp_project_name: str | None = Field(default=None, validation_alias="OTLP_PROJECT_NAME")
 
     # Optional: OpenAI-compatible gateway (OpenRouter, etc.).
     llm_base_url: str | None = None

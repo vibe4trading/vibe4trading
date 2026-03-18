@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -18,7 +17,6 @@ from v4t.contracts.numbers import decimal_to_str
 from v4t.contracts.payloads import (
     FundingRatePayload,
     LlmDecisionPayload,
-    LlmStreamDeltaPayload,
     LlmStreamEndPayload,
     LlmStreamStartPayload,
     MarketOHLCVPayload,
@@ -28,6 +26,7 @@ from v4t.contracts.payloads import (
 )
 from v4t.contracts.run_config import RunMode
 from v4t.db.event_store import append_event
+from v4t.utils.tracing import create_span
 from v4t.db.models import ArenaSubmissionRow, ArenaSubmissionRunRow, DatasetRow
 from v4t.llm.gateway import LlmGateway, StubDecisionFeatures
 from v4t.orchestrator.prompt_builder import render_user_prompt
@@ -52,6 +51,7 @@ from v4t.orchestrator.run_base import (
 from v4t.replay.stream import iter_dataset_events
 from v4t.sim.benchmark_sim import BenchmarkPaperSim
 from v4t.utils.datetime import as_utc, now
+from v4t.utils.tracing import create_span
 
 _logger = logging.getLogger(__name__)
 
@@ -277,57 +277,25 @@ def execute_replay_run(
             )
             session.commit()
 
-            seq = 0
-            last_commit = time.perf_counter()
-
-            def _on_delta(delta: str, *, _tick_time: datetime = tick_time) -> None:
-                nonlocal seq, last_commit
-                seq += 1
-                append_event(
+            with create_span("arena.llm_decision", {
+                "run_id": str(run_id),
+                "tick_time": tick_time.isoformat(),
+                "model_key": cfg.model.key,
+            }):
+                call = gateway.call_decision(
                     session,
-                    ev=make_event(
-                        event_type="llm.stream_delta",
-                        source="orchestrator.replay",
-                        observed_at=_tick_time,
-                        dedupe_key=f"{_tick_time.isoformat()}:{seq}",
-                        run_id=run_id,
-                        payload=LlmStreamDeltaPayload(
-                            tick_time=_tick_time, seq=seq, delta=delta
-                        ).model_dump(mode="json"),
+                    run_id=run_id,
+                    observed_at=tick_time,
+                    model_key=cfg.model.key,
+                    system_prompt=get_system_prompt(cfg),
+                    user_prompt=user_prompt,
+                    stub_features=StubDecisionFeatures(
+                        market_id=cfg.market_id,
+                        closes=closes,
                     ),
-                    dedupe_scope="run",
+                    temperature=cfg.model.temperature,
+                    max_output_tokens=cfg.model.max_output_tokens,
                 )
-
-                now_perf = time.perf_counter()
-                if seq % 20 == 0 or (now_perf - last_commit) >= 0.25:
-                    try:
-                        session.commit()
-                    except Exception as exc:
-                        _logger.exception(
-                            "streaming_commit_failed run_id=%s",
-                            str(run_id),
-                        )
-                        session.rollback()
-                        raise RuntimeError(
-                            f"failed to persist replay stream delta for run_id={run_id}"
-                        ) from exc
-                    last_commit = now_perf
-
-            call = gateway.call_decision_streaming(
-                session,
-                run_id=run_id,
-                observed_at=tick_time,
-                model_key=cfg.model.key,
-                system_prompt=get_system_prompt(cfg),
-                user_prompt=user_prompt,
-                stub_features=StubDecisionFeatures(
-                    market_id=cfg.market_id,
-                    closes=closes,
-                ),
-                on_delta=_on_delta,
-                temperature=cfg.model.temperature,
-                max_output_tokens=cfg.model.max_output_tokens,
-            )
 
             append_event(
                 session,

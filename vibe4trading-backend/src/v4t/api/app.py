@@ -19,14 +19,25 @@ from v4t.api.routes.runs import router as runs_router
 from v4t.auth.web import router as auth_router
 from v4t.db.engine import get_engine
 from v4t.db.init_db import init_db
+from v4t.observability.logging import configure_logging
 from v4t.settings import get_settings
+from v4t.utils.tracing import init_tracing, shutdown_tracing
 
 
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
+        configure_logging()
+        settings = get_settings()
+        init_tracing(
+            otlp_endpoint=settings.otlp_endpoint,
+            otlp_auth_header=settings.otlp_auth_header,
+            project_name=settings.otlp_project_name,
+            service_name="vibe4trading",
+        )
         init_db(get_engine())
         yield
+        shutdown_tracing()
 
     app = FastAPI(
         title="vibe4trading API",

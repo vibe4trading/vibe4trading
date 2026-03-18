@@ -45,6 +45,7 @@ from v4t.ingest.dataset_import import import_dataset
 from v4t.orchestrator.replay_run import execute_replay_run
 from v4t.settings import get_settings
 from v4t.utils.datetime import as_utc, now
+from v4t.utils.tracing import capture_context, create_span, record_exception
 
 DEFAULT_PROMPT_TEXT = "Analyze the market data and decide target exposure."
 ALL_MARKETS_SENTINEL = "benchmark:all"
@@ -227,9 +228,17 @@ def _get_run_return_pct(session: Session, *, run_id: UUID) -> Decimal | None:
     return Decimal(payload.return_pct)
 
 
-def _execute_submission_window(*, run_id: UUID) -> None:
-    with new_session() as session:
-        execute_replay_run(session, run_id=run_id, finalize_submission_report=False)
+def _execute_submission_window(
+    *, run_id: UUID, submission_id: UUID | None = None, scenario_index: int | None = None
+) -> None:
+    attrs = {"run_id": str(run_id)}
+    if submission_id is not None:
+        attrs["submission_id"] = str(submission_id)
+    if scenario_index is not None:
+        attrs["scenario_index"] = scenario_index
+    with create_span("arena.window", attrs):
+        with new_session() as session:
+            execute_replay_run(session, run_id=run_id, finalize_submission_report=False)
 
 
 def _apply_completed_window_result(
@@ -276,7 +285,11 @@ def _execute_pending_submission_runs(
 
     if max_parallel_windows <= 1:
         for pending in pending_runs:
-            _execute_submission_window(run_id=pending.run_id)
+            _execute_submission_window(
+                run_id=pending.run_id,
+                submission_id=submission.submission_id,
+                scenario_index=pending.scenario_index,
+            )
             _apply_completed_window_result(
                 session,
                 submission=submission,
@@ -289,10 +302,17 @@ def _execute_pending_submission_runs(
     with ThreadPoolExecutor(
         max_workers=max_parallel_windows, thread_name_prefix="arena-run"
     ) as executor:
-        future_map: dict[Future[None], PendingScenarioRun] = {
-            executor.submit(_execute_submission_window, run_id=pending.run_id): pending
-            for pending in pending_runs
-        }
+        future_map: dict[Future[None], PendingScenarioRun] = {}
+        for pending in pending_runs:
+            ctx = capture_context()
+            future = executor.submit(
+                ctx.run,
+                _execute_submission_window,
+                run_id=pending.run_id,
+                submission_id=submission.submission_id,
+                scenario_index=pending.scenario_index,
+            )
+            future_map[future] = pending
         for future in as_completed(future_map):
             pending = future_map[future]
             future.result()
@@ -319,6 +339,27 @@ def execute_arena_submission(session: Session, *, submission_id: UUID) -> None:
     if submission.status == "finished":
         return
 
+    with create_span("arena.submission", {
+        "submission_id": str(submission_id),
+        "model_key": submission.model_key,
+        "scenario_set_key": str(submission.scenario_set_key or ""),
+        "market_id": submission.market_id,
+    }):
+        _execute_arena_submission_body(
+            session,
+            submission=submission,
+            submission_id=submission_id,
+            scenario_set=scenario_set,
+        )
+
+
+def _execute_arena_submission_body(
+    session: Session,
+    *,
+    submission: ArenaSubmissionRow,
+    submission_id: UUID,
+    scenario_set: ScenarioSet,
+) -> None:
     submission.status = "running"
     if submission.started_at is None:
         submission.started_at = now()
@@ -495,6 +536,7 @@ def execute_arena_submission(session: Session, *, submission_id: UUID) -> None:
         session.commit()
         generate_submission_report(session, submission_id=submission_id)
     except Exception as exc:  # noqa: BLE001
+        record_exception(exc)
         try:
             session.rollback()
         except Exception:

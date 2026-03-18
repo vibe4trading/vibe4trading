@@ -36,6 +36,7 @@ from v4t.db.models import ArenaSubmissionRow, ArenaSubmissionRunRow, EventRow, L
 from v4t.llm.gateway import LlmGateway
 from v4t.settings import get_settings
 from v4t.utils.datetime import now
+from v4t.utils.tracing import capture_context, create_span
 
 
 def compute_sharpe_from_returns(returns_pct: list[float]) -> float | None:
@@ -81,6 +82,13 @@ def compute_profit_factor_from_returns(returns_pct: list[float]) -> float | None
 
 
 def generate_submission_report(
+    session: Session, *, submission_id: UUID
+) -> ArenaSubmissionReport | None:
+    with create_span("arena.report", {"submission_id": str(submission_id)}):
+        return _generate_submission_report_body(session, submission_id=submission_id)
+
+
+def _generate_submission_report_body(
     session: Session, *, submission_id: UUID
 ) -> ArenaSubmissionReport | None:
     submission = session.get(ArenaSubmissionRow, submission_id)
@@ -461,16 +469,20 @@ def _generate_llm_report(
     report_model_key = settings.llm_report_model or submission.model_key
 
     fallback_payload = fallback.model_dump(mode="json")
-    call_id, response_json, used_fallback = gateway.call_submission_report(
-        session,
-        submission_id=submission.submission_id,
-        observed_at=now(),
-        model_key=report_model_key,
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        fallback_report=fallback_payload,
-        max_output_tokens=1500,
-    )
+    with create_span("arena.submission_report", {
+        "submission_id": str(submission.submission_id),
+        "model_key": report_model_key,
+    }):
+        call_id, response_json, used_fallback = gateway.call_submission_report(
+            session,
+            submission_id=submission.submission_id,
+            observed_at=now(),
+            model_key=report_model_key,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            fallback_report=fallback_payload,
+            max_output_tokens=1500,
+        )
 
     if used_fallback:
         fallback.generation_mode = "fallback"
@@ -595,17 +607,22 @@ def _generate_window_breakdowns(
                 },
             }
             fallback_breakdown = _fallback_for_window(window)
-            call_id, response_json, used_fallback = gateway.call_window_breakdown(
-                worker_session,
-                submission_id=submission.submission_id,
-                window_code=window.window_code,
-                observed_at=now(),
-                model_key=report_model_key,
-                system_prompt=_WINDOW_BREAKDOWN_PROMPT,
-                user_prompt=json.dumps(payload, ensure_ascii=True, indent=2),
-                fallback_breakdown=fallback_breakdown,
-                max_output_tokens=16384,
-            )
+            with create_span("arena.window_breakdown", {
+                "submission_id": str(submission.submission_id),
+                "scenario_index": window.scenario_index,
+                "window_code": window.window_code,
+            }):
+                call_id, response_json, used_fallback = gateway.call_window_breakdown(
+                    worker_session,
+                    submission_id=submission.submission_id,
+                    window_code=window.window_code,
+                    observed_at=now(),
+                    model_key=report_model_key,
+                    system_prompt=_WINDOW_BREAKDOWN_PROMPT,
+                    user_prompt=json.dumps(payload, ensure_ascii=True, indent=2),
+                    fallback_breakdown=fallback_breakdown,
+                    max_output_tokens=16384,
+                )
 
             call_row = worker_session.get(LlmCallRow, call_id) if call_id else None
             usage = call_row.usage if call_row else None
@@ -644,9 +661,11 @@ def _generate_window_breakdowns(
         max_workers=max_workers,
         thread_name_prefix="arena-window-breakdown",
     ) as executor:
-        future_map: dict[Future[WindowBreakdown], ArenaSubmissionReportWindow] = {
-            executor.submit(_build_window_prompt_payload, window): window for window in windows
-        }
+        future_map: dict[Future[WindowBreakdown], ArenaSubmissionReportWindow] = {}
+        for window in windows:
+            ctx = capture_context()
+            future = executor.submit(ctx.run, _build_window_prompt_payload, window)
+            future_map[future] = window
         for future in as_completed(future_map):
             window = future_map[future]
             try:
