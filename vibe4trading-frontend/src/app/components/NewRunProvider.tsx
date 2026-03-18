@@ -58,11 +58,12 @@ export function NewRunProvider({ children }: { children: React.ReactNode }) {
 
   const openNewRun = React.useCallback(() => {
     setSubmitError(null);
-    setPromptText((current) =>
-      current.includes(LEGACY_OUTPUT_FORMAT_BLOCK)
+    setPromptText((current) => {
+      if (!current) return current;
+      return current.includes(LEGACY_OUTPUT_FORMAT_BLOCK)
         ? current.replace(LEGACY_OUTPUT_FORMAT_BLOCK, "").trim()
-        : current,
-    );
+        : current;
+    });
     setOpen(true);
   }, []);
 

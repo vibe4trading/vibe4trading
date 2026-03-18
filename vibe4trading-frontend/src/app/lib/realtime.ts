@@ -187,7 +187,7 @@ export function useRealtimeRefresh(opts: RealtimeRefreshOpts) {
               return;
             }
           } catch (err) {
-            void err;
+            console.error("[realtime] Failed to parse WebSocket message:", err);
           }
         }
         kick();

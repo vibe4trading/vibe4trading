@@ -36,7 +36,11 @@ def extract_first_json_object_text(text: str) -> tuple[dict[str, Any], str]:
             depth -= 1
             if depth == 0:
                 candidate = text[start : i + 1]
-                parsed = json.loads(candidate)
+                try:
+                    parsed = json.loads(candidate)
+                except json.JSONDecodeError as e:
+                    preview = candidate[:100]
+                    raise ValueError(f"Extracted text is not valid JSON: {preview}") from e
                 if not isinstance(parsed, dict):
                     raise ValueError("Expected a JSON object")
                 return cast(dict[str, Any], parsed), candidate

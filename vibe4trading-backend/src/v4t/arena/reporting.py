@@ -934,8 +934,11 @@ def _ratio_pct(numerator: int, denominator: int) -> float | None:
 
 def _event_payload_dict(row: EventRow) -> dict[str, Any]:
     payload_raw: Any = row.__dict__.get("payload")
-    payload_json = json.dumps(payload_raw)
-    payload: Any = json.loads(payload_json)
+    try:
+        payload_json = json.dumps(payload_raw)
+        payload: Any = json.loads(payload_json)
+    except (json.JSONDecodeError, TypeError):
+        return {}
     if isinstance(payload, dict):
         return cast(dict[str, Any], payload)
     return {}

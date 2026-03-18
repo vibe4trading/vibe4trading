@@ -80,6 +80,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback((redirectTo?: string) => {
     const base = getApiBaseUrl();
+    
+    if (redirectTo) {
+      try {
+        new URL(redirectTo);
+        if (!redirectTo.startsWith("/")) {
+          console.warn("Security: rejecting external URL in redirectTo");
+          redirectTo = undefined;
+        }
+      } catch {}
+    }
+    
     const params = redirectTo ? `?redirect_to=${encodeURIComponent(redirectTo)}` : "";
     window.location.href = `${base}/auth/login${params}`;
   }, []);

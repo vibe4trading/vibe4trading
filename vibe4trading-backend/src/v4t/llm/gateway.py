@@ -80,6 +80,7 @@ class LlmGateway:
         self.settings = get_settings()
         self._budget = LlmBudgetTracker()
         self._window_breakdown_circuit: dict[UUID, tuple[int, float | None]] = {}
+        self._decision_circuit: dict[UUID, tuple[int, float | None]] = {}
 
     def _get_enabled_model_row(self, session: Session, model_key: str) -> LlmModelRow | None:
         return (
@@ -240,6 +241,7 @@ class LlmGateway:
         *,
         run_id: UUID | None,
         dataset_id: UUID | None,
+        submission_id: UUID | None = None,
         purpose: str,
         observed_at: datetime,
         prompt: dict[str, Any],
@@ -252,6 +254,7 @@ class LlmGateway:
         call = LlmCallRow(
             run_id=run_id,
             dataset_id=dataset_id,
+            submission_id=submission_id,
             purpose=purpose,
             observed_at=observed_at,
             prompt=prompt,
@@ -310,6 +313,38 @@ class LlmGateway:
                 decision=self._empty_decision(),
                 error="budget_exceeded: max decision calls per run",
             )
+
+        failures, opened_at = self._decision_circuit.get(run_id, (0, None))
+
+        if opened_at is not None:
+            elapsed = time.perf_counter() - opened_at
+            if elapsed < _CIRCUIT_BREAKER_TIMEOUT_SECONDS:
+                req = self._build_request(
+                    model_key=model_key,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                )
+                call = self._record_call(
+                    session,
+                    run_id=run_id,
+                    dataset_id=None,
+                    purpose="decision",
+                    observed_at=observed_at,
+                    prompt=req,
+                    response_raw=None,
+                    response_parsed=None,
+                    usage=None,
+                    latency_ms=0,
+                    error="circuit_breaker_open",
+                )
+                return LlmCallResult(
+                    call_id=call.call_id,
+                    decision=self._empty_decision(),
+                    error="circuit_breaker_open",
+                )
+            self._decision_circuit[run_id] = (0, None)
 
         if self._use_stub(session, model_key):
             decision = self._stub_decision(stub_features)
@@ -477,6 +512,17 @@ class LlmGateway:
                 error=last_error,
                 exc_info=True,
             )
+            failures, _ = self._decision_circuit.get(run_id, (0, None))
+            failures += 1
+            if failures >= _CIRCUIT_BREAKER_THRESHOLD:
+                self._decision_circuit[run_id] = (failures, time.perf_counter())
+                _LOG.warning(
+                    "decision_circuit_breaker_opened",
+                    run_id=str(run_id),
+                    consecutive_failures=failures,
+                )
+            else:
+                self._decision_circuit[run_id] = (failures, None)
 
         return LlmCallResult(
             call_id=last_call_id,
@@ -546,6 +592,14 @@ class LlmGateway:
             )
 
         url, headers = self._api_url_and_headers(base_url, api_key)
+        max_attempts = max(1, int(self.settings.llm_max_retries) + 1)
+        attempt_user_prompt = user_prompt
+
+        started = time.perf_counter()
+        resp_raw: str | None = None
+        usage: dict[str, Any] | None = None
+        error: str | None = None
+        text = ""
         req = self._build_request(
             model_key=model_key,
             system_prompt=system_prompt,
@@ -553,27 +607,41 @@ class LlmGateway:
             temperature=temperature,
             max_output_tokens=max_output_tokens,
         )
-
-        started = time.perf_counter()
-        resp_raw: str | None = None
-        usage: dict[str, Any] | None = None
-        error: str | None = None
-        text: str
         try:
-            data = call_with_retry(
-                url=url,
-                headers=headers,
-                req=req,
-                timeout_seconds=float(self.settings.llm_timeout_seconds),
-                max_retries=int(self.settings.llm_max_retries),
-            )
-            usage = _extract_usage(data)
-            content = _extract_message_content(data)
-            resp_raw = content
-            text = content
-        except Exception as exc:  # noqa: BLE001
-            error = repr(exc)
-            text = f"(error) summary unavailable: {error}"
+            for attempt in range(1, max_attempts + 1):
+                req = self._build_request(
+                    model_key=model_key,
+                    system_prompt=system_prompt,
+                    user_prompt=attempt_user_prompt,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                )
+                try:
+                    data = call_with_retry(
+                        url=url,
+                        headers=headers,
+                        req=req,
+                        timeout_seconds=float(self.settings.llm_timeout_seconds),
+                        max_retries=int(self.settings.llm_max_retries),
+                    )
+                    usage = _extract_usage(data)
+                    content = _extract_message_content(data)
+                    resp_raw = content
+                    text = content
+                    error = None
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    error = repr(exc)
+                    retry_prompt = _structured_retry_prompt(
+                        exc=exc,
+                        user_prompt=user_prompt,
+                        err=error,
+                    )
+                    if retry_prompt is not None and attempt < max_attempts:
+                        attempt_user_prompt = retry_prompt
+                        continue
+                    text = f"(error) summary unavailable: {error}"
+                    break
         finally:
             latency_ms = int((time.perf_counter() - started) * 1000)
             call = self._record_call(
@@ -605,6 +673,36 @@ class LlmGateway:
         temperature: float = 0.0,
         max_output_tokens: int = 16384,
     ) -> tuple[UUID | None, dict[str, Any], bool]:
+        if self._budget.exceeded_submission(
+            session,
+            submission_id=submission_id,
+            purpose="submission_report",
+            limit=int(self.settings.llm_max_submission_report_calls_per_submission),
+        ):
+            req = self._build_request(
+                model_key=model_key,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=temperature,
+                max_output_tokens=max_output_tokens,
+            )
+            fallback_raw = json.dumps(fallback_report, separators=(",", ":"))
+            call = self._record_call(
+                session,
+                run_id=None,
+                dataset_id=None,
+                submission_id=submission_id,
+                purpose="submission_report",
+                observed_at=observed_at,
+                prompt=req,
+                response_raw=fallback_raw,
+                response_parsed=fallback_report,
+                usage=None,
+                latency_ms=0,
+                error="budget_exceeded: max submission_report calls per submission",
+            )
+            return call.call_id, fallback_report, True
+
         req = self._build_request(
             model_key=model_key,
             system_prompt=system_prompt,
@@ -619,6 +717,7 @@ class LlmGateway:
                 session,
                 run_id=None,
                 dataset_id=None,
+                submission_id=submission_id,
                 purpose="submission_report",
                 observed_at=observed_at,
                 prompt=req,
@@ -635,6 +734,7 @@ class LlmGateway:
                 session,
                 run_id=None,
                 dataset_id=None,
+                submission_id=submission_id,
                 purpose="submission_report",
                 observed_at=observed_at,
                 prompt=req,
@@ -652,6 +752,7 @@ class LlmGateway:
                 session,
                 run_id=None,
                 dataset_id=None,
+                submission_id=submission_id,
                 purpose="submission_report",
                 observed_at=observed_at,
                 prompt=req,
@@ -664,6 +765,8 @@ class LlmGateway:
             return call.call_id, fallback_report, True
 
         url, headers = self._api_url_and_headers(base_url, api_key)
+        max_attempts = max(1, int(self.settings.llm_max_retries) + 1)
+        attempt_user_prompt = user_prompt
 
         started = time.perf_counter()
         resp_raw: str | None = None
@@ -671,41 +774,63 @@ class LlmGateway:
         usage: dict[str, Any] | None = None
         error: str | None = None
         used_fallback = False
+        req_attempt = req
         try:
-            data = call_with_retry(
-                url=url,
-                headers=headers,
-                req=req,
-                timeout_seconds=float(self.settings.llm_timeout_seconds),
-                max_retries=int(self.settings.llm_max_retries),
-            )
-            usage = _extract_usage(data)
-            content_any = _extract_message_content(data)
-            resp_raw = content_any
-            obj, _candidate = extract_first_json_object_text(content_any)
-            resp_parsed = obj
+            for attempt in range(1, max_attempts + 1):
+                req_attempt = self._build_request(
+                    model_key=model_key,
+                    system_prompt=system_prompt,
+                    user_prompt=attempt_user_prompt,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                )
+                try:
+                    data = call_with_retry(
+                        url=url,
+                        headers=headers,
+                        req=req_attempt,
+                        timeout_seconds=float(self.settings.llm_timeout_seconds),
+                        max_retries=int(self.settings.llm_max_retries),
+                    )
+                    usage = _extract_usage(data)
+                    content_any = _extract_message_content(data)
+                    resp_raw = content_any
+                    obj, _candidate = extract_first_json_object_text(content_any)
+                    resp_parsed = obj
 
-            # Validate schema before recording success
-            try:
-                ArenaSubmissionReportNarrative.model_validate(obj)
-            except ValidationError as validation_exc:
-                error = f"schema_validation_failed: {validation_exc!r}"
-                resp_parsed = fallback_report
-                used_fallback = True
-        except Exception as exc:  # noqa: BLE001
-            error = repr(exc)
-            resp_raw = fallback_raw
-            resp_parsed = fallback_report
-            used_fallback = True
+                    try:
+                        ArenaSubmissionReportNarrative.model_validate(obj)
+                    except ValidationError as validation_exc:
+                        error = f"schema_validation_failed: {validation_exc!r}"
+                        resp_parsed = fallback_report
+                        used_fallback = True
+                    else:
+                        error = None
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    error = repr(exc)
+                    retry_prompt = _structured_retry_prompt(
+                        exc=exc,
+                        user_prompt=user_prompt,
+                        err=error,
+                    )
+                    if retry_prompt is not None and attempt < max_attempts:
+                        attempt_user_prompt = retry_prompt
+                        continue
+                    resp_raw = fallback_raw
+                    resp_parsed = fallback_report
+                    used_fallback = True
+                    break
         finally:
             latency_ms = int((time.perf_counter() - started) * 1000)
             call = self._record_call(
                 session,
                 run_id=None,
                 dataset_id=None,
+                submission_id=submission_id,
                 purpose="submission_report",
                 observed_at=observed_at,
-                prompt=req,
+                prompt=req_attempt,
                 response_raw=resp_raw,
                 response_parsed=resp_parsed,
                 usage=usage,
@@ -744,6 +869,7 @@ class LlmGateway:
                 session,
                 run_id=None,
                 dataset_id=None,
+                submission_id=submission_id,
                 purpose="arena.window_breakdown",
                 observed_at=observed_at,
                 prompt=req,
@@ -760,6 +886,7 @@ class LlmGateway:
                 session,
                 run_id=None,
                 dataset_id=None,
+                submission_id=submission_id,
                 purpose="arena.window_breakdown",
                 observed_at=observed_at,
                 prompt=req,
@@ -777,6 +904,7 @@ class LlmGateway:
                 session,
                 run_id=None,
                 dataset_id=None,
+                submission_id=submission_id,
                 purpose="arena.window_breakdown",
                 observed_at=observed_at,
                 prompt=req,
@@ -797,6 +925,7 @@ class LlmGateway:
                     session,
                     run_id=None,
                     dataset_id=None,
+                    submission_id=submission_id,
                     purpose="arena.window_breakdown",
                     observed_at=observed_at,
                     prompt=req,
@@ -810,6 +939,8 @@ class LlmGateway:
             self._window_breakdown_circuit[submission_id] = (0, None)
 
         url, headers = self._api_url_and_headers(base_url, api_key)
+        max_attempts = max(1, int(self.settings.llm_max_retries) + 1)
+        attempt_user_prompt = user_prompt
 
         started = time.perf_counter()
         resp_raw: str | None = None
@@ -817,45 +948,70 @@ class LlmGateway:
         usage: dict[str, Any] | None = None
         error: str | None = None
         used_fallback = False
+        req_attempt = req
         try:
-            data = call_with_retry(
-                url=url,
-                headers=headers,
-                req=req,
-                timeout_seconds=float(self.settings.llm_timeout_seconds),
-                max_retries=3,
-            )
-            usage = _extract_usage(data)
-            content_any = _extract_message_content(data)
-            resp_raw = content_any
-            obj, _candidate = extract_first_json_object_text(content_any)
-            resp_parsed = obj
-            WindowBreakdown.model_validate(obj)
-            self._window_breakdown_circuit[submission_id] = (0, None)
-        except Exception as exc:  # noqa: BLE001
-            error = repr(exc)
-            resp_raw = fallback_raw
-            resp_parsed = fallback_breakdown
-            used_fallback = True
-            failures += 1
-            if failures >= _CIRCUIT_BREAKER_THRESHOLD:
-                self._window_breakdown_circuit[submission_id] = (failures, time.perf_counter())
-                _LOG.warning(
-                    "window_breakdown_circuit_breaker_opened",
-                    submission_id=str(submission_id),
-                    consecutive_failures=failures,
+            for attempt in range(1, max_attempts + 1):
+                req_attempt = self._build_request(
+                    model_key=model_key,
+                    system_prompt=system_prompt,
+                    user_prompt=attempt_user_prompt,
+                    temperature=0.0,
+                    max_output_tokens=max_output_tokens,
                 )
-            else:
-                self._window_breakdown_circuit[submission_id] = (failures, None)
+                try:
+                    data = call_with_retry(
+                        url=url,
+                        headers=headers,
+                        req=req_attempt,
+                        timeout_seconds=float(self.settings.llm_timeout_seconds),
+                        max_retries=self.settings.llm_max_retries,
+                    )
+                    usage = _extract_usage(data)
+                    content_any = _extract_message_content(data)
+                    resp_raw = content_any
+                    obj, _candidate = extract_first_json_object_text(content_any)
+                    resp_parsed = obj
+                    WindowBreakdown.model_validate(obj)
+                    error = None
+                    self._window_breakdown_circuit[submission_id] = (0, None)
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    error = repr(exc)
+                    retry_prompt = _structured_retry_prompt(
+                        exc=exc,
+                        user_prompt=user_prompt,
+                        err=error,
+                    )
+                    if retry_prompt is not None and attempt < max_attempts:
+                        attempt_user_prompt = retry_prompt
+                        continue
+                    resp_raw = fallback_raw
+                    resp_parsed = fallback_breakdown
+                    used_fallback = True
+                    failures += 1
+                    if failures >= _CIRCUIT_BREAKER_THRESHOLD:
+                        self._window_breakdown_circuit[submission_id] = (
+                            failures,
+                            time.perf_counter(),
+                        )
+                        _LOG.warning(
+                            "window_breakdown_circuit_breaker_opened",
+                            submission_id=str(submission_id),
+                            consecutive_failures=failures,
+                        )
+                    else:
+                        self._window_breakdown_circuit[submission_id] = (failures, None)
+                    break
         finally:
             latency_ms = int((time.perf_counter() - started) * 1000)
             call = self._record_call(
                 session,
                 run_id=None,
                 dataset_id=None,
+                submission_id=submission_id,
                 purpose="arena.window_breakdown",
                 observed_at=observed_at,
-                prompt=req,
+                prompt=req_attempt,
                 response_raw=resp_raw,
                 response_parsed=resp_parsed,
                 usage=usage,
@@ -951,32 +1107,56 @@ class LlmGateway:
             max_output_tokens=max_output_tokens,
         )
 
+        max_attempts = max(1, int(self.settings.llm_max_retries) + 1)
+        attempt_user_prompt = user_prompt
+
         started = time.perf_counter()
         resp_raw: str | None = None
         usage: dict[str, Any] | None = None
         error: str | None = None
-        return_text: str
+        return_text = ""
+        req_attempt = req
         try:
-            data = call_with_retry(
-                url=url,
-                headers=headers,
-                req=req,
-                timeout_seconds=float(self.settings.llm_timeout_seconds),
-                max_retries=int(self.settings.llm_max_retries),
-            )
-            usage = _extract_usage(data)
-            content_any = _extract_message_content(data)
-            resp_raw = content_any
-            return_text = content_any
-        except Exception as exc:  # noqa: BLE001
-            error = repr(exc)
-            _LOG.error(
-                "llm_sentiment_summary_failed",
-                dataset_id=str(dataset_id) if dataset_id else None,
-                error=error,
-                exc_info=True,
-            )
-            return_text = f"(error) summary unavailable: {error}"
+            for attempt in range(1, max_attempts + 1):
+                req_attempt = self._build_request(
+                    model_key=model_key,
+                    system_prompt=system_prompt,
+                    user_prompt=attempt_user_prompt,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                )
+                try:
+                    data = call_with_retry(
+                        url=url,
+                        headers=headers,
+                        req=req_attempt,
+                        timeout_seconds=float(self.settings.llm_timeout_seconds),
+                        max_retries=int(self.settings.llm_max_retries),
+                    )
+                    usage = _extract_usage(data)
+                    content_any = _extract_message_content(data)
+                    resp_raw = content_any
+                    return_text = content_any
+                    error = None
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    error = repr(exc)
+                    retry_prompt = _structured_retry_prompt(
+                        exc=exc,
+                        user_prompt=user_prompt,
+                        err=error,
+                    )
+                    if retry_prompt is not None and attempt < max_attempts:
+                        attempt_user_prompt = retry_prompt
+                        continue
+                    _LOG.error(
+                        "llm_sentiment_summary_failed",
+                        dataset_id=str(dataset_id) if dataset_id else None,
+                        error=error,
+                        exc_info=True,
+                    )
+                    return_text = f"(error) summary unavailable: {error}"
+                    break
         finally:
             latency_ms = int((time.perf_counter() - started) * 1000)
             call = self._record_call(
@@ -985,7 +1165,7 @@ class LlmGateway:
                 dataset_id=dataset_id,
                 purpose="sentiment_item_summary",
                 observed_at=observed_at,
-                prompt=req,
+                prompt=req_attempt,
                 response_raw=resp_raw,
                 response_parsed=None,
                 usage=usage,
@@ -1056,3 +1236,11 @@ def _retry_prompt(user_prompt: str, err: str | None) -> str:
 
 def _should_retry_structured_exc(exc: Exception) -> bool:
     return isinstance(exc, (ValueError, json.JSONDecodeError, ValidationError))
+
+
+def _structured_retry_prompt(
+    *, exc: Exception | None, user_prompt: str, err: str | None
+) -> str | None:
+    if exc is None or not _should_retry_structured_exc(exc):
+        return None
+    return _retry_prompt(user_prompt, err)

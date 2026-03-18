@@ -274,8 +274,8 @@ export default function RunWatchPage() {
           setActiveTick(tickTime);
           setStreamText("");
         }
-      } catch {
-        // malformed SSE payload — skip
+      } catch (err) {
+        console.error("[watch] Failed to parse llm_start event:", err);
       }
     };
 
@@ -286,8 +286,8 @@ export default function RunWatchPage() {
         if (typeof delta === "string" && delta) {
           setStreamText((prev) => prev + delta);
         }
-      } catch {
-        // malformed SSE payload — skip
+      } catch (err) {
+        console.error("[watch] Failed to parse llm_delta event:", err);
       }
     };
 
@@ -320,8 +320,8 @@ export default function RunWatchPage() {
           });
           startPlaybackRef.current(payload.tick_time);
         }
-      } catch {
-        // malformed SSE payload — skip
+      } catch (err) {
+        console.error("[watch] Failed to parse decision event:", err);
       }
     };
 
@@ -366,8 +366,8 @@ export default function RunWatchPage() {
           cancelAnimationFrame(portfolioRafRef.current);
         }
         portfolioRafRef.current = requestAnimationFrame(animate);
-      } catch {
-        // malformed SSE payload — skip
+      } catch (err) {
+        console.error("[watch] Failed to parse portfolio event:", err);
       }
     };
 

@@ -15,6 +15,7 @@ class LlmBudgetTracker:
     def __init__(self) -> None:
         self._blocked_runs: OrderedDict[tuple[UUID, str], None] = OrderedDict()
         self._blocked_datasets: OrderedDict[tuple[UUID, str], None] = OrderedDict()
+        self._blocked_submissions: OrderedDict[tuple[UUID, str], None] = OrderedDict()
 
     def _is_blocked(
         self, cache: OrderedDict[tuple[UUID, str], None], key: tuple[UUID, str]
@@ -65,5 +66,24 @@ class LlmBudgetTracker:
         ).scalar_one()
         if int(cnt) >= limit:
             self._mark_blocked(self._blocked_datasets, key)
+            return True
+        return False
+
+    def exceeded_submission(
+        self, session: Session, *, submission_id: UUID, purpose: str, limit: int
+    ) -> bool:
+        if limit <= 0:
+            return False
+        key = (submission_id, purpose)
+        if self._is_blocked(self._blocked_submissions, key):
+            return True
+
+        cnt = session.execute(
+            select(func.count())
+            .select_from(LlmCallRow)
+            .where(LlmCallRow.submission_id == submission_id, LlmCallRow.purpose == purpose)
+        ).scalar_one()
+        if int(cnt) >= limit:
+            self._mark_blocked(self._blocked_submissions, key)
             return True
         return False

@@ -98,6 +98,8 @@ class Settings(BaseSettings):
     llm_max_decision_calls_per_run: int = 500
     llm_max_summary_calls_per_run: int = 5
     llm_max_sentiment_item_summaries_per_dataset: int = 200
+    llm_max_submission_report_calls_per_submission: int = 5
+    llm_max_window_breakdown_calls_per_submission: int = 50
 
     # Internal job worker reliability knobs.
     job_heartbeat_interval_seconds: float = 10.0

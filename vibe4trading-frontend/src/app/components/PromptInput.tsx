@@ -23,8 +23,12 @@ type NoobSelections = {
   riskTolerance: (typeof NOOB_TEMPLATE.riskTolerance)[number];
 };
 
-function buildNoobPrompt(selections: NoobSelections) {
-  return `You are a trading decision engine. I'm a ${selections.tradingStyle} trader. I play ${selections.timeHorizon} trading with ${selections.riskTolerance} risk tolerance.
+export function buildNoobPrompt(selections: NoobSelections) {
+  const tradingStyle = selections.tradingStyle || "balanced";
+  const timeHorizon = selections.timeHorizon || "medium-term";
+  const riskTolerance = selections.riskTolerance || "moderate";
+  
+  return `You are a trading decision engine. I'm a ${tradingStyle} trader. I play ${timeHorizon} trading with ${riskTolerance} risk tolerance.
 
 Analyze the market data and sentiment, then make trading decisions that fit this style, time horizon, and risk profile.`;
 }

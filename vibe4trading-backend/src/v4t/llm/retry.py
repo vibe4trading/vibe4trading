@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import random
 import time
 from collections.abc import Callable
@@ -57,7 +58,10 @@ def post_json_request(
     queue_priority: int = 0,
 ) -> dict[str, Any]:
     def _decode_response(response: httpx.Response) -> dict[str, Any]:
-        data_any = response.json()
+        try:
+            data_any = response.json()
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Response body is not valid JSON: {response.text[:200]}") from e
         if not isinstance(data_any, dict):
             raise ValueError("LLM response is not a JSON object")
         return cast(dict[str, Any], data_any)

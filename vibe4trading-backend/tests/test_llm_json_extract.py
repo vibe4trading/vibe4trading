@@ -55,3 +55,8 @@ def test_extract_no_json_fails() -> None:
 def test_extract_unbalanced_braces_fails() -> None:
     with pytest.raises(ValueError, match="Unbalanced JSON braces"):
         extract_first_json_object('{"key": "value"')
+
+
+def test_extract_handles_edge_cases() -> None:
+    with pytest.raises(ValueError, match="Extracted text is not valid JSON"):
+        extract_first_json_object_text('{"key": undefined}')

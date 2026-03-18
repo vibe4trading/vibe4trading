@@ -39,7 +39,8 @@ export function readSubmissionLoadingSnapshot(submissionId: string) {
     ) {
       return parsed as SubmissionLoadingSnapshot;
     }
-  } catch {
+  } catch (err) {
+    console.error("[submissionLoading] Failed to parse sessionStorage data:", err);
     return null;
   }
 
