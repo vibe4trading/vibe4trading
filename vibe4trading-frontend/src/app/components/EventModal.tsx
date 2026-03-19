@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { EventData } from "../lib/report-data";
 import { useModalA11y } from "../hooks/useModalA11y";
 
@@ -13,6 +14,7 @@ export function EventModal({
     eventData: EventData | null;
     eventCode: string;
 }) {
+    const { t } = useTranslation("arena");
     const { panelRef } = useModalA11y(isOpen, onClose);
     const titleId = React.useId();
 
@@ -29,16 +31,16 @@ export function EventModal({
                     <div className="modal-head-main">
                         <div className="modal-head-title-row">
                             <span className="event-code-chip">{eventCode}</span>
-                            <h3 id={titleId}>{eventData.title}</h3>
+                            <h3 id={titleId}>{t(`windows.${eventCode}.title`, { defaultValue: eventData.title })}</h3>
                         </div>
-                        <p>{eventData.subtitle}</p>
+                        <p>{t(`windows.${eventCode}.subtitle`, { defaultValue: eventData.subtitle })}</p>
                     </div>
                     <div className="modal-tag-row">
                         <span className="modal-tag tone-strong">
-                            Difficulty: {eventData.difficulty}
+                            {t("modal.difficulty")}: {t(`windows.${eventCode}.difficulty`, { defaultValue: eventData.difficulty })}
                         </span>
                         <span className="modal-tag tone-avg">
-                            Regime: {eventData.regime}
+                            {t("modal.regime")}: {t(`windows.${eventCode}.regime`, { defaultValue: eventData.regime })}
                         </span>
                         <span
                             className={`modal-tag ${eventData.edge === "Strong"
@@ -48,21 +50,21 @@ export function EventModal({
                                         : "tone-avg"
                                 }`}
                         >
-                            Edge: {eventData.edge}
+                            {t("modal.edge")}: {t(`windows.${eventCode}.edge`, { defaultValue: eventData.edge })}
                         </span>
                     </div>
                     <button className="modal-close-btn" onClick={onClose}>
-                        [ESC] Close
+                        {t("modal.escClose")}
                     </button>
                 </header>
 
                 <div className="event-modal-body">
                     <section className="event-modal-left">
                         <div className="modal-card story-card">
-                            <h4>Storyline</h4>
+                            <h4>{t("modal.storyline")}</h4>
                             <p className="story-subtitle">{eventData.period}</p>
                             <p style={{ fontSize: "14px", lineHeight: 1.5 }}>
-                                {eventData.background}
+                                {t(`windows.${eventCode}.background`, { defaultValue: eventData.background })}
                             </p>
                         </div>
 

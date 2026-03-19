@@ -1,0 +1,125 @@
+{
+  "page": {
+    "title": "My Runs",
+    "description": "Your benchmark run history.",
+    "subtitle": "REPLAY EXECUTION",
+    "heading": "Runs",
+    "intro": "Replay execution is queued to the backend worker. Updates stream via WebSocket (poll fallback).",
+    "refresh": "Refresh",
+    "loading": "Loading…"
+  },
+  "form": {
+    "heading": "Create Run",
+    "marketId": "market_id",
+    "modelKey": "model_key",
+    "datasetNote": "Datasets are injected via the API for MVP. Configure dataset IDs via VITE_V4T_MARKET_DATASET_ID and VITE_V4T_SENTIMENT_DATASET_ID.",
+    "submit": "Create + Enqueue Run",
+    "creating": "Creating…",
+    "error": {
+      "promptRequired": "Prompt text is required",
+      "noModels": "No models are enabled for your account",
+      "modelDisabled": "Select a model that is enabled for your account",
+      "datasetsNotConfigured": "Dataset IDs are not configured. Set VITE_V4T_MARKET_DATASET_ID and VITE_V4T_SENTIMENT_DATASET_ID."
+    }
+  },
+  "status": {
+    "pending": "pending",
+    "submitted": "submitted",
+    "running": "running",
+    "finished": "finished",
+    "failed": "failed",
+    "cancelled": "cancelled"
+  },
+  "list": {
+    "runId": "run_id",
+    "model": "model",
+    "started": "started",
+    "open": "Open",
+    "stop": "Stop",
+    "empty": "No runs yet. Create one above.",
+    "loadMore": "Load more",
+    "loadingMore": "Loading…"
+  },
+  "detail": {
+    "title": "Run Detail",
+    "description": "Benchmark run results and analysis.",
+    "hero": {
+      "meta": "RUN REPORT / {{model}} / {{time}}",
+      "scoreLabel": "RUN SCORE",
+      "latestTarget": "latest target",
+      "decisionsCount": "{{count}} decisions",
+      "startBalance": "{{amount}} start",
+      "startNA": "start n/a",
+      "autoRefresh": "auto-refresh"
+    },
+    "metrics": {
+      "totalReturn": "Total Return",
+      "totalReturnDesc": "Equity vs configured start balance",
+      "maxDrawdown": "Max Drawdown",
+      "maxDrawdownDesc": "Peak-to-trough equity drawdown",
+      "acceptance": "Acceptance",
+      "acceptanceDesc": "{{count}} accepted decisions",
+      "avgTarget": "Avg Target",
+      "avgTargetDesc": "Mean requested exposure",
+      "cashRatio": "Cash Ratio",
+      "cashRatioValue": "{{amount}} cash",
+      "cashRatioNA": "No portfolio snapshots"
+    },
+    "charts": {
+      "equity": "Equity Curve",
+      "equityAria": "Run equity curve",
+      "price": "Market Price",
+      "priceAria": "Run market price"
+    },
+    "decisions": {
+      "heading": "Recent Decisions",
+      "description": "Latest rationale, exposure requests, and scheduling hints from the run log.",
+      "priceMove": "Price move {{change}} / Last price {{price}}",
+      "table": {
+        "tick": "Tick",
+        "accepted": "Accepted",
+        "target": "Target",
+        "signals": "Signals",
+        "rationale": "Rationale",
+        "acceptedLabel": "Accepted",
+        "rejectedLabel": "Rejected",
+        "empty": "No decisions recorded yet."
+      }
+    },
+    "sidebar": {
+      "snapshot": {
+        "heading": "Run Snapshot",
+        "status": "Status",
+        "runId": "Run ID",
+        "pair": "Pair",
+        "model": "Model",
+        "started": "Started",
+        "ended": "Ended"
+      },
+      "config": {
+        "heading": "Execution Config",
+        "startBalance": "Start Balance",
+        "fee": "Fee (bps)",
+        "lookbackBars": "Lookback Bars",
+        "timeframe": "Timeframe",
+        "include": "Include"
+      },
+      "prompt": {
+        "heading": "Prompt",
+        "empty": "No prompt text recorded."
+      },
+      "latestDecision": {
+        "heading": "Latest Decision",
+        "tick": "Tick",
+        "target": "Target",
+        "confidence": "Confidence",
+        "noRationale": "No rationale recorded.",
+        "empty": "No decisions recorded yet."
+      }
+    },
+    "error": {
+      "title": "Run could not be loaded",
+      "retry": "Retry"
+    }
+  }
+}

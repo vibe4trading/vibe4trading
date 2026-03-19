@@ -1,0 +1,125 @@
+{
+  "page": {
+    "title": "我的运行",
+    "description": "你的基准测试运行历史。",
+    "subtitle": "回放执行",
+    "heading": "运行",
+    "intro": "回放任务已提交至后端 Worker，通过 WebSocket 实时推送更新。",
+    "refresh": "刷新",
+    "loading": "加载中…"
+  },
+  "form": {
+    "heading": "创建运行",
+    "marketId": "市场 ID",
+    "modelKey": "模型 Key",
+    "datasetNote": "数据集通过 API 注入（MVP 阶段）。通过 VITE_V4T_MARKET_DATASET_ID 和 VITE_V4T_SENTIMENT_DATASET_ID 配置数据集 ID。",
+    "submit": "创建并加入队列",
+    "creating": "创建中…",
+    "error": {
+      "promptRequired": "请输入提示词",
+      "noModels": "你的账户未启用任何模型",
+      "modelDisabled": "请选择已为你的账户启用的模型",
+      "datasetsNotConfigured": "数据集 ID 未配置，请设置 VITE_V4T_MARKET_DATASET_ID 和 VITE_V4T_SENTIMENT_DATASET_ID。"
+    }
+  },
+  "status": {
+    "pending": "排队中",
+    "submitted": "已提交",
+    "running": "运行中",
+    "finished": "已完成",
+    "failed": "失败",
+    "cancelled": "已取消"
+  },
+  "list": {
+    "runId": "运行 ID",
+    "model": "模型",
+    "started": "开始时间",
+    "open": "打开",
+    "stop": "停止",
+    "empty": "暂无运行记录，在上方创建一个。",
+    "loadMore": "加载更多",
+    "loadingMore": "加载中…"
+  },
+  "detail": {
+    "title": "运行详情",
+    "description": "基准测试运行结果与分析。",
+    "hero": {
+      "meta": "运行报告 / {{model}} / {{time}}",
+      "scoreLabel": "运行评分",
+      "latestTarget": "最新目标仓位",
+      "decisionsCount": "{{count}} 次决策",
+      "startBalance": "{{amount}} 起始",
+      "startNA": "起始余额不可用",
+      "autoRefresh": "自动刷新"
+    },
+    "metrics": {
+      "totalReturn": "总收益",
+      "totalReturnDesc": "权益相对于起始余额的变化",
+      "maxDrawdown": "最大回撤",
+      "maxDrawdownDesc": "峰值到谷底的权益回撤",
+      "acceptance": "采纳率",
+      "acceptanceDesc": "{{count}} 次决策被采纳",
+      "avgTarget": "平均目标仓位",
+      "avgTargetDesc": "平均请求敞口",
+      "cashRatio": "现金比例",
+      "cashRatioValue": "{{amount}} 现金",
+      "cashRatioNA": "暂无持仓快照"
+    },
+    "charts": {
+      "equity": "权益曲线",
+      "equityAria": "运行权益曲线",
+      "price": "市场价格",
+      "priceAria": "运行市场价格"
+    },
+    "decisions": {
+      "heading": "最近决策",
+      "description": "运行日志中的最新推理、敞口请求和调度信息。",
+      "priceMove": "价格变动 {{change}} / 最新价 {{price}}",
+      "table": {
+        "tick": "时刻",
+        "accepted": "采纳状态",
+        "target": "目标",
+        "signals": "信号",
+        "rationale": "推理依据",
+        "acceptedLabel": "已采纳",
+        "rejectedLabel": "已拒绝",
+        "empty": "暂无决策记录。"
+      }
+    },
+    "sidebar": {
+      "snapshot": {
+        "heading": "运行快照",
+        "status": "状态",
+        "runId": "运行 ID",
+        "pair": "交易对",
+        "model": "模型",
+        "started": "开始时间",
+        "ended": "结束时间"
+      },
+      "config": {
+        "heading": "执行配置",
+        "startBalance": "起始余额",
+        "fee": "手续费（bps）",
+        "lookbackBars": "回溯 K 线数",
+        "timeframe": "时间周期",
+        "include": "包含"
+      },
+      "prompt": {
+        "heading": "提示词",
+        "empty": "未记录提示词。"
+      },
+      "latestDecision": {
+        "heading": "最新决策",
+        "tick": "时刻",
+        "target": "目标",
+        "confidence": "置信度",
+        "noRationale": "未记录推理依据。",
+        "empty": "暂无决策记录。"
+      }
+    },
+    "error": {
+      "title": "运行加载失败",
+      "retry": "重试"
+    }
+  }
+}

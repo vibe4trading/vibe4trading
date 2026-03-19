@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 
 import { useParams } from "react-router-dom";
 
@@ -110,6 +111,7 @@ function buildFallbackSummary(
 }
 
 export default function RunDetailPage() {
+  const { t } = useTranslation("runs");
   const runId = useParams<{ runId: string }>().runId ?? "";
 
   const [run, setRun] = React.useState<RunOut | null>(null);
@@ -223,7 +225,7 @@ export default function RunDetailPage() {
     return (
       <main className="mx-auto flex min-h-[60vh] max-w-3xl flex-col items-start justify-center px-6 py-16">
         <div className="w-full border-2 border-[#c0392b] bg-[#f9e5e5] p-6 text-[#8f2d24]">
-          <h1 className="text-2xl font-bold text-[#5c201a]">Run could not be loaded</h1>
+          <h1 className="text-2xl font-bold text-[#5c201a]">{t("detail.error.title")}</h1>
           <p className="mt-3 text-sm">{error}</p>
           <button
             type="button"
@@ -232,7 +234,7 @@ export default function RunDetailPage() {
             }}
             className="mt-5 border-2 border-[#5c201a] bg-white px-5 py-2 text-sm font-semibold text-[#5c201a] transition-colors hover:bg-[#f4d6d1]"
           >
-            Retry
+            {t("detail.error.retry")}
           </button>
         </div>
       </main>
@@ -249,28 +251,28 @@ export default function RunDetailPage() {
 
   return (
     <main className="layout animate-rise">
-      <SEO title="Run Detail" description="Benchmark run results and analysis." noindex />
+      <SEO title={t("detail.title")} description={t("detail.description")} noindex />
       <section className="left-column">
         <article className="hero-card block">
           <div className="hero-meta">
-            RUN REPORT / {run?.model_key ?? "UNKNOWN"} / {fmt(run?.started_at ?? run?.created_at ?? null)}
+            {t("detail.hero.meta", { model: run?.model_key ?? "UNKNOWN", time: fmt(run?.started_at ?? run?.created_at ?? null) })}
           </div>
           <div className="hero-title-row">
             <div className="score">
-              <div className="score-label">RUN SCORE</div>
+              <div className="score-label">{t("detail.hero.scoreLabel")}</div>
               <div className="score-value">{String(score).padStart(2, "0")}</div>
             </div>
             <div className="persona">
               <h1>{verdictLabel(totalReturnPct, maxDrawdownPct)}</h1>
               <p>
-                {pairName(run?.market_id)} / {run?.model_key ?? "model"} / latest target {latestTarget}
+                {pairName(run?.market_id)} / {run?.model_key ?? "model"} / {t("detail.hero.latestTarget")} {latestTarget}
               </p>
               <div className="tags">
                 <span>{run?.status ?? "unknown"}</span>
                 <span>{config?.prompt?.timeframe ?? "1h"}</span>
-                <span>{decisions.length} decisions</span>
-                <span>{initialEquity != null ? `${fixed(initialEquity, 0)} start` : "start n/a"}</span>
-                {shouldRefresh ? <span>auto-refresh</span> : null}
+                <span>{t("detail.hero.decisionsCount", { count: decisions.length })}</span>
+                <span>{initialEquity != null ? t("detail.hero.startBalance", { amount: fixed(initialEquity, 0) }) : t("detail.hero.startNA")}</span>
+                {shouldRefresh ? <span>{t("detail.hero.autoRefresh")}</span> : null}
               </div>
             </div>
           </div>
@@ -284,50 +286,50 @@ export default function RunDetailPage() {
 
         <section className="metric-grid">
           <article className="metric block">
-            <h3>Total Return</h3>
+            <h3>{t("detail.metrics.totalReturn")}</h3>
             <p className={`value ${toneClass(totalReturnPct)}`}>{pct(totalReturnPct)}</p>
-            <p className="rank good">Equity vs configured start balance</p>
+            <p className="rank good">{t("detail.metrics.totalReturnDesc")}</p>
           </article>
           <article className="metric block">
-            <h3>Max Drawdown</h3>
+            <h3>{t("detail.metrics.maxDrawdown")}</h3>
             <p className={`value ${toneClass(maxDrawdownPct == null ? null : -maxDrawdownPct)}`}>
               {pct(maxDrawdownPct == null ? null : -maxDrawdownPct)}
             </p>
-            <p className="rank mid">Peak-to-trough equity drawdown</p>
+            <p className="rank mid">{t("detail.metrics.maxDrawdownDesc")}</p>
           </article>
           <article className="metric block">
-            <h3>Acceptance</h3>
+            <h3>{t("detail.metrics.acceptance")}</h3>
             <p className="value neutral">{pct(acceptanceRatePct, 1)}</p>
-            <p className="rank elite">{acceptedCount} accepted decisions</p>
+            <p className="rank elite">{t("detail.metrics.acceptanceDesc", { count: acceptedCount })}</p>
           </article>
           <article className="metric block">
-            <h3>Avg Target</h3>
+            <h3>{t("detail.metrics.avgTarget")}</h3>
             <p className={`value ${toneClass(avgTarget == null ? null : avgTarget - 0.5)}`}>
               {avgTarget == null ? "–" : fixed(avgTarget, 2)}
             </p>
-            <p className="rank good">Mean requested exposure</p>
+            <p className="rank good">{t("detail.metrics.avgTargetDesc")}</p>
           </article>
           <article className="metric block">
-            <h3>Cash Ratio</h3>
+            <h3>{t("detail.metrics.cashRatio")}</h3>
             <p className="value neutral">{pct(cashRatioPct, 1)}</p>
             <p className="rank mid">
-              {latestSnapshot ? `${fixed(latestSnapshot.cash_quote, 2)} cash` : "No portfolio snapshots"}
+              {latestSnapshot ? t("detail.metrics.cashRatioValue", { amount: fixed(latestSnapshot.cash_quote, 2) }) : t("detail.metrics.cashRatioNA")}
             </p>
           </article>
         </section>
 
         <div className="grid gap-4 xl:grid-cols-2">
           <LineChart
-            title="Equity Curve"
-            ariaLabel="Run equity curve"
+            title={t("detail.charts.equity")}
+            ariaLabel={t("detail.charts.equityAria")}
             points={equityPoints}
             variant="light"
             strokeFrom="rgba(59,102,217,0.9)"
             strokeTo="rgba(10,141,73,0.82)"
           />
           <LineChart
-            title="Market Price"
-            ariaLabel="Run market price"
+            title={t("detail.charts.price")}
+            ariaLabel={t("detail.charts.priceAria")}
             points={pricePoints}
             variant="light"
             strokeFrom="rgba(206,93,18,0.92)"
@@ -338,13 +340,13 @@ export default function RunDetailPage() {
         <article className="block">
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
-              <h2 className="m-0 text-[28px]">Recent Decisions</h2>
+              <h2 className="m-0 text-[28px]">{t("detail.decisions.heading")}</h2>
               <p className="mt-2 mb-0 text-[16px] text-[var(--muted)]">
-                Latest rationale, exposure requests, and scheduling hints from the run log.
+                {t("detail.decisions.description")}
               </p>
             </div>
             <div className="text-[16px] text-[var(--muted)]">
-              Price move {pct(priceChangePct)} / Last price {latestPrice ? fixed(latestPrice.price, 4) : "–"}
+              {t("detail.decisions.priceMove", { change: pct(priceChangePct), price: latestPrice ? fixed(latestPrice.price, 4) : "–" })}
             </div>
           </div>
 
@@ -352,11 +354,11 @@ export default function RunDetailPage() {
             <table className="w-full min-w-[760px] border-collapse text-left text-[14px]">
               <thead className="border-b-2 border-[var(--line)] bg-[#eceae3]">
                 <tr>
-                  <th className="px-3 py-2">Tick</th>
-                  <th className="px-3 py-2">Accepted</th>
-                  <th className="px-3 py-2">Target</th>
-                  <th className="px-3 py-2">Signals</th>
-                  <th className="px-3 py-2">Rationale</th>
+                  <th className="px-3 py-2">{t("detail.decisions.table.tick")}</th>
+                  <th className="px-3 py-2">{t("detail.decisions.table.accepted")}</th>
+                  <th className="px-3 py-2">{t("detail.decisions.table.target")}</th>
+                  <th className="px-3 py-2">{t("detail.decisions.table.signals")}</th>
+                  <th className="px-3 py-2">{t("detail.decisions.table.rationale")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -371,7 +373,7 @@ export default function RunDetailPage() {
                             : "border-[#c0392b] bg-[#f9e5e5] text-[#c0392b]"
                         }`}
                       >
-                        {decision.accepted ? "Accepted" : "Rejected"}
+                        {decision.accepted ? t("detail.decisions.table.acceptedLabel") : t("detail.decisions.table.rejectedLabel")}
                       </span>
                     </td>
                     <td className="px-3 py-2 font-mono">{decisionTarget(decision) || "hold"}</td>
@@ -385,7 +387,7 @@ export default function RunDetailPage() {
                 {recentDecisions.length === 0 ? (
                   <tr>
                     <td className="px-3 py-8 text-center text-[var(--muted)]" colSpan={5}>
-                      No decisions recorded yet.
+                      {t("detail.decisions.table.empty")}
                     </td>
                   </tr>
                 ) : null}
@@ -398,40 +400,40 @@ export default function RunDetailPage() {
       <aside className="right-column">
         <div className="grid gap-3">
           <section className="block">
-            <h2 className="m-0 text-[24px]">Run Snapshot</h2>
+            <h2 className="m-0 text-[24px]">{t("detail.sidebar.snapshot.heading")}</h2>
             <div className="mt-4 grid gap-2 text-[15px]">
               <div className="flex items-center justify-between gap-3 border-b border-[#d2d0c9] pb-2">
-                <span>Status</span>
+                <span>{t("detail.sidebar.snapshot.status")}</span>
                 <strong>{(run?.status ?? "unknown").toUpperCase()}</strong>
               </div>
               <div className="flex items-center justify-between gap-3 border-b border-[#d2d0c9] pb-2">
-                <span>Run ID</span>
+                <span>{t("detail.sidebar.snapshot.runId")}</span>
                 <strong>{run ? `${run.run_id.slice(0, 8)}…` : "–"}</strong>
               </div>
               <div className="flex items-center justify-between gap-3 border-b border-[#d2d0c9] pb-2">
-                <span>Pair</span>
+                <span>{t("detail.sidebar.snapshot.pair")}</span>
                 <strong>{pairName(run?.market_id)}</strong>
               </div>
               <div className="flex items-center justify-between gap-3 border-b border-[#d2d0c9] pb-2">
-                <span>Model</span>
+                <span>{t("detail.sidebar.snapshot.model")}</span>
                 <strong>{run?.model_key ?? "–"}</strong>
               </div>
               <div className="flex items-center justify-between gap-3 border-b border-[#d2d0c9] pb-2">
-                <span>Started</span>
+                <span>{t("detail.sidebar.snapshot.started")}</span>
                 <strong>{fmt(run?.started_at ?? run?.created_at ?? null)}</strong>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span>Ended</span>
+                <span>{t("detail.sidebar.snapshot.ended")}</span>
                 <strong>{fmt(run?.ended_at ?? null)}</strong>
               </div>
             </div>
           </section>
 
           <section className="block">
-            <h2 className="m-0 text-[24px]">Execution Config</h2>
+            <h2 className="m-0 text-[24px]">{t("detail.sidebar.config.heading")}</h2>
             <div className="mt-4 grid gap-2 text-[15px]">
               <div className="flex items-center justify-between gap-3 border-b border-[#d2d0c9] pb-2">
-                <span>Start Balance</span>
+                <span>{t("detail.sidebar.config.startBalance")}</span>
                 <strong>
                   {config?.execution?.initial_equity_quote != null
                     ? fixed(config.execution.initial_equity_quote, 0)
@@ -439,55 +441,55 @@ export default function RunDetailPage() {
                 </strong>
               </div>
               <div className="flex items-center justify-between gap-3 border-b border-[#d2d0c9] pb-2">
-                <span>Fee (bps)</span>
+                <span>{t("detail.sidebar.config.fee")}</span>
                 <strong>{config?.execution?.fee_bps != null ? fixed(config.execution.fee_bps, 1) : "–"}</strong>
               </div>
               <div className="flex items-center justify-between gap-3 border-b border-[#d2d0c9] pb-2">
-                <span>Lookback Bars</span>
+                <span>{t("detail.sidebar.config.lookbackBars")}</span>
                 <strong>{config?.prompt?.lookback_bars ?? "–"}</strong>
               </div>
               <div className="flex items-center justify-between gap-3 border-b border-[#d2d0c9] pb-2">
-                <span>Timeframe</span>
+                <span>{t("detail.sidebar.config.timeframe")}</span>
                 <strong>{config?.prompt?.timeframe ?? "–"}</strong>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span>Include</span>
+                <span>{t("detail.sidebar.config.include")}</span>
                 <strong>{config?.prompt?.include?.join(", ") ?? "default"}</strong>
               </div>
             </div>
           </section>
 
           <section className="block">
-            <h2 className="m-0 text-[24px]">Prompt</h2>
+            <h2 className="m-0 text-[24px]">{t("detail.sidebar.prompt.heading")}</h2>
             <pre className="mt-4 overflow-x-auto whitespace-pre-wrap border-2 border-[var(--line)] bg-[#fbfbf8] p-3 text-[13px] leading-6 text-[#2d2d2d]">
-              {config?.prompt?.prompt_text?.trim() || "No prompt text recorded."}
+              {config?.prompt?.prompt_text?.trim() || t("detail.sidebar.prompt.empty")}
             </pre>
           </section>
 
           <section className="block">
-            <h2 className="m-0 text-[24px]">Latest Decision</h2>
+            <h2 className="m-0 text-[24px]">{t("detail.sidebar.latestDecision.heading")}</h2>
             {latestDecision ? (
               <div className="mt-4 grid gap-3 text-[14px]">
                 <div className="border-2 border-[var(--line)] bg-[#fbfbf8] p-3">
-                  <div className="text-[12px] uppercase tracking-[0.12em] text-[var(--muted)]">Tick</div>
+                  <div className="text-[12px] uppercase tracking-[0.12em] text-[var(--muted)]">{t("detail.sidebar.latestDecision.tick")}</div>
                   <div className="mt-1 text-[16px]">{fmt(latestDecision.tick_time)}</div>
                 </div>
                 <div className="border-2 border-[var(--line)] bg-[#fbfbf8] p-3">
-                  <div className="text-[12px] uppercase tracking-[0.12em] text-[var(--muted)]">Target</div>
+                  <div className="text-[12px] uppercase tracking-[0.12em] text-[var(--muted)]">{t("detail.sidebar.latestDecision.target")}</div>
                   <div className="mt-1 font-mono text-[18px]">{latestTarget}</div>
                 </div>
                 <div className="border-2 border-[var(--line)] bg-[#fbfbf8] p-3">
-                  <div className="text-[12px] uppercase tracking-[0.12em] text-[var(--muted)]">Confidence</div>
+                  <div className="text-[12px] uppercase tracking-[0.12em] text-[var(--muted)]">{t("detail.sidebar.latestDecision.confidence")}</div>
                   <div className="mt-1 text-[16px]">
                     {latestDecision.confidence != null ? fixed(Number(latestDecision.confidence), 2) : "–"}
                   </div>
                 </div>
                 <div className="border-2 border-[var(--line)] bg-[#fbfbf8] p-3 text-[13px] leading-6 text-[#444]">
-                  {latestDecision.rationale || "No rationale recorded."}
+                  {latestDecision.rationale || t("detail.sidebar.latestDecision.noRationale")}
                 </div>
               </div>
             ) : (
-              <p className="mt-4 mb-0 text-[15px] text-[var(--muted)]">No decisions recorded yet.</p>
+              <p className="mt-4 mb-0 text-[15px] text-[var(--muted)]">{t("detail.sidebar.latestDecision.empty")}</p>
             )}
           </section>
         </div>

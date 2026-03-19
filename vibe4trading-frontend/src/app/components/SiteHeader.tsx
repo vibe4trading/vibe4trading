@@ -1,10 +1,12 @@
 import { Link } from "react-router-dom";
 import { useLocation } from "react-router-dom";
 import { type FocusEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "@/auth";
 
 import { useNewRunModal } from "@/app/components/NewRunProvider";
 import TourButton from "@/app/components/TourButton";
+import { LanguageSwitcher } from "@/app/components/LanguageSwitcher";
 import { apiJson, type MeApiTokenOut } from "@/app/lib/v4t";
 
 type TokenStatus =
@@ -31,6 +33,7 @@ async function copyText(value: string) {
 }
 
 export function SiteHeader({ isHome }: { isHome?: boolean }) {
+  const { t } = useTranslation("common");
   const { pathname } = useLocation();
   const { status, user, signIn, signOut } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
@@ -38,7 +41,7 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
   const profileCloseTimerRef = useRef<number | null>(null);
   const [tokenStatus, setTokenStatus] = useState<TokenStatus>({
     tone: "idle",
-    message: "Copy your bot token only when you need to wire up automation.",
+    message: t("profile.tokenIdle"),
   });
   const { openNewRun } = useNewRunModal();
 
@@ -48,12 +51,12 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
     const timeoutId = window.setTimeout(() => {
       setTokenStatus({
         tone: "idle",
-        message: "Copy your bot token only when you need to wire up automation.",
+        message: t("profile.tokenIdle"),
       });
     }, 2400);
 
     return () => window.clearTimeout(timeoutId);
-  }, [tokenStatus]);
+  }, [tokenStatus, t]);
 
   useEffect(() => {
     return () => {
@@ -114,21 +117,21 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
   }
 
   const onCopyToken = useCallback(async () => {
-    setTokenStatus({ tone: "loading", message: "Requesting your bot token..." });
+    setTokenStatus({ tone: "loading", message: t("profile.tokenLoading") });
     try {
       const token = await apiJson<MeApiTokenOut>("/me/api-token");
       await copyText(token.api_token);
       setTokenStatus({
         tone: "success",
-        message: token.created ? "New bot token issued and copied." : "Bot token copied.",
+        message: token.created ? t("profile.tokenSuccessNew") : t("profile.tokenSuccess"),
       });
     } catch (error) {
       setTokenStatus({
         tone: "error",
-        message: error instanceof Error ? error.message : "Unable to copy bot token.",
+        message: error instanceof Error ? error.message : t("profile.tokenError"),
       });
     }
-  }, []);
+  }, [t]);
 
   return (
     <header className={`top-nav ${isHome ? "home-top-nav" : ""}`}>
@@ -138,26 +141,27 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
       </div>
 
       <nav className="nav-links">
-        <Link to="/" className={pathname === "/" ? "active" : ""}>HOME</Link>
-        <Link to="/arena" className={pathname === "/arena" || pathname.startsWith("/arena/") ? "active" : ""}>TRIALS</Link>
-        <Link to="/leaderboard" data-tour="trials-leaderboard-link" className={pathname === "/leaderboard" ? "active" : ""}>LEADERBOARD</Link>
-        <Link to="/live" className={pathname === "/live" ? "active" : ""}>LIVE</Link>
-        <Link to="/contact" className={pathname === "/contact" ? "active" : ""}>CONTACT US</Link>
+        <Link to="/" className={pathname === "/" ? "active" : ""}>{t("nav.home")}</Link>
+        <Link to="/arena" className={pathname === "/arena" || pathname.startsWith("/arena/") ? "active" : ""}>{t("nav.trials")}</Link>
+        <Link to="/leaderboard" data-tour="trials-leaderboard-link" className={pathname === "/leaderboard" ? "active" : ""}>{t("nav.leaderboard")}</Link>
+        <Link to="/live" className={pathname === "/live" ? "active" : ""}>{t("nav.live")}</Link>
+        <Link to="/contact" className={pathname === "/contact" ? "active" : ""}>{t("nav.contact")}</Link>
         {me?.is_admin && (
-          <Link to="/admin/models" className={pathname.startsWith("/admin") ? "active" : ""}>ADMIN</Link>
+          <Link to="/admin/models" className={pathname.startsWith("/admin") ? "active" : ""}>{t("nav.admin")}</Link>
         )}
       </nav>
 
       <div className="top-actions">
         <TourButton isHome={isHome} />
+        <LanguageSwitcher isHome={isHome} />
         {status === "authenticated" && me?.quota && (
           <span className="user-chip" data-tour="trials-quota-chip">
-            TODAY: {me.quota.runs_used}/{me.quota.runs_limit}
+            {t("nav.today", { current: me.quota.runs_used, total: me.quota.runs_limit })}
           </span>
         )}
         {status === "authenticated" ? (
           <>
-            <button type="button" className="new-run-btn" onClick={openNewRun}>NEW RUN</button>
+            <button type="button" className="new-run-btn" onClick={openNewRun}>{t("nav.newRun")}</button>
             <div
               className="relative"
               onMouseEnter={openProfileMenu}
@@ -175,7 +179,7 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
                 }}
                 onFocus={openProfileMenu}
               >
-                <span className="sr-only">Open profile menu</span>
+                <span className="sr-only">{t("profile.openMenu")}</span>
                 <span
                   className={isHome
                     ? "grid h-7 w-7 place-items-center rounded-full border border-white/20 bg-white/8"
@@ -194,9 +198,9 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
               >
                 <div className="flex items-start justify-between gap-3 border-b border-black/15 pb-3 [@media(min-width:640px)]:border-b" >
                   <div>
-                    <p className={`mb-1 text-[10px] leading-none tracking-[0.22em] ${profileSubtleTextClassName}`}>ACTIVE PILOT</p>
+                    <p className={`mb-1 text-[10px] leading-none tracking-[0.22em] ${profileSubtleTextClassName}`}>{t("profile.activePilot")}</p>
                     <strong className="block text-[28px] leading-none">{profileName}</strong>
-                    <p className={`mt-2 text-sm ${profileSubtleTextClassName}`}>{profileEmail ?? "Signed in with V4T SSO"}</p>
+                    <p className={`mt-2 text-sm ${profileSubtleTextClassName}`}>{profileEmail ?? t("profile.signedInSSO")}</p>
                   </div>
                   <span
                     className={isHome
@@ -209,7 +213,7 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
 
                 <div className="mt-3">
                   <div className={profileMetricClassName}>
-                    <span className={`text-[11px] leading-none tracking-[0.18em] ${profileSubtleTextClassName}`}>DAILY QUOTA</span>
+                    <span className={`text-[11px] leading-none tracking-[0.18em] ${profileSubtleTextClassName}`}>{t("profile.dailyQuota")}</span>
                     <strong className="text-2xl leading-none">
                       {me?.quota ? `${me.quota.runs_used}/${me.quota.runs_limit}` : "--"}
                     </strong>
@@ -217,7 +221,7 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
                 </div>
 
                 <p className={`mt-3 text-sm leading-6 ${profileSubtleTextClassName}`}>
-                  Daily run quota resets at 00:00 UTC. Bot token access is for automation only and is fetched on demand.
+                  {t("profile.quotaInfo")}
                 </p>
 
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -227,14 +231,14 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
                     onClick={onCopyToken}
                     disabled={tokenStatus.tone === "loading"}
                   >
-                    {tokenStatus.tone === "loading" ? "COPYING..." : "COPY BOT TOKEN"}
+                    {tokenStatus.tone === "loading" ? t("profile.copying") : t("profile.copyBotToken")}
                   </button>
                   <button
                     type="button"
                     className={profileActionClassName}
                     onClick={() => signOut()}
                   >
-                    LOGOUT
+                    {t("nav.logout")}
                   </button>
                 </div>
 
@@ -262,7 +266,7 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
             onClick={() => { setLoginPending(true); signIn(pathname); }}
           >
             {loginPending && <span className="waitlist-spinner" aria-hidden="true" />}
-            {loginPending ? "SIGNING IN…" : "LOGIN"}
+            {loginPending ? t("nav.signingIn") : t("nav.login")}
           </button>
         ) : null}
       </div>

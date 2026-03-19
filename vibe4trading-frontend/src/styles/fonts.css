@@ -1,0 +1,8 @@
+/* Noto Sans SC for Chinese locale */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+
+/* Apply Chinese font only when lang="zh" */
+:root:lang(zh),
+:root:lang(zh) * {
+  font-family: 'Noto Sans SC', sans-serif;
+}

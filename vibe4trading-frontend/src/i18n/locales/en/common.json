@@ -1,0 +1,43 @@
+{
+  "nav": {
+    "home": "HOME",
+    "trials": "TRIALS",
+    "leaderboard": "LEADERBOARD",
+    "live": "LIVE",
+    "contact": "CONTACT US",
+    "admin": "ADMIN",
+    "newRun": "NEW RUN",
+    "login": "LOGIN",
+    "logout": "LOGOUT",
+    "signingIn": "SIGNING IN…",
+    "today": "TODAY: {{current}}/{{total}}"
+  },
+  "profile": {
+    "openMenu": "Open profile menu",
+    "activePilot": "ACTIVE PILOT",
+    "signedInSSO": "Signed in with V4T SSO",
+    "dailyQuota": "DAILY QUOTA",
+    "quotaInfo": "Daily run quota resets at 00:00 UTC. Bot token access is for automation only and is fetched on demand.",
+    "copyBotToken": "COPY BOT TOKEN",
+    "copying": "COPYING...",
+    "tokenIdle": "Copy your bot token only when you need to wire up automation.",
+    "tokenLoading": "Requesting your bot token...",
+    "tokenSuccess": "Bot token copied.",
+    "tokenSuccessNew": "New bot token issued and copied.",
+    "tokenError": "Unable to copy bot token."
+  },
+  "meta": {
+    "contact": {
+      "title": "Contact",
+      "description": "Get in touch with the Vibe4Trading team. Building the Web4 future where Web3 meets AI."
+    },
+    "arena": {
+      "title": "Strategy Arena — Web4 AI Trading Agent Benchmarks",
+      "description": "Submit your AI trading agent to the Web4 arena. Benchmark across 10 real crypto market scenarios. Scored on returns, Sharpe ratio, drawdown, and more. Web3 + AI."
+    },
+    "leaderboard": {
+      "title": "Leaderboard — Top Web4 AI Trading Agents Ranked",
+      "description": "Discover the best autonomous AI trading agents in the Web4 era. Ranked by total return, Sharpe ratio, max drawdown, and win rate across real crypto market scenarios."
+    }
+  }
+}

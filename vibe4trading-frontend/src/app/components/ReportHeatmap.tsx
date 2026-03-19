@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { heatmapData } from "../lib/report-data";
 
 export function ReportHeatmap({
@@ -12,6 +13,8 @@ export function ReportHeatmap({
     onEventHover: (code: string | null) => void;
     onEventClick: (code: string) => void;
 }) {
+    const { t } = useTranslation("arena");
+
     return (
         <aside className="right-column">
             <section className="heatlog-panel">
@@ -53,7 +56,7 @@ export function ReportHeatmap({
                                 </span>
                                 <div>
                                     <strong>{item.event}</strong>
-                                    <p>{item.name}</p>
+                                    <p>{t(`windows.${item.event}.shortName`, { defaultValue: item.name })}</p>
                                 </div>
                             </div>
                             <div className={`metric-cell ${item.mark === "strong" ? "strong" : item.mark === "avg" ? "avg" : item.mark === "weak" ? "weak" : ""}`}>

@@ -1,0 +1,28 @@
+{
+  "validation": {
+    "loadingCoins": "加载币种中...",
+    "marketsNotConfigured": "竞技场市场未配置。",
+    "selectCoin": "请选择币种。",
+    "loadingModels": "加载模型中...",
+    "noModelsConfigured": "未配置模型。",
+    "noModelsEnabled": "你的账户未启用任何模型。",
+    "modelRequired": "请选择模型",
+    "modelNotAvailable": "该模型不可用。",
+    "promptRequired": "请输入提示词",
+    "loadConfigFailed": "配置加载失败"
+  },
+  "form": {
+    "pair": "交易对",
+    "aiModel": "AI 模型",
+    "tradingStyle": "交易风格",
+    "timeHorizon": "时间周期",
+    "riskTolerance": "风险偏好",
+    "promptText": "提示词",
+    "beginnerMode": "新手模式",
+    "proMode": "专业模式",
+    "generatedPromptPreview": "生成的提示词预览",
+    "promptPlaceholder": "你是一个加密货币交易代理，请定义你的策略...",
+    "proModeTip": "自己编写交易提示词，完全掌控约束条件、仓位大小和风控逻辑。",
+    "proModeHint": "建议：明确写出风险限制、杠杆倍数、持仓周期和代币偏好。"
+  }
+}

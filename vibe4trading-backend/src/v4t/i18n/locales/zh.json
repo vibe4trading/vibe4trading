@@ -1,0 +1,38 @@
+{
+  "errors": {
+    "http": {
+      "400": "请求错误",
+      "401": "未授权",
+      "403": "禁止访问",
+      "404": "未找到",
+      "422": "验证失败",
+      "429": "请求过于频繁",
+      "500": "服务器内部错误",
+      "502": "网关错误",
+      "503": "服务暂不可用"
+    },
+    "pydantic": {
+      "missing": "此字段为必填",
+      "string_type": "请输入有效的字符串",
+      "int_type": "请输入有效的整数",
+      "float_type": "请输入有效的数字",
+      "bool_type": "请输入有效的布尔值",
+      "list_type": "请输入有效的列表",
+      "dict_type": "请输入有效的字典",
+      "value_error": "值无效",
+      "type_error": "类型无效",
+      "assertion_error": "断言失败",
+      "string_too_short": "字符串过短",
+      "string_too_long": "字符串过长",
+      "greater_than": "值必须大于 {gt}",
+      "greater_than_equal": "值必须大于或等于 {ge}",
+      "less_than": "值必须小于 {lt}",
+      "less_than_equal": "值必须小于或等于 {le}",
+      "url_parsing": "URL 格式无效",
+      "json_invalid": "JSON 格式无效",
+      "enum": "值必须为以下之一：{expected}",
+      "datetime_parsing": "日期时间格式无效",
+      "uuid_parsing": "UUID 格式无效"
+    }
+  }
+}

@@ -1,0 +1,206 @@
+{
+  "hero": {
+    "title": "WEB4 时代已至\n开始 VIBE TRADING",
+    "label1": "选哪个币？\n用哪个模型？",
+    "label2": "我的策略\n到底是实力还是运气？",
+    "label3": "测试 · 优化 · 再来\n策略进化循环",
+    "label4": "让每笔交易都有据可依",
+    "titleMobile": "WEB4 时代已至 开始 VIBE TRADING",
+    "subtitleMobile": "测试 · 优化 · 再来",
+    "cta": "开始试炼",
+    "features": "10 场景 | 10 代币 | 1 评分 | 免费"
+  },
+  "problem": {
+    "line1": "WEB4 时代，",
+    "line2": "不再需要你亲自下单。",
+    "line3": "AI 代理替你操盘。",
+    "line4": "但模型几十种，",
+    "line5": "代币上百个，",
+    "line6": "组合无穷无尽——",
+    "question": "你怎么知道自己的策略真的行？"
+  },
+  "solution": {
+    "heading": "我们帮你跑基准测试",
+    "paragraph1": "你的代理将经历 10 个真实历史行情。相同规则、相同窗口、零运气成分，只看真实表现。",
+    "paragraph2": "看清策略在哪里扛住了、在哪里崩了，以及下一轮怎么改进。"
+  },
+  "howItWorks": {
+    "heading": "怎么玩",
+    "step1": {
+      "number": "01",
+      "title": "选择你的代理",
+      "copy": "选模型、写提示词、定市场和风控参数。"
+    },
+    "step2": {
+      "number": "02",
+      "title": "压力测试",
+      "copy": "同一策略跑遍真实历史窗口，规则和数据完全一致。"
+    },
+    "step3": {
+      "number": "03",
+      "title": "拿到成绩单",
+      "copy": "收益率、回撤、胜率、逐事件行为分析，一目了然。"
+    },
+    "step4": {
+      "number": "04",
+      "title": "优化，上榜竞争",
+      "copy": "调提示词、重跑试炼、在排行榜上一较高下。"
+    }
+  },
+  "trials": {
+    "heading": "十大试炼",
+    "subtitle": "你的代理必须全部通关",
+    "trial1": {
+      "id": "W01",
+      "name": "BYBIT 被盗 + 死亡交叉",
+      "date": "2025年2月",
+      "difficulty": "困难"
+    },
+    "trial2": {
+      "id": "W02",
+      "name": "白宫峰会：利好出尽是利空",
+      "date": "2025年3月",
+      "difficulty": "中等"
+    },
+    "trial3": {
+      "id": "W03",
+      "name": "90天关税暂停反弹",
+      "date": "2025年4月",
+      "difficulty": "中等"
+    },
+    "trial4": {
+      "id": "W04",
+      "name": "BTC 与黄金脱钩",
+      "date": "2025年4月",
+      "difficulty": "简单"
+    },
+    "trial5": {
+      "id": "W05",
+      "name": "无聊横盘期",
+      "date": "2025年5月",
+      "difficulty": "简单"
+    },
+    "trial6": {
+      "id": "W06",
+      "name": "暴风雨前的宁静",
+      "date": "2025年9月",
+      "difficulty": "陷阱"
+    },
+    "trial7": {
+      "id": "W07",
+      "name": "10/10 大清算",
+      "date": "2025年10月",
+      "difficulty": "崩盘"
+    },
+    "trial8": {
+      "id": "W08",
+      "name": "机构大撤退",
+      "date": "2025年11月",
+      "difficulty": "困难"
+    },
+    "trial9": {
+      "id": "W09",
+      "name": "新年迷雾",
+      "date": "2026年1月",
+      "difficulty": "迷雾"
+    },
+    "trial10": {
+      "id": "W10",
+      "name": "2026 大崩盘",
+      "date": "2026年2月",
+      "difficulty": "崩盘"
+    },
+    "footer1": "从闪崩到无聊横盘。",
+    "footer2": "从连环爆仓到机构慢性失血。",
+    "footer3": "没有安全窗口，没有表面功夫。"
+  },
+  "archetypes": {
+    "heading": "交易者画像",
+    "subtitle": "你的策略像谁？",
+    "memeHunter": {
+      "title": "MEME 猎手",
+      "name": "Ansem",
+      "copy": "\"高频短线，追叙事、抢热点。仓位激进，快进快出。\""
+    },
+    "diamondHands": {
+      "title": "钻石手",
+      "name": "Michael Saylor",
+      "copy": "\"低频长持，信仰坚定。纪律第一，稳如老狗。\""
+    },
+    "macroSpeculator": {
+      "title": "宏观投机者",
+      "name": "Arthur Hayes",
+      "copy": "\"双向波段，跟着宏观节奏走。多空都做，灵活切换。\""
+    },
+    "contrarian": {
+      "title": "逆向玩家",
+      "name": "DonAlt",
+      "copy": "\"人弃我取，别人恐惧我贪婪。波段为主，极度耐心。\""
+    },
+    "contractKing": {
+      "title": "合约之王",
+      "name": "PickleCat (0xPickleCat)",
+      "copy": "\"期货主导，中频操作。高杠杆，高信念，敢下重手。\""
+    },
+    "onChainDetective": {
+      "title": "链上侦探",
+      "name": "ZachXBT",
+      "copy": "\"低杠杆，风控优先。防守比进攻更重要。\""
+    },
+    "fomoWarrior": {
+      "title": "FOMO 战士",
+      "name": "典型散户",
+      "copy": "\"追涨杀跌，情绪主导。永远在过度交易的路上。\""
+    },
+    "supercycleBeliever": {
+      "title": "超级周期信仰者",
+      "name": "Su Zhu (3AC)",
+      "copy": "\"永远做多，杠杆拉满。下行保护？不存在的。\""
+    },
+    "degenWhale": {
+      "title": "Degen 巨鲸",
+      "name": "James Wynn",
+      "copy": "\"极限杠杆，梭哈单押。净值波动堪比过山车。\""
+    },
+    "footer": "你的报告会把交易行为映射到这些经典画像上，并指出该模式在哪些窗口帮了你、在哪些窗口坑了你。"
+  },
+  "team": {
+    "heading": "关于我们",
+    "subtitle": "我们为 AI 原生交易打造基准测试工具。",
+    "member1": {
+      "name": "Jiarui Zhang",
+      "role": "AI 产品负责人"
+    },
+    "member2": {
+      "name": "Grider Li",
+      "role": "技术负责人"
+    },
+    "member3": {
+      "name": "Tiannan Zhao",
+      "role": "AI 产品策略与设计"
+    },
+    "member4": {
+      "name": "Ruojia Ma",
+      "role": "研究负责人与设计"
+    },
+    "member5": {
+      "name": "Lyuyan Chen",
+      "role": "工程师与产品经理"
+    },
+    "member6": {
+      "name": "Jacky Yang",
+      "role": "AI 代理工程师"
+    },
+    "footer": "为 Web4 交易时代而生。"
+  },
+  "finalCta": {
+    "heading": "准备好了吗？",
+    "startTrial": "开始试炼",
+    "viewLeaderboard": "查看排行榜",
+    "description": "几分钟完成配置，在真实行情中跑基准，用数据驱动迭代。"
+  },
+  "footer": {
+    "copyright": "VIBE4TRADING | 开放基准测试 | 2026",
+    "privacyPolicy": "隐私政策"
+  }
+}

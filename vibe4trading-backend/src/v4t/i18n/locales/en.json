@@ -1,0 +1,38 @@
+{
+  "errors": {
+    "http": {
+      "400": "Bad Request",
+      "401": "Unauthorized",
+      "403": "Forbidden",
+      "404": "Not Found",
+      "422": "Validation Error",
+      "429": "Too Many Requests",
+      "500": "Internal Server Error",
+      "502": "Bad Gateway",
+      "503": "Service Unavailable"
+    },
+    "pydantic": {
+      "missing": "Field is required",
+      "string_type": "Input should be a valid string",
+      "int_type": "Input should be a valid integer",
+      "float_type": "Input should be a valid number",
+      "bool_type": "Input should be a valid boolean",
+      "list_type": "Input should be a valid list",
+      "dict_type": "Input should be a valid dictionary",
+      "value_error": "Invalid value",
+      "type_error": "Invalid type",
+      "assertion_error": "Assertion failed",
+      "string_too_short": "String is too short",
+      "string_too_long": "String is too long",
+      "greater_than": "Value must be greater than {gt}",
+      "greater_than_equal": "Value must be greater than or equal to {ge}",
+      "less_than": "Value must be less than {lt}",
+      "less_than_equal": "Value must be less than or equal to {le}",
+      "url_parsing": "Invalid URL format",
+      "json_invalid": "Invalid JSON",
+      "enum": "Value must be one of: {expected}",
+      "datetime_parsing": "Invalid datetime format",
+      "uuid_parsing": "Invalid UUID format"
+    }
+  }
+}

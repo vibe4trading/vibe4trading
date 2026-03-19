@@ -14,6 +14,7 @@ import { usePrerenderReady } from "@/app/hooks/usePrerenderReady";
 import { useTourPersistence } from "@/app/hooks/useTourPersistence";
 import { useTourContext } from "@/app/components/TourProvider";
 import { leaderboardSteps } from "@/app/tours/leaderboard-tour";
+import { useTranslation } from "react-i18next";
 
 function pct(v: number | null | undefined) {
     if (v == null || Number.isNaN(v)) return "\u2013";
@@ -37,6 +38,7 @@ function stat(v: number | null | undefined, decimals = 2) {
 }
 
 export default function LeaderboardPage() {
+    const { t } = useTranslation("arena");
     const [entries, setEntries] = React.useState<LeaderboardEntryOut[]>([]);
     const [models, setModels] = React.useState<ModelPublicOut[]>([]);
     const [markets, setMarkets] = React.useState<string[]>([]);
@@ -152,8 +154,8 @@ export default function LeaderboardPage() {
     return (
         <main className="leaderboard-page-main animate-rise">
             <SEO
-                title="Leaderboard — Top Web4 AI Trading Agents Ranked"
-                description="Discover the best autonomous AI trading agents in the Web4 era. Ranked by total return, Sharpe ratio, max drawdown, and win rate across real crypto market scenarios."
+                title={t("meta.leaderboard.title")}
+                description={t("meta.leaderboard.description")}
                 canonicalPath="/leaderboard"
             />
             <Helmet>
@@ -180,25 +182,25 @@ export default function LeaderboardPage() {
             {/* PAGE HEADER */}
             <section className="leaderboard-screen-head block">
                 <div className="lb-title-line">
-                    <h1>LEADERBOARD</h1>
+                    <h1>{t("leaderboard.title")}</h1>
                     <div className="lb-live-status">
                         <i className="live-dot" />
-                        <strong>Historical Ranking</strong>
+                        <strong>{t("leaderboard.historicalRanking")}</strong>
                         <em>--:--</em>
                     </div>
                 </div>
                 <p>
-                    Ranking based on composite PnL across historical events. Tiebreakers: Sharpe, then Max DD. Each filter shows up to Top 100.
+                    {t("leaderboard.description")}
                 </p>
 
                 <div className="lb-filter-grid" data-tour="leaderboard-filters">
                     <label>
-                        Model
+                        {t("leaderboard.model")}
                         <select
                             value={modelFilter}
                             onChange={(e) => setModelFilter(e.target.value)}
                         >
-                            <option value="ALL">ALL MODELS</option>
+                            <option value="ALL">{t("leaderboard.allModels")}</option>
                             {models.map((m) => (
                                 <option key={m.model_key} value={m.model_key}>
                                     {m.label ? `${m.label} (${m.model_key})` : m.model_key}
@@ -207,12 +209,12 @@ export default function LeaderboardPage() {
                         </select>
                     </label>
                     <label>
-                        Pair
+                        {t("leaderboard.pair")}
                         <select
                             value={marketFilter}
                             onChange={(e) => setMarketFilter(e.target.value)}
                         >
-                            <option value="ALL">ALL PAIRS</option>
+                            <option value="ALL">{t("leaderboard.allPairs")}</option>
                             {markets.map((m) => (
                                 <option key={m} value={m}>
                                     {pairName(m)}
@@ -232,26 +234,26 @@ export default function LeaderboardPage() {
             {/* KPI CARDS */}
             <section className="lb-kpi-grid" data-tour="leaderboard-kpi-cards">
                 <article className="lb-kpi-card">
-                    <span>Filtered Results</span>
+                    <span>{t("leaderboard.filteredResults")}</span>
                     <strong>{entries.length}</strong>
-                    <em>Current filter shows up to Top 100</em>
+                    <em>{t("leaderboard.currentFilter")}</em>
                 </article>
                 <article className="lb-kpi-card">
-                    <span>Top 1 PnL (Filtered)</span>
+                    <span>{t("leaderboard.topPnl")}</span>
                     <strong className={pctClass(topPnl?.total_return_pct)}>
                         {topPnl ? pct(topPnl.total_return_pct) : "\u2013"}
                     </strong>
                     <em>{topPnl?.model_key ?? "\u2013"}</em>
                 </article>
                 <article className="lb-kpi-card">
-                    <span>Top 1 Sharpe</span>
+                    <span>{t("leaderboard.topSharpe")}</span>
                     <strong>{topPnl ? stat(topPnl.sharpe_ratio) : "\u2013"}</strong>
-                    <em>Risk-adjusted return</em>
+                    <em>{t("leaderboard.riskAdjusted")}</em>
                 </article>
                 <article className="lb-kpi-card">
-                    <span>Top 1 Max DD</span>
+                    <span>{t("leaderboard.topMaxDD")}</span>
                     <strong>{topPnl ? `${stat(topPnl.max_drawdown_pct)}%` : "\u2013"}</strong>
-                    <em>Worst peak-to-trough</em>
+                    <em>{t("leaderboard.worstPeakToTrough")}</em>
                 </article>
             </section>
 
@@ -261,22 +263,22 @@ export default function LeaderboardPage() {
                 <section className="leaderboard-proto block">
                     <header className="lb-head">
                         <div>
-                            <h2>Vibe4Trading · TOP 100</h2>
-                            <p>Top models sorted by PnL. Displays up to top 100 based on filters.</p>
+                            <h2>{t("leaderboard.top100")}</h2>
+                            <p>{t("leaderboard.topModels")}</p>
                         </div>
                         <div className="lb-head-metrics">
-                            <span>START BALANCE: {initialEquity != null ? `${initialEquity.toLocaleString()} USDT` : "–"}</span>
-                            <span>ENTRIES: {entries.length}</span>
-                            <span>UPDATED: Live</span>
+                            <span>{t("leaderboard.startBalance")}: {initialEquity != null ? `${initialEquity.toLocaleString()} USDT` : "–"}</span>
+                            <span>{t("leaderboard.entries")}: {entries.length}</span>
+                            <span>{t("leaderboard.updated")}: {t("leaderboard.live")}</span>
                         </div>
                     </header>
 
                     <div className="lb-scroll-shell" data-tour="leaderboard-table">
                         <div className="lb-row lb-row-head">
-                            <span>RANK</span>
-                            <span>MODEL</span>
-                            <span>PAIR</span>
-                            <span>PNL</span>
+                            <span>{t("leaderboard.rank")}</span>
+                            <span>{t("leaderboard.model")}</span>
+                            <span>{t("leaderboard.pair")}</span>
+                            <span>{t("leaderboard.pnl")}</span>
                         </div>
                         <div className="lb-scroll">
                             {entries.map((e, idx) => {
@@ -300,10 +302,10 @@ export default function LeaderboardPage() {
                                 );
                             })}
                             {entries.length === 0 && !refreshing && (
-                                <div className="text-center p-8 text-[#555]">No entries found.</div>
+                                <div className="text-center p-8 text-[#555]">{t("leaderboard.noEntries")}</div>
                             )}
                             {refreshing && (
-                                <div className="text-center p-8 text-[#555]">Loading...</div>
+                                <div className="text-center p-8 text-[#555]">{t("leaderboard.loading")}</div>
                             )}
                         </div>
                     </div>
@@ -313,26 +315,26 @@ export default function LeaderboardPage() {
                 <aside className="lb-side-panel block" data-tour="leaderboard-side-panel">
                     {selected ? (
                         <>
-                            <h3>Strategy Details</h3>
+                            <h3>{t("leaderboard.strategyDetails")}</h3>
 
                             <div className="lb-selected-meta">
                                 <strong>
                                     #{String(selectedRank).padStart(3, "0")} · {selected.model_key}
                                 </strong>
                                 <p>{pairName(selected.market_id)}</p>
-                                <p>Top 100 live comparison (PnL priority)</p>
+                                <p>{t("leaderboard.liveComparison")}</p>
                             </div>
 
                             {/* Stats grid 2x3 */}
                             <div className="lb-selected-stat-grid">
                                 <div className="lb-selected-stat">
-                                    <span>Total PnL</span>
+                                    <span>{t("leaderboard.totalPnl")}</span>
                                     <strong className={pctClass(selected.total_return_pct)}>
                                         {pct(selected.total_return_pct)}
                                     </strong>
                                 </div>
                                 <div className="lb-selected-stat">
-                                    <span>Win Rate</span>
+                                    <span>{t("leaderboard.winRate")}</span>
                                     <strong>
                                         {selected.win_rate_pct != null
                                             ? `${stat(selected.win_rate_pct, 1)}%`
@@ -340,15 +342,15 @@ export default function LeaderboardPage() {
                                     </strong>
                                 </div>
                                 <div className="lb-selected-stat">
-                                    <span>Sharpe</span>
+                                    <span>{t("leaderboard.sharpe")}</span>
                                     <strong>{stat(selected.sharpe_ratio)}</strong>
                                 </div>
                                 <div className="lb-selected-stat">
-                                    <span>Profit Factor</span>
+                                    <span>{t("leaderboard.profitFactor")}</span>
                                     <strong>{stat(selected.profit_factor)}</strong>
                                 </div>
                                 <div className="lb-selected-stat">
-                                    <span>Max DD</span>
+                                    <span>{t("leaderboard.maxDD")}</span>
                                     <strong>
                                         {selected.max_drawdown_pct != null
                                             ? `${stat(selected.max_drawdown_pct, 1)}%`
@@ -356,7 +358,7 @@ export default function LeaderboardPage() {
                                     </strong>
                                 </div>
                                 <div className="lb-selected-stat">
-                                    <span>#Trades</span>
+                                    <span>{t("leaderboard.trades")}</span>
                                     <strong>
                                         {selected.num_trades != null ? String(selected.num_trades) : "\u2013"}
                                     </strong>
@@ -394,10 +396,10 @@ export default function LeaderboardPage() {
 
                             {/* Rules box */}
                             <div className="lb-rule-box">
-                                <strong>Ranking Rules</strong>
-                                <span>1. Default ranking by composite PnL across events</span>
-                                <span>2. Tiebreaker: Sharpe first, then Max DD (lower is better)</span>
-                                <span>3. Each model/pair filter shows up to Top 100</span>
+                                <strong>{t("leaderboard.rankingRules")}</strong>
+                                <span>{t("leaderboard.rule1")}</span>
+                                <span>{t("leaderboard.rule2")}</span>
+                                <span>{t("leaderboard.rule3")}</span>
                             </div>
 
                             {/* View run link */}
@@ -406,12 +408,12 @@ export default function LeaderboardPage() {
                                 className="lb-reset-btn"
                                 style={{ textAlign: "center", display: "block", marginTop: "8px", textDecoration: "none", color: "inherit" }}
                             >
-                                VIEW RUN DETAILS →
+                                {t("leaderboard.viewRunDetails")}
                             </Link>
                         </>
                     ) : (
                         <div className="text-center p-8 text-[#555]">
-                            {entries.length > 0 ? "Select a row to view details" : "No entries to display"}
+                            {entries.length > 0 ? t("leaderboard.selectRow") : t("leaderboard.noDisplay")}
                         </div>
                     )}
                 </aside>

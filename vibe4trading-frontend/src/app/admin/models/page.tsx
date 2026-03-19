@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 
 import { SEO } from "@/app/components/SEO";
 import {
@@ -15,6 +16,7 @@ import {
 const USER_PAGE_SIZE = 100;
 
 export default function AdminModelsPage() {
+  const { t } = useTranslation("admin");
   const [me, setMe] = React.useState<MeOut | null>(null);
   const [models, setModels] = React.useState<ModelAdminOut[]>([]);
   const [modelAccess, setModelAccess] = React.useState<AdminModelAccessIndexOut | null>(null);
@@ -75,7 +77,7 @@ export default function AdminModelsPage() {
     const key = (create.model_key || "").trim();
     const apiKey = (create.api_key || "").trim();
     if (!key) {
-      setError("model_key is required");
+      setError(t("errors.modelKeyRequired"));
       return;
     }
 
@@ -111,7 +113,7 @@ export default function AdminModelsPage() {
       const clearApiKey = Boolean(draft.clear_api_key);
 
       if (clearApiKey && apiKey) {
-        setError("Enter a new API key or clear the stored one, not both");
+        setError(t("errors.apiKeyConflict"));
         return;
       }
 
@@ -177,9 +179,9 @@ export default function AdminModelsPage() {
     return (
       <main className="trials-page-main">
         <section className="block">
-          <h2 style={{ margin: 0, fontSize: 28 }}>Model Management</h2>
+          <h2 style={{ margin: 0, fontSize: 28 }}>{t("page.heading")}</h2>
           <p style={{ marginTop: 10, fontSize: 16, color: "var(--red)" }}>
-            Admin access required.
+            {t("page.accessDenied")}
           </p>
         </section>
       </main>
@@ -188,17 +190,16 @@ export default function AdminModelsPage() {
 
   return (
     <main className="trials-page-main">
-      <SEO title="Admin: Models" description="Model registry management." noindex />
+      <SEO title={t("page.title")} description={t("page.description")} noindex />
       <section className="trials-head block">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <p style={{ fontSize: 13, color: "var(--muted)", letterSpacing: "0.8px" }}>
-              ADMIN &bull; MODEL REGISTRY
+              {t("page.header")}
             </p>
-            <h1>Models</h1>
+            <h1>{t("page.heading")}</h1>
             <p>
-              Define the predefined models list plus any per-model API base URL
-              and API key overrides.
+              {t("page.intro")}
             </p>
           </div>
           <button
@@ -207,7 +208,7 @@ export default function AdminModelsPage() {
             className="newrun-action-btn ghost"
             disabled={!isAdmin || loading}
           >
-            {loading ? "Loading\u2026" : "Refresh"}
+            {loading ? t("actions.loading") : t("actions.refresh")}
           </button>
         </div>
       </section>
@@ -227,50 +228,50 @@ export default function AdminModelsPage() {
       ) : null}
 
       <section className="block">
-        <h2 style={{ margin: "0 0 12px 0", fontSize: 24 }}>Add Model</h2>
+        <h2 style={{ margin: "0 0 12px 0", fontSize: 24 }}>{t("form.addModel")}</h2>
         <form onSubmit={onCreate} className="newrun-form">
           <div className="newrun-grid">
             <div className="newrun-field">
-              <span>model_key</span>
+              <span>{t("form.modelKey")}</span>
               <input
                 value={create.model_key}
                 onChange={(e) =>
                   setCreate((p) => ({ ...p, model_key: e.target.value }))
                 }
-                placeholder="gpt-4o-mini"
+                placeholder={t("form.modelKeyPlaceholder")}
                 required
               />
             </div>
             <div className="newrun-field">
-              <span>label</span>
+              <span>{t("form.label")}</span>
               <input
                 value={create.label ?? ""}
                 onChange={(e) =>
                   setCreate((p) => ({ ...p, label: e.target.value }))
                 }
-                placeholder="GPT-4o mini"
+                placeholder={t("form.labelPlaceholder")}
               />
             </div>
           </div>
           <div className="newrun-field">
-            <span>api_base_url</span>
+            <span>{t("form.apiBaseUrl")}</span>
             <input
               value={create.api_base_url ?? ""}
               onChange={(e) =>
                 setCreate((p) => ({ ...p, api_base_url: e.target.value }))
               }
-              placeholder="https://openrouter.ai/api/v1"
+              placeholder={t("form.apiBaseUrlPlaceholder")}
             />
           </div>
           <div className="newrun-field">
-            <span>api_key</span>
+            <span>{t("form.apiKey")}</span>
             <input
               type="password"
               value={create.api_key ?? ""}
               onChange={(e) =>
                 setCreate((p) => ({ ...p, api_key: e.target.value }))
               }
-              placeholder="sk-..."
+              placeholder={t("form.apiKeyPlaceholder")}
               autoComplete="new-password"
             />
           </div>
@@ -291,22 +292,22 @@ export default function AdminModelsPage() {
               }
               style={{ width: 16, height: 16 }}
             />
-            <span style={{ fontSize: 16 }}>enabled</span>
+            <span style={{ fontSize: 16 }}>{t("form.enabled")}</span>
           </label>
           <div className="newrun-actions" style={{ justifyContent: "flex-end" }}>
             <button type="submit" className="newrun-action-btn" disabled={loading}>
-              Add
+              {t("actions.add")}
             </button>
           </div>
         </form>
       </section>
 
       <section className="block">
-        <h2 style={{ margin: "0 0 12px 0", fontSize: 24 }}>Models</h2>
+        <h2 style={{ margin: "0 0 12px 0", fontSize: 24 }}>{t("models.heading")}</h2>
         <div style={{ display: "grid", gap: 10 }}>
           {models.length === 0 ? (
             <div style={{ fontSize: 16, color: "var(--muted)" }}>
-              No models defined yet.
+              {t("models.empty")}
             </div>
           ) : null}
           {models.map((m) => {
@@ -334,12 +335,12 @@ export default function AdminModelsPage() {
                         color: "var(--muted)",
                       }}
                     >
-                      MODEL_KEY
+                      {t("status.modelKey")}
                     </span>
                     <div style={{ fontSize: 18, marginTop: 4 }}>{m.model_key}</div>
                   </div>
                   <div className="newrun-field">
-                    <span>label</span>
+                    <span>{t("form.label")}</span>
                     <input
                       value={label}
                       onChange={(e) =>
@@ -353,7 +354,7 @@ export default function AdminModelsPage() {
                 </div>
 
                 <div className="newrun-field" style={{ marginTop: 10 }}>
-                  <span>api_base_url</span>
+                  <span>{t("form.apiBaseUrl")}</span>
                   <input
                     value={apiBaseUrl}
                     onChange={(e) =>
@@ -371,7 +372,7 @@ export default function AdminModelsPage() {
                 >
                   <div className="newrun-field">
                     <span className="flex items-center justify-between gap-3">
-                      <span>api_key</span>
+                      <span>{t("form.apiKey")}</span>
                       <span
                         style={{
                           fontSize: 11,
@@ -379,7 +380,7 @@ export default function AdminModelsPage() {
                           color: "var(--muted)",
                         }}
                       >
-                        {m.has_api_key && !clearApiKey ? "STORED" : "NOT STORED"}
+                        {m.has_api_key && !clearApiKey ? t("status.stored") : t("status.notStored")}
                       </span>
                     </span>
                     <input
@@ -397,8 +398,8 @@ export default function AdminModelsPage() {
                       }
                       placeholder={
                         m.has_api_key
-                          ? "Enter new key to replace"
-                          : "Enter key to store"
+                          ? t("form.apiKeyReplacePrompt")
+                          : t("form.apiKeyStorePrompt")
                       }
                       autoComplete="new-password"
                     />
@@ -431,7 +432,7 @@ export default function AdminModelsPage() {
                       }
                       style={{ width: 16, height: 16 }}
                     />
-                    <span style={{ fontSize: 14 }}>clear stored key</span>
+                    <span style={{ fontSize: 14 }}>{t("form.clearStoredKey")}</span>
                   </label>
                 </div>
 
@@ -459,7 +460,7 @@ export default function AdminModelsPage() {
                       }
                       style={{ width: 16, height: 16 }}
                     />
-                    <span style={{ fontSize: 16 }}>enabled</span>
+                    <span style={{ fontSize: 16 }}>{t("form.enabled")}</span>
                   </label>
                   <div className="newrun-actions">
                     <button
@@ -468,7 +469,7 @@ export default function AdminModelsPage() {
                       className="newrun-action-btn"
                       disabled={savingKey === m.model_key}
                     >
-                      {savingKey === m.model_key ? "Saving\u2026" : "Save"}
+                      {savingKey === m.model_key ? t("actions.saving") : t("actions.save")}
                     </button>
                     <button
                       type="button"
@@ -480,7 +481,7 @@ export default function AdminModelsPage() {
                       }}
                       disabled={deletingKey === m.model_key}
                     >
-                      {deletingKey === m.model_key ? "Deleting\u2026" : "Delete"}
+                      {deletingKey === m.model_key ? t("actions.deleting") : t("actions.delete")}
                     </button>
                   </div>
                 </div>
@@ -494,11 +495,10 @@ export default function AdminModelsPage() {
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <h2 style={{ margin: "0 0 8px 0", fontSize: 24 }}>
-              Per-User Allowlist Overrides
+              {t("users.heading")}
             </h2>
             <p style={{ margin: 0, fontSize: 17, color: "#555" }}>
-              Base access comes from the env default allowlist. Store overrides
-              like{" "}
+              {t("users.intro")}{" "}
               <span
                 style={{
                   border: "1px solid #888",
@@ -509,7 +509,7 @@ export default function AdminModelsPage() {
               >
                 +deepseekv3,-gemini-3-pro
               </span>{" "}
-              to add or remove access on top.
+              {t("users.introSuffix")}
             </p>
           </div>
           <div
@@ -523,8 +523,10 @@ export default function AdminModelsPage() {
             }}
           >
             {modelAccess?.default_allows_all_models
-              ? "Default env allowlist: all registered models"
-              : `Default env allowlist: ${modelAccess?.default_allowlist_model_keys.join(", ") || "none"}`}
+              ? t("users.defaultAllowsAll")
+              : t("users.defaultAllowlist", { 
+                  models: modelAccess?.default_allowlist_model_keys.join(", ") || t("users.defaultAllowlistNone")
+                })}
           </div>
         </div>
 
@@ -540,9 +542,13 @@ export default function AdminModelsPage() {
             }}
           >
             <span>
-              Showing {modelAccess?.users.length ?? 0} users starting at{" "}
-              {modelAccess?.offset ?? 0}
-              {modelAccess ? ` of ${modelAccess.total_users}` : ""}
+              {modelAccess 
+                ? t("users.showingTotal", { 
+                    count: modelAccess.users.length, 
+                    offset: modelAccess.offset, 
+                    total: modelAccess.total_users 
+                  })
+                : t("users.showing", { count: 0, offset: 0 })}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -554,7 +560,7 @@ export default function AdminModelsPage() {
                 style={{ fontSize: 14, padding: "5px 10px" }}
                 disabled={loading || userOffset === 0}
               >
-                Previous
+                {t("actions.previous")}
               </button>
               <button
                 type="button"
@@ -563,14 +569,14 @@ export default function AdminModelsPage() {
                 style={{ fontSize: 14, padding: "5px 10px" }}
                 disabled={loading || !modelAccess?.has_more}
               >
-                Next
+                {t("actions.next")}
               </button>
             </div>
           </div>
 
           {modelAccess?.users.length ? null : (
             <div style={{ fontSize: 16, color: "var(--muted)" }}>
-              No users have signed in yet.
+              {t("users.empty")}
             </div>
           )}
 
@@ -605,7 +611,7 @@ export default function AdminModelsPage() {
                   </div>
 
                   <div className="newrun-field">
-                    <span>model_allowlist_override</span>
+                    <span>{t("form.modelAllowlistOverride")}</span>
                     <input
                       value={draftValue}
                       onChange={(e) =>
@@ -614,14 +620,14 @@ export default function AdminModelsPage() {
                           [user.user_id]: e.target.value,
                         }))
                       }
-                      placeholder="+deepseekv3,-gemini-3-pro"
+                      placeholder={t("form.overridePlaceholder")}
                     />
                   </div>
 
                   <div style={{ display: "grid", gap: 4, fontSize: 14 }}>
-                    <span style={{ color: "var(--ink)" }}>Selectable now</span>
+                    <span style={{ color: "var(--ink)" }}>{t("status.selectableNow")}</span>
                     <span style={{ color: "var(--muted)" }}>
-                      {user.selectable_model_keys.join(", ") || "stub only"}
+                      {user.selectable_model_keys.join(", ") || t("status.stubOnly")}
                     </span>
                   </div>
 
@@ -632,7 +638,7 @@ export default function AdminModelsPage() {
                     style={{ fontSize: 16, padding: "6px 12px" }}
                     disabled={savingUserId === user.user_id}
                   >
-                    {savingUserId === user.user_id ? "Saving\u2026" : "Save"}
+                    {savingUserId === user.user_id ? t("actions.saving") : t("actions.save")}
                   </button>
                 </div>
               </div>

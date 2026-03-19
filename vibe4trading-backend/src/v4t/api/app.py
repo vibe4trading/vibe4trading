@@ -4,9 +4,11 @@ from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
-from v4t.api.errors import http_exception_handler
+from v4t.api.errors import http_exception_handler, validation_exception_handler
+from v4t.api.middleware.locale import LocaleMiddleware
 from v4t.api.routes.admin_arena import router as admin_arena_router
 from v4t.api.routes.admin_model_access import router as admin_model_access_router
 from v4t.api.routes.admin_models import router as admin_models_router
@@ -87,7 +89,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.add_middleware(LocaleMiddleware)
+
     app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
 
     return app
 

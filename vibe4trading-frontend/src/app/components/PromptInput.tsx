@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 type PromptMode = "noob" | "pro";
 
@@ -39,6 +40,7 @@ export function PromptInput({
   mode: initialMode = "noob",
   variant = "dark",
 }: PromptInputProps) {
+  const { t } = useTranslation('errors');
   const [mode, setMode] = useState<PromptMode>(initialMode);
   const [noobSelections, setNoobSelections] = useState<NoobSelections>({
     tradingStyle: "balanced",
@@ -120,7 +122,7 @@ export function PromptInput({
               : `${darkToggleClass} ${mode === "noob" ? toggleActive : toggleBase}`
           }
         >
-          {isLight ? "Beginner Mode" : "Noob Mode"}
+          {t('form.beginnerMode')}
         </button>
         <button
           type="button"
@@ -133,7 +135,7 @@ export function PromptInput({
               : `${darkToggleClass} ${mode === "pro" ? toggleActive : toggleBase}`
           }
         >
-          Pro Mode
+          {t('form.proMode')}
         </button>
       </div>
 
@@ -141,7 +143,7 @@ export function PromptInput({
         <div className={`space-y-4 ${panelClass}`} data-tour="arena-beginner-dropdowns">
           <div className={isLight ? "grid gap-4 md:grid-cols-3" : "space-y-4"}>
             <div>
-              <label className={labelClass}>Trading Style</label>
+              <label className={labelClass}>{t('form.tradingStyle')}</label>
               <select
                 value={noobSelections.tradingStyle}
                 onChange={(e) =>
@@ -161,7 +163,7 @@ export function PromptInput({
             </div>
 
             <div>
-              <label className={labelClass}>Time Horizon</label>
+              <label className={labelClass}>{t('form.timeHorizon')}</label>
               <select
                 value={noobSelections.timeHorizon}
                 onChange={(e) =>
@@ -181,7 +183,7 @@ export function PromptInput({
             </div>
 
             <div>
-              <label className={labelClass}>Risk Tolerance</label>
+              <label className={labelClass}>{t('form.riskTolerance')}</label>
               <select
                 value={noobSelections.riskTolerance}
                 onChange={(e) =>
@@ -207,10 +209,10 @@ export function PromptInput({
                 className={
                   isLight
                     ? "text-[11px] font-medium uppercase tracking-[0.22em] text-[#585858]"
-                    : "text-xs font-medium text-zinc-400"
+                     : "text-xs font-medium text-zinc-400"
                 }
               >
-                Generated Prompt Preview
+                {t('form.generatedPromptPreview')}
               </p>
               {isLight ? (
                 <button
@@ -229,22 +231,22 @@ export function PromptInput({
         <div className={isLight ? "space-y-4 border border-[#2f2f2f]/22 bg-[#111]/[0.025] p-5" : ""}>
           {isLight ? (
             <p className="text-[11px] uppercase tracking-[0.18em] text-[#666]">
-              Write your own trading prompt. Full control over constraints, position sizing, and risk handling.
+              {t('form.proModeTip')}
             </p>
           ) : null}
           <div>
-            <label className={labelClass}>Prompt Text</label>
+            <label className={labelClass}>{t('form.promptText')}</label>
             <textarea
               value={value}
               onChange={(e) => onChange(e.target.value)}
               rows={12}
-              placeholder="You are a crypto trading agent. Define your strategy..."
+              placeholder={t('form.promptPlaceholder')}
               className={textareaClass}
             />
           </div>
           {isLight ? (
             <p className="text-[10px] uppercase tracking-[0.16em] text-[#777]">
-              Tip: be explicit about risk limits, leverage, holding period, and token preference.
+              {t('form.proModeHint')}
             </p>
           ) : null}
         </div>

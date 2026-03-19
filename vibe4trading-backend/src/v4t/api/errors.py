@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from fastapi import Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+
+from v4t.i18n import get_translation
 
 
 def transform_error(error: str) -> str:
@@ -40,4 +43,32 @@ async def http_exception_handler(request: Request, exc: Exception) -> JSONRespon
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "An unexpected error occurred"},
+    )
+
+
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    locale = getattr(request.state, "locale", "en")
+
+    errors = []
+    for error in exc.errors():
+        error_type = error["type"]
+
+        type_key = error_type.replace(".", "_")
+        translation_key = f"errors.pydantic.{type_key}"
+        translated_msg = get_translation(translation_key, locale, **error.get("ctx", {}))
+
+        errors.append(
+            {
+                "type": error_type,
+                "loc": error["loc"],
+                "msg": translated_msg,
+                "input": error.get("input"),
+            }
+        )
+
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": errors},
     )

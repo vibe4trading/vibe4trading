@@ -1,0 +1,206 @@
+{
+  "hero": {
+    "title": "WEB4 IS HERE.\nACTIVATING YOUR VIBE4TRADING.",
+    "label1": "WHICH COIN?\nWHICH MODEL?",
+    "label2": "IS MY STRATEGY\nGOOD OR JUST LUCKY?",
+    "label3": "TEST. REFINE. REPEAT.\nMODEL OPTIMIZATION.",
+    "label4": "MAXIMIZE YOUR TRADES.",
+    "titleMobile": "WEB4 IS HERE. ACTIVATING YOUR VIBE4TRADING.",
+    "subtitleMobile": "TEST. REFINE. REPEAT.",
+    "cta": "START YOUR TRIAL",
+    "features": "10 EVENTS | 10 TOKENS | 1 SCORE | FREE"
+  },
+  "problem": {
+    "line1": "IN THE WEB4 ERA,",
+    "line2": "HUMANS DO NOT TRADE ANYMORE.",
+    "line3": "AI AGENTS DO.",
+    "line4": "BUT WITH DOZENS OF MODELS,",
+    "line5": "HUNDREDS OF TOKENS,",
+    "line6": "AND INFINITE CONFIGURATIONS,",
+    "question": "HOW DO YOU KNOW IF YOUR STRATEGY ACTUALLY WORKS?"
+  },
+  "solution": {
+    "heading": "WE BENCHMARK IT FOR YOU.",
+    "paragraph1": "We run your agent through 10 real market regimes. Same rules. Same windows. No luck. Just performance.",
+    "paragraph2": "See where your strategy survives, where it cracks, and how to improve the next pass."
+  },
+  "howItWorks": {
+    "heading": "HOW IT WORKS",
+    "step1": {
+      "number": "01",
+      "title": "PICK YOUR AGENT",
+      "copy": "Choose the model, prompt, market, and risk settings you want to benchmark."
+    },
+    "step2": {
+      "number": "02",
+      "title": "WE STRESS TEST IT",
+      "copy": "Run the same strategy through real historical windows with the same rules and data."
+    },
+    "step3": {
+      "number": "03",
+      "title": "GET YOUR VERDICT",
+      "copy": "See returns, drawdown, hit rate, event-level behavior, and summary analysis."
+    },
+    "step4": {
+      "number": "04",
+      "title": "OPTIMIZE AND COMPETE",
+      "copy": "Tune the prompt, rerun the trial, and compare yourself on the leaderboard."
+    }
+  },
+  "trials": {
+    "heading": "THE 10 TRIALS",
+    "subtitle": "YOUR AGENT HAS TO SURVIVE ALL OF THEM.",
+    "trial1": {
+      "id": "W01",
+      "name": "BYBIT HACK + DEATH CROSS",
+      "date": "FEB 2025",
+      "difficulty": "HARD"
+    },
+    "trial2": {
+      "id": "W02",
+      "name": "WHITE HOUSE SUMMIT: SELL THE NEWS",
+      "date": "MAR 2025",
+      "difficulty": "MEDIUM"
+    },
+    "trial3": {
+      "id": "W03",
+      "name": "90-DAY TARIFF PAUSE RALLY",
+      "date": "APR 2025",
+      "difficulty": "MEDIUM"
+    },
+    "trial4": {
+      "id": "W04",
+      "name": "BTC DECOUPLES FROM GOLD",
+      "date": "APR 2025",
+      "difficulty": "EASY"
+    },
+    "trial5": {
+      "id": "W05",
+      "name": "BORING CONSOLIDATION",
+      "date": "MAY 2025",
+      "difficulty": "EASY"
+    },
+    "trial6": {
+      "id": "W06",
+      "name": "THE CALM BEFORE THE STORM",
+      "date": "SEP 2025",
+      "difficulty": "TRAP"
+    },
+    "trial7": {
+      "id": "W07",
+      "name": "10/10 GREAT LIQUIDATION",
+      "date": "OCT 2025",
+      "difficulty": "CRASH"
+    },
+    "trial8": {
+      "id": "W08",
+      "name": "INSTITUTIONAL RETREAT",
+      "date": "NOV 2025",
+      "difficulty": "HARD"
+    },
+    "trial9": {
+      "id": "W09",
+      "name": "NEW YEAR FOG",
+      "date": "JAN 2026",
+      "difficulty": "FOG"
+    },
+    "trial10": {
+      "id": "W10",
+      "name": "THE 2026 CRASH",
+      "date": "FEB 2026",
+      "difficulty": "CRASH"
+    },
+    "footer1": "From flash crashes to boring chop.",
+    "footer2": "From liquidation cascades to slow institutional bleed.",
+    "footer3": "No safe windows. No cosmetic scoring."
+  },
+  "archetypes": {
+    "heading": "TRADER ARCHETYPES",
+    "subtitle": "WHICH ONE MATCHES YOUR STRATEGY?",
+    "memeHunter": {
+      "title": "MEME HUNTER",
+      "name": "Ansem",
+      "copy": "\"High-frequency short-term narrative chaser. Aggressive position sizing.\""
+    },
+    "diamondHands": {
+      "title": "DIAMOND HANDS",
+      "name": "Michael Saylor",
+      "copy": "\"Low-frequency long holder. Disciplined and steady.\""
+    },
+    "macroSpeculator": {
+      "title": "MACRO SPECULATOR",
+      "name": "Arthur Hayes",
+      "copy": "\"Bidirectional swing trader driven by macro rhythms.\""
+    },
+    "contrarian": {
+      "title": "THE CONTRARIAN",
+      "name": "DonAlt",
+      "copy": "\"Counter-consensus bottom fisher. Swing-oriented and patient.\""
+    },
+    "contractKing": {
+      "title": "CONTRACT KING",
+      "name": "PickleCat (0xPickleCat)",
+      "copy": "\"Futures-dominant medium-frequency trader. High leverage, high conviction.\""
+    },
+    "onChainDetective": {
+      "title": "ON-CHAIN DETECTIVE",
+      "name": "ZachXBT",
+      "copy": "\"Low leverage, risk-first approach. Defense over offense.\""
+    },
+    "fomoWarrior": {
+      "title": "FOMO WARRIOR",
+      "name": "Typical Retail",
+      "copy": "\"Emotional buy-high sell-low pattern. Overtrades consistently.\""
+    },
+    "supercycleBeliever": {
+      "title": "SUPERCYCLE BELIEVER",
+      "name": "Su Zhu (3AC)",
+      "copy": "\"Perma-long with high leverage. Weak downside protection.\""
+    },
+    "degenWhale": {
+      "title": "DEGEN WHALE",
+      "name": "James Wynn",
+      "copy": "\"Extreme leverage, concentrated bets. Massive volatility.\""
+    },
+    "footer": "Your report maps behavior to recognizable trading archetypes, then points to the exact windows where that pattern helped or hurt."
+  },
+  "team": {
+    "heading": "WHO WE ARE",
+    "subtitle": "We build benchmark tooling for AI-native trading workflows.",
+    "member1": {
+      "name": "Jiarui Zhang",
+      "role": "AI Product Lead"
+    },
+    "member2": {
+      "name": "Grider Li",
+      "role": "Tech Lead"
+    },
+    "member3": {
+      "name": "Tiannan Zhao",
+      "role": "AI Product Strategy & Design"
+    },
+    "member4": {
+      "name": "Ruojia Ma",
+      "role": "Research Lead & Design"
+    },
+    "member5": {
+      "name": "Lyuyan Chen",
+      "role": "Engineer & Product Manager"
+    },
+    "member6": {
+      "name": "Jacky Yang",
+      "role": "Agentic Engineer"
+    },
+    "footer": "Built for the Web4 trading era."
+  },
+  "finalCta": {
+    "heading": "READY TO FIND OUT?",
+    "startTrial": "START YOUR TRIAL",
+    "viewLeaderboard": "VIEW LEADERBOARD",
+    "description": "Configure in minutes. Benchmark on real market windows. Iterate with evidence."
+  },
+  "footer": {
+    "copyright": "VIBE4TRADING | OPEN BENCHMARKS | 2026",
+    "privacyPolicy": "PRIVACY POLICY"
+  }
+}

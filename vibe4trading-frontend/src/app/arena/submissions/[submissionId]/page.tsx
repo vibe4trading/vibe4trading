@@ -17,6 +17,7 @@ import { useProductTour } from "@/app/hooks/useProductTour";
 import { useTourPersistence } from "@/app/hooks/useTourPersistence";
 import { useTourContext } from "@/app/components/TourProvider";
 import { submissionDetailSteps } from "@/app/tours/submission-detail-tour";
+import { useTranslation } from "react-i18next";
 
 function pairName(marketId: string | null | undefined) {
   if (!marketId) return "–";
@@ -85,7 +86,7 @@ function windowCode(index: number) {
   return `W${String(index + 1).padStart(2, "0")}`;
 }
 
-function windowLabel(scenarioSetKey: string | null | undefined, idx: number) {
+function windowLabel(scenarioSetKey: string | null | undefined, idx: number, t?: (key: string) => string) {
   if (scenarioSetKey === "env-regimes-v1") {
     const labels = ["Black Swan", "Bull Run", "Vol Spike", "Low Vol", "Sideways"];
     return labels[idx] ?? `Regime ${idx + 1}`;
@@ -96,7 +97,12 @@ function windowLabel(scenarioSetKey: string | null | undefined, idx: number) {
     return `Window ${idx + 1}`;
   }
 
-  return storyCards[windowCode(idx)]?.title ?? `Window ${idx + 1}`;
+  const code = windowCode(idx);
+  if (t) {
+    const translated = t(`windows.${code}.title`);
+    if (translated !== `windows.${code}.title`) return translated;
+  }
+  return storyCards[code]?.title ?? `Window ${idx + 1}`;
 }
 
 function curvePoints(ret: number | null | undefined) {
@@ -124,6 +130,7 @@ type WindowModalProps = {
 };
 
 function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
+  const { t } = useTranslation("arena");
   const isOpen = !!slot && !!submission;
   const { panelRef } = useModalA11y(isOpen, onClose);
   const titleId = React.useId();
@@ -137,9 +144,9 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
   const curve = curvePoints(run?.return_pct);
   const coachingSections = breakdown
     ? [
-        { title: "What Worked", items: breakdown.what_worked },
-        { title: "What Didn't", items: breakdown.what_didnt_work },
-        { title: "Improve Next", items: breakdown.improvement_areas },
+        { title: t("modal.whatWorked"), items: breakdown.what_worked },
+        { title: t("modal.whatDidnt"), items: breakdown.what_didnt_work },
+        { title: t("modal.improveNext"), items: breakdown.improvement_areas },
       ]
     : [];
 
@@ -170,13 +177,13 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
 
   const notes = [
     {
-      title: "Window opens",
+      title: t("modal.windowOpens"),
       badge: fmtShort(run?.window_start ?? null),
       copy: `${slot.label} starts on ${pairName(submission.market_id)} under ${submission.scenario_set_key}.`,
       tone: "flat",
     },
     {
-      title: run?.status === "finished" ? "Execution closed" : "Execution status",
+      title: run?.status === "finished" ? t("modal.executionClosed") : t("modal.executionStatus"),
       badge: (run?.status ?? "pending").toUpperCase(),
       copy:
         run?.status === "finished"
@@ -186,14 +193,14 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
         run?.return_pct == null ? "flat" : run.return_pct >= 0 ? "win" : "loss",
     },
     {
-      title: "Replay link",
+      title: t("modal.replayLink"),
       badge: run ? `${run.run_id.slice(0, 8)}…` : "N/A",
       copy:
         submission.visibility === "private"
-          ? "Replay run is hidden for private submissions."
+          ? t("modal.replayHidden")
           : run
-            ? "Open the individual replay run to inspect timeline and decisions."
-            : "Replay run has not been created yet.",
+            ? t("modal.openReplay")
+            : t("modal.replayNotCreated"),
       tone: "flat",
     },
   ] as const;
@@ -205,58 +212,58 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
           <div className="modal-head-main">
             <div className="modal-head-title-row">
               <span className="event-code-chip">{slot.code}</span>
-              <h3 id={titleId}>{story ? story.title : slot.label}</h3>
+              <h3 id={titleId}>{story ? t(`windows.${slot.code}.title`, { defaultValue: story.title }) : slot.label}</h3>
             </div>
             <p>
               {story
-                ? story.subtitle
+                ? t(`windows.${slot.code}.subtitle`, { defaultValue: story.subtitle })
                 : `${pairName(submission.market_id)} · ${submission.scenario_set_key} · ${fmt(run?.window_start ?? null)} to ${fmt(run?.window_end ?? null)}`}
             </p>
           </div>
           <div className="modal-tag-row">
             {story ? (
               <>
-                <span className="modal-tag tone-strong">Difficulty: {story.difficulty}</span>
-                <span className="modal-tag tone-avg">Regime: {story.regime}</span>
+                <span className="modal-tag tone-strong">{t("modal.difficulty")}: {t(`windows.${slot.code}.difficulty`, { defaultValue: story.difficulty })}</span>
+                <span className="modal-tag tone-avg">{t("modal.regime")}: {t(`windows.${slot.code}.regime`, { defaultValue: story.regime })}</span>
                 <span className={`modal-tag ${story.edge === "Strong" ? "tone-strong" : story.edge === "Weak" ? "tone-weak" : "tone-avg"}`}>
-                  Edge: {story.edge}
+                  {t("modal.edge")}: {t(`windows.${slot.code}.edge`, { defaultValue: story.edge })}
                 </span>
               </>
             ) : (
               <>
                 <span className="modal-tag">{(run?.status ?? "pending").toUpperCase()}</span>
                 <span className={`modal-tag ${tone === "strong" ? "tone-strong" : tone === "weak" || tone === "crash" ? "tone-weak" : "tone-avg"}`}>
-                  Return: {pct(run?.return_pct)}
+                  {t("modal.return")}: {pct(run?.return_pct)}
                 </span>
                 <span className="modal-tag">Run: {run ? `${run.run_id.slice(0, 8)}…` : "pending"}</span>
               </>
             )}
           </div>
           <button className="modal-close-btn" onClick={onClose}>
-            [ESC] CLOSE
+            {t("modal.escClose")}
           </button>
         </header>
 
         <div className="event-modal-body">
           <section className="event-modal-left">
             <div className="modal-card story-card">
-              <h4>{story ? "Storyline" : "Window Overview"}</h4>
-              <p className="story-subtitle">{story ? `${story.title} · ${story.period}` : slot.label}</p>
+              <h4>{story ? t("modal.storyline") : t("modal.windowOverview")}</h4>
+              <p className="story-subtitle">{story ? `${t(`windows.${slot.code}.title`, { defaultValue: story.title })} · ${story.period}` : slot.label}</p>
               <p style={{ fontSize: "14px", lineHeight: 1.5 }}>
                 {story
-                  ? story.background
-                  : "This trial window ran with the exact same prompt, market, and model configuration as the rest of the submission. Use it to compare how the strategy behaved from one historical slice to the next."}
+                  ? t(`windows.${slot.code}.background`, { defaultValue: story.background })
+                  : t("modal.defaultWindowDescription", { defaultValue: "This trial window ran with the exact same prompt, market, and model configuration as the rest of the submission. Use it to compare how the strategy behaved from one historical slice to the next." })}
               </p>
             </div>
 
             <div className="modal-card">
               <div className="modal-card-head">
-                <h4>Window Curve</h4>
+                <h4>{t("modal.windowCurve")}</h4>
                 <span>{pct(run?.return_pct)}</span>
               </div>
               <div className="curve-meta-strip">
-                <span>Pair: {pairName(submission.market_id)}</span>
-                <span>Status: {(run?.status ?? "pending").toUpperCase()}</span>
+                <span>{t("submission.pair")}: {pairName(submission.market_id)}</span>
+                <span>{t("submission.status")}: {(run?.status ?? "pending").toUpperCase()}</span>
                 <span>Submission: {submission.submission_id.slice(0, 8)}…</span>
               </div>
 
@@ -283,22 +290,22 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
 
           <section className="event-modal-right">
             <div className="modal-card">
-              <h4>Window Stats</h4>
+              <h4>{t("modal.windowStats")}</h4>
               <div className="modal-stat-grid">
                 <div className="stat-box" data-tone={tone === "strong" ? "strong" : tone === "weak" || tone === "crash" ? "weak" : "neutral"}>
-                  <span>RETURN</span>
+                  <span>{t("modal.return")}</span>
                   <strong>{pct(run?.return_pct)}</strong>
                 </div>
                 <div className="stat-box" data-tone="neutral">
-                  <span>STATUS</span>
+                  <span>{t("submission.status").toUpperCase()}</span>
                   <strong>{(run?.status ?? "pending").toUpperCase()}</strong>
                 </div>
                 <div className="stat-box" data-tone="neutral">
-                  <span>START</span>
+                  <span>{t("detail.start")}</span>
                   <strong>{fmtShort(run?.window_start ?? null)}</strong>
                 </div>
                 <div className="stat-box" data-tone="neutral">
-                  <span>END</span>
+                  <span>{t("detail.end")}</span>
                   <strong>{fmtShort(run?.window_end ?? null)}</strong>
                 </div>
                 <div className="stat-box" data-tone="neutral">
@@ -309,7 +316,7 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
             </div>
 
             <div className="modal-card nodes-card">
-              <h4>Execution Notes</h4>
+              <h4>{t("modal.executionNotes")}</h4>
               <ul className="modal-node-list">
                 {notes.map((note) => (
                   <li key={note.title} className={`node-card ${note.tone}`}>
@@ -327,15 +334,15 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
 
               {submission.visibility !== "private" && run ? (
                 <Link to={`/runs/${run.run_id}`} className="leaderboard-entry-link" style={{ marginTop: "12px" }}>
-                  OPEN REPLAY →
+                  {t("modal.openReplayBtn")}
                 </Link>
               ) : null}
             </div>
 
             <div className="modal-card">
               <div className="modal-card-head">
-                <h4>Window Coaching</h4>
-                <span>{breakdown ? "Imported breakdown" : "Not generated"}</span>
+                <h4>{t("detail.windowCoaching")}</h4>
+                <span>{breakdown ? t("modal.importedBreakdown") : t("modal.notGenerated")}</span>
               </div>
 
               {breakdown ? (
@@ -355,8 +362,7 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
                 </>
               ) : (
                 <p style={{ fontSize: "14px", lineHeight: 1.6, color: "#555" }}>
-                  This window does not have a generated breakdown yet. Once the report pipeline finishes, the imported
-                  coaching notes will appear here.
+                  {t("modal.noBreakdownYet")}
                 </p>
               )}
             </div>
@@ -368,6 +374,7 @@ function WindowDetailModal({ slot, submission, onClose }: WindowModalProps) {
 }
 
 export default function SubmissionDetailPage() {
+  const { t } = useTranslation("arena");
   const submissionId = useParams<{ submissionId: string }>().submissionId ?? "";
 
   const [data, setData] = React.useState<ArenaSubmissionDetailOut | null>(null);
@@ -432,11 +439,11 @@ export default function SubmissionDetailPage() {
     return Array.from({ length: total }, (_, index) => ({
       index,
       code: windowCode(index),
-      label: windowLabel(data?.scenario_set_key, index),
+      label: windowLabel(data?.scenario_set_key, index, t),
       run: byIndex.get(index) ?? null,
       reportWindow: reportByIndex.get(index) ?? null,
     }));
-  }, [data, report?.windows]);
+  }, [data, report?.windows, t]);
 
   const finishedSlots = React.useMemo(
     () =>
@@ -511,25 +518,25 @@ export default function SubmissionDetailPage() {
         <section className="left-column">
           <article className="hero-card block" data-tour="submission-hero-card">
             <div className="hero-meta">
-              TRIAL REPORT / {data?.model_key ?? "LOADING"} / {pairName(data?.market_id)} / {fmt(data?.created_at)}
+              {t("detail.trialReport")} / {data?.model_key ?? "LOADING"} / {pairName(data?.market_id)} / {fmt(data?.created_at)}
             </div>
             <div className="hero-title-row">
               <div className="score">
-                <div className="score-label">TRIAL SCORE</div>
+                <div className="score-label">{t("detail.trialScore")}</div>
                 <div className="score-value">{String(score).padStart(2, "0")}</div>
               </div>
               <div className="persona">
                 <h1>
                   {data?.status === "finished"
-                    ? report?.archetype ?? "Historical Trial Verdict"
+                    ? report?.archetype ?? t("detail.historicalTrialVerdict")
                     : statusDisplay.headline}
                 </h1>
                 {report?.representative ? (
-                  <p className="representative">Archetype: {report.representative}</p>
+                  <p className="representative">{t("detail.archetype")}: {report.representative}</p>
                 ) : null}
                 <p>
-                  Status: <span data-testid="tournament-run-status">{statusDisplay.label}</span> · Progress:{" "}
-                  <span data-testid="tournament-run-progress">{progressText}</span> · Pair: {pairName(data?.market_id)}
+                  {t("submission.status")}: <span data-testid="tournament-run-status">{statusDisplay.label}</span> · {t("submission.progress")}:{" "}
+                  <span data-testid="tournament-run-progress">{progressText}</span> · {t("submission.pair")}: {pairName(data?.market_id)}
                 </p>
                 <div className="tags">
                   <span>{data?.scenario_set_key ?? "scenario-set"}</span>
@@ -546,7 +553,7 @@ export default function SubmissionDetailPage() {
 
           {shouldRefresh ? (
             <section className="block">
-              <div className="hero-meta">RUN PROGRESS</div>
+              <div className="hero-meta">{t("detail.runProgress")}</div>
               <div className="mt-3 h-3 w-full overflow-hidden border-2 border-[#2f2f2f] bg-[#f2f2f2]">
                 <div
                   className="h-full bg-[#3b66d9] transition-[width] duration-300"
@@ -555,37 +562,37 @@ export default function SubmissionDetailPage() {
               </div>
               <p className="mt-3 mb-0 text-[16px] text-[#555]">
                 {statusDisplay.isQueued
-                  ? "This trial is in queue and has not started yet. Auto-refresh will keep checking until a worker begins execution."
-                  : "Auto-refresh is enabled while the submission is pending or running."}
+                  ? t("detail.queueMessage")
+                  : t("detail.autoRefreshMessage")}
               </p>
             </section>
           ) : null}
 
           <section className="metric-grid" data-tour="submission-metric-grid">
             <article className="metric block">
-              <h3>Total Return</h3>
+              <h3>{t("detail.totalReturn")}</h3>
               <p className={`value ${pctTone(data?.total_return_pct)}`}>{pct(data?.total_return_pct)}</p>
-              <p className="rank good">Submission-level result</p>
+              <p className="rank good">{t("detail.submissionLevel")}</p>
             </article>
             <article className="metric block">
-              <h3>Avg Window</h3>
+              <h3>{t("detail.avgWindow")}</h3>
               <p className={`value ${pctTone(data?.avg_return_pct)}`}>{pct(data?.avg_return_pct)}</p>
-              <p className="rank elite">Per-window average</p>
+              <p className="rank elite">{t("detail.perWindowAvg")}</p>
             </article>
             <article className="metric block">
-              <h3>Win Rate</h3>
+              <h3>{t("detail.winRate")}</h3>
               <p className="value neutral">{winRatePct == null ? "–" : `${winRatePct.toFixed(1)}%`}</p>
-              <p className="rank mid">{finishedSlots.length} finished windows</p>
+              <p className="rank mid">{finishedSlots.length} {t("detail.finishedWindows")}</p>
             </article>
             <article className="metric block">
-              <h3>Best Window</h3>
+              <h3>{t("detail.bestWindow")}</h3>
               <p className={`value ${pctTone(bestSlot?.run?.return_pct)}`}>{bestSlot ? bestSlot.code : "–"}</p>
-              <p className="rank good">{report?.best_window?.reason ?? (bestSlot ? pct(bestSlot.run?.return_pct) : "No completed window")}</p>
+              <p className="rank good">{report?.best_window?.reason ?? (bestSlot ? pct(bestSlot.run?.return_pct) : t("detail.noCompletedWindow"))}</p>
             </article>
             <article className="metric block">
-              <h3>Worst Window</h3>
+              <h3>{t("detail.worstWindow")}</h3>
               <p className={`value ${pctTone(worstSlot?.run?.return_pct)}`}>{worstSlot ? worstSlot.code : "–"}</p>
-              <p className="rank bad">{report?.worst_window?.reason ?? (worstSlot ? pct(worstSlot.run?.return_pct) : "No completed window")}</p>
+              <p className="rank bad">{report?.worst_window?.reason ?? (worstSlot ? pct(worstSlot.run?.return_pct) : t("detail.noCompletedWindow"))}</p>
             </article>
           </section>
 
@@ -593,13 +600,13 @@ export default function SubmissionDetailPage() {
             <div data-tour="submission-report">
               {report.roast ? (
                 <section className="block" style={{ borderLeft: "4px solid var(--red, #d44)", paddingLeft: "16px" }}>
-                  <div className="hero-meta">THE ROAST</div>
+                  <div className="hero-meta">{t("detail.theRoast")}</div>
                   <p className="mt-3 text-[17px] italic leading-8 text-[#333]">&ldquo;{report.roast}&rdquo;</p>
                 </section>
               ) : null}
               <section className="grid gap-4 xl:grid-cols-3">
                 <article className="block">
-                  <div className="hero-meta">STRENGTHS</div>
+                  <div className="hero-meta">{t("detail.strengths")}</div>
                   <ul className="mt-4 space-y-3 text-[15px] leading-7 text-[#444]">
                     {report.strengths.map((item) => (
                       <li key={item}>- {item}</li>
@@ -607,7 +614,7 @@ export default function SubmissionDetailPage() {
                   </ul>
                 </article>
                 <article className="block">
-                  <div className="hero-meta">WEAKNESSES</div>
+                  <div className="hero-meta">{t("detail.weaknesses")}</div>
                   <ul className="mt-4 space-y-3 text-[15px] leading-7 text-[#444]">
                     {report.weaknesses.map((item) => (
                       <li key={item}>- {item}</li>
@@ -615,7 +622,7 @@ export default function SubmissionDetailPage() {
                   </ul>
                 </article>
                 <article className="block">
-                  <div className="hero-meta">NEXT ACTIONS</div>
+                  <div className="hero-meta">{t("detail.nextActions")}</div>
                   <ul className="mt-4 space-y-3 text-[15px] leading-7 text-[#444]">
                     {report.recommendations.map((item) => (
                       <li key={item}>- {item}</li>
@@ -629,7 +636,7 @@ export default function SubmissionDetailPage() {
           <section className="viz-grid">
             <article className="block chart-card" data-tour="submission-returns-chart">
               <header>
-                <h2>Window Returns</h2>
+                <h2>{t("detail.windowReturns")}</h2>
                 <span>
                   {data?.model_key ?? "…"} · {pairName(data?.market_id)} · {data?.scenario_set_key ?? "scenario-set"}
                 </span>
@@ -689,47 +696,47 @@ export default function SubmissionDetailPage() {
 
             <article className="block chart-card">
               <header>
-                <h2>Trial Breakdown</h2>
-                <span>{progressText} complete</span>
+                <h2>{t("detail.trialBreakdown")}</h2>
+                <span>{progressText} {t("detail.complete")}</span>
               </header>
               <div className="lb-selected-stat-grid">
                 <div className="lb-selected-stat">
-                  <span>Submission ID</span>
+                  <span>{t("detail.submissionId")}</span>
                   <strong>{submissionId.slice(0, 8)}…</strong>
                 </div>
                 <div className="lb-selected-stat">
-                  <span>Status</span>
+                  <span>{t("submission.status")}</span>
                   <strong>{(data?.status ?? "pending").toUpperCase()}</strong>
                 </div>
                 <div className="lb-selected-stat">
-                  <span>Created</span>
+                  <span>{t("detail.created")}</span>
                   <strong>{fmtShort(data?.created_at)}</strong>
                 </div>
                 <div className="lb-selected-stat">
-                  <span>Updated</span>
+                  <span>{t("detail.updated")}</span>
                   <strong>{fmtShort(data?.updated_at)}</strong>
                 </div>
                 <div className="lb-selected-stat">
-                  <span>Pair</span>
+                  <span>{t("submission.pair")}</span>
                   <strong>{pairName(data?.market_id)}</strong>
                 </div>
                 <div className="lb-selected-stat">
-                  <span>Visibility</span>
+                  <span>{t("detail.visibility")}</span>
                   <strong>{(data?.visibility ?? "public").toUpperCase()}</strong>
                 </div>
               </div>
 
               <div className="lb-rule-box" style={{ marginTop: "12px" }}>
-                <strong>Reading the Trial</strong>
-                <span>1. Each row on the right is one replay window under the same prompt.</span>
-                <span>2. Click any window to open the trial-detail modal.</span>
-                <span>3. Public submissions let you drill down into the underlying replay run.</span>
+                <strong>{t("detail.readingTheTrial")}</strong>
+                <span>{t("detail.readingStep1")}</span>
+                <span>{t("detail.readingStep2")}</span>
+                <span>{t("detail.readingStep3")}</span>
               </div>
 
               {featuredBreakdown ? (
                 <div className="lb-rule-box" style={{ marginTop: "16px" }}>
                   <strong>
-                    Window Coaching / {featuredBreakdownSlot?.code ?? "Window"}
+                    {t("detail.windowCoaching")} / {featuredBreakdownSlot?.code ?? "Window"}
                   </strong>
                   <span>{featuredBreakdown.key_takeaway}</span>
                   <span>{featuredBreakdown.window_story}</span>
@@ -743,23 +750,22 @@ export default function SubmissionDetailPage() {
 
           <article className="leaderboard-entry block">
             <p>
-              Use this report to compare which windows the strategy handled well, then jump into the
-              underlying replay run for a deeper investigation.
+              {t("detail.useReport")}
             </p>
             <div className="entry-links">
               <Link to="/arena" className="return-trials-btn">
-                RETURN TO TRIALS
+                {t("detail.returnToTrials")}
               </Link>
               <Link to="/leaderboard" className="mini-leaderboard-btn">
-                OPEN LEADERBOARD
+                {t("detail.openLeaderboard")}
               </Link>
               {data?.visibility !== "private" && bestSlot?.run ? (
                 <Link to={`/runs/${bestSlot.run.run_id}`} className="mini-leaderboard-btn trials-link">
-                  BEST WINDOW →
+                  {t("detail.bestWindowLink")}
                 </Link>
               ) : null}
               <button type="button" onClick={refresh} className="mini-leaderboard-btn">
-                {loading ? "REFRESHING" : "REFRESH"}
+                {loading ? t("detail.refreshing") : t("detail.refresh")}
               </button>
             </div>
           </article>
@@ -768,16 +774,16 @@ export default function SubmissionDetailPage() {
         <aside className="right-column">
           <section className="heatlog-panel" data-tour="submission-heatlog">
             <header className="heatlog-header">
-              <div>WINDOW PERFORMANCE</div>
+              <div>{t("detail.windowPerformance")}</div>
             </header>
 
             <div className="heatlog-col-head">
-              <span>EVENT</span>
-              <span>RETURN %</span>
-              <span>STATUS</span>
-              <span>START</span>
-              <span>END</span>
-              <span>RUN</span>
+              <span>{t("detail.event")}</span>
+              <span>{t("detail.returnPct")}</span>
+              <span>{t("submission.status").toUpperCase()}</span>
+              <span>{t("detail.start")}</span>
+              <span>{t("detail.end")}</span>
+              <span>{t("detail.run")}</span>
             </div>
 
             {slots.map((slot) => {
@@ -837,18 +843,18 @@ export default function SubmissionDetailPage() {
             })}
 
             {slots.length === 0 ? (
-              <div className="p-6 text-center text-[#666]">No scenario windows available yet.</div>
+              <div className="p-6 text-center text-[#666]">{t("detail.noScenarioWindows")}</div>
             ) : null}
 
             <footer className="heatlog-legend">
               <span>
-                <i className="lg strong"></i>Strong
+                <i className="lg strong"></i>{t("detail.strong")}
               </span>
               <span>
-                <i className="lg avg"></i>In Progress / Flat
+                <i className="lg avg"></i>{t("detail.inProgress")}
               </span>
               <span>
-                <i className="lg weak"></i>Weak
+                <i className="lg weak"></i>{t("detail.weak")}
               </span>
             </footer>
           </section>

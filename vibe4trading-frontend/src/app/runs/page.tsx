@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 
 import { PromptInput } from "@/app/components/PromptInput";
 import { SEO } from "@/app/components/SEO";
@@ -36,6 +37,7 @@ function runBadge(status: string) {
 }
 
 export default function RunsPage() {
+  const { t } = useTranslation("runs");
   const [runs, setRuns] = React.useState<RunOut[]>([]);
   const [runsCursor, setRunsCursor] = React.useState<string | null>(null);
   const [runsHasMore, setRunsHasMore] = React.useState(false);
@@ -114,22 +116,20 @@ export default function RunsPage() {
     setError(null);
 
     if (!promptText.trim()) {
-      setError("Prompt text is required");
+      setError(t("form.error.promptRequired"));
       return;
     }
     if (!models.some((model) => model.selectable)) {
-      setError("No models are enabled for your account");
+      setError(t("form.error.noModels"));
       return;
     }
     if (!models.find((model) => model.model_key === modelKey)?.selectable) {
-      setError("Select a model that is enabled for your account");
+      setError(t("form.error.modelDisabled"));
       return;
     }
 
     if (!marketDatasetId || !sentimentDatasetId) {
-      setError(
-        "Dataset IDs are not configured. Set VITE_V4T_MARKET_DATASET_ID and VITE_V4T_SENTIMENT_DATASET_ID.",
-      );
+      setError(t("form.error.datasetsNotConfigured"));
       return;
     }
 
@@ -165,15 +165,15 @@ export default function RunsPage() {
 
   return (
     <div className="flex flex-col gap-8 animate-rise">
-      <SEO title="My Runs" description="Your benchmark run history." noindex />
+      <SEO title={t("page.title")} description={t("page.description")} noindex />
       <div className="flex items-end justify-between gap-4">
         <div>
           <p className="text-xs font-bold tracking-widest text-[color:var(--accent)]">
-            REPLAY EXECUTION
+            {t("page.subtitle")}
           </p>
-           <h2 className="mt-2 font-display text-4xl tracking-tight text-white drop-shadow-sm">Runs</h2>
+           <h2 className="mt-2 font-display text-4xl tracking-tight text-white drop-shadow-sm">{t("page.heading")}</h2>
            <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-             Replay execution is queued to the backend worker. Updates stream via WebSocket (poll fallback).
+             {t("page.intro")}
            </p>
          </div>
 
@@ -182,7 +182,7 @@ export default function RunsPage() {
           onClick={refresh}
           className="rounded-full border border-white/20 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/10 hover:border-white/30 hover:shadow-[0_0_15px_rgba(255,255,255,0.1)]"
         >
-          {loading ? "Loading…" : "Refresh"}
+          {loading ? t("page.loading") : t("page.refresh")}
         </button>
       </div>
 
@@ -193,10 +193,10 @@ export default function RunsPage() {
       ) : null}
 
       <section className="animate-rise-1 rounded-3xl border border-[color:var(--border)] bg-white/5 p-6 shadow-lg backdrop-blur-md">
-        <h3 className="font-display text-xl tracking-tight text-white mb-6">Create Run</h3>
+        <h3 className="font-display text-xl tracking-tight text-white mb-6">{t("form.heading")}</h3>
         <form onSubmit={onCreate} className="grid gap-5 md:grid-cols-2">
           <label className="grid gap-1.5 text-sm">
-            <span className="text-zinc-400 font-medium">market_id</span>
+            <span className="text-zinc-400 font-medium">{t("form.marketId")}</span>
             <input
               value={marketId}
               onChange={(e) => setMarketId(e.target.value)}
@@ -206,7 +206,7 @@ export default function RunsPage() {
           </label>
 
           <label className="grid gap-1.5 text-sm">
-            <span className="text-zinc-400 font-medium">model_key</span>
+            <span className="text-zinc-400 font-medium">{t("form.modelKey")}</span>
             <div className="relative">
               <select
                 value={modelKey}
@@ -236,9 +236,7 @@ export default function RunsPage() {
           </label>
 
           <div className="md:col-span-2 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-zinc-300">
-            Datasets are injected via the API for MVP. Configure dataset IDs via
-            <span className="font-mono text-xs text-white"> VITE_V4T_MARKET_DATASET_ID</span> and
-            <span className="font-mono text-xs text-white"> VITE_V4T_SENTIMENT_DATASET_ID</span>.
+            {t("form.datasetNote")}
           </div>
 
           <div className="md:col-span-2">
@@ -251,7 +249,7 @@ export default function RunsPage() {
               className="rounded-full bg-white px-8 py-3 text-sm font-bold text-black transition-all hover:bg-zinc-200 hover:shadow-[0_0_20px_rgba(255,255,255,0.2)] disabled:opacity-50"
               disabled={creating || !models.some((model) => model.selectable)}
             >
-              {creating ? "Creating…" : "Create + Enqueue Run"}
+              {creating ? t("form.creating") : t("form.submit")}
             </button>
           </div>
         </form>
@@ -272,7 +270,7 @@ export default function RunsPage() {
                   >
                     {r.market_id}
                   </Link>
-                  <span
+                   <span
                     className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-wider ${runBadge(r.status)}`}
                   >
                     {r.status === "running" && (
@@ -281,20 +279,20 @@ export default function RunsPage() {
                         <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-current"></span>
                       </span>
                     )}
-                    {r.status}
+                    {t(`status.${r.status}`)}
                   </span>
                 </div>
                 <div className="mt-3 grid gap-4 text-sm text-zinc-400 md:grid-cols-3">
                   <div className="flex flex-col gap-1">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">run_id</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{t("list.runId")}</span>
                     <span className="font-mono text-white/90">{r.run_id}</span>
                   </div>
                   <div className="flex flex-col gap-1">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">model</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{t("list.model")}</span>
                     <span className="font-mono text-[color:var(--accent-2)]">{r.model_key}</span>
                   </div>
                   <div className="flex flex-col gap-1">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">started</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{t("list.started")}</span>
                     <span className="font-mono text-white/90">{fmt(r.started_at)}</span>
                   </div>
                 </div>
@@ -305,7 +303,7 @@ export default function RunsPage() {
                   to={`/runs/${r.run_id}`}
                   className="rounded-full border border-white/20 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/10 hover:shadow-[0_0_15px_rgba(255,255,255,0.1)]"
                 >
-                  Open
+                  {t("list.open")}
                 </Link>
                 {r.status === "running" ? (
                   <button
@@ -313,7 +311,7 @@ export default function RunsPage() {
                     onClick={() => onStop(r.run_id)}
                     className="rounded-full bg-rose-500/10 border border-rose-500/30 px-5 py-2.5 text-sm font-semibold text-rose-400 transition-all hover:bg-rose-500/20 hover:text-rose-300 hover:shadow-[0_0_15px_rgba(244,63,94,0.2)]"
                   >
-                    Stop
+                    {t("list.stop")}
                   </button>
                 ) : null}
               </div>
@@ -332,7 +330,7 @@ export default function RunsPage() {
                   d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                 />
               </svg>
-              <p className="text-sm text-zinc-500">No runs yet. Create one above.</p>
+              <p className="text-sm text-zinc-500">{t("list.empty")}</p>
             </div>
           </div>
         ) : null}
@@ -345,7 +343,7 @@ export default function RunsPage() {
               className="rounded-full border border-white/20 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/10 disabled:opacity-50"
               disabled={loadingMore}
             >
-              {loadingMore ? "Loading…" : "Load more"}
+              {loadingMore ? t("list.loadingMore") : t("list.loadMore")}
             </button>
           </div>
         ) : null}

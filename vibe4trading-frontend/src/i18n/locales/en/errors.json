@@ -1,0 +1,28 @@
+{
+  "validation": {
+    "loadingCoins": "Loading coins...",
+    "marketsNotConfigured": "Tournament markets are not configured.",
+    "selectCoin": "Select a coin.",
+    "loadingModels": "Loading models...",
+    "noModelsConfigured": "No models are configured.",
+    "noModelsEnabled": "No models are enabled for your account.",
+    "modelRequired": "Model is required.",
+    "modelNotAvailable": "Model is not available.",
+    "promptRequired": "Prompt is required.",
+    "loadConfigFailed": "Failed to load configuration"
+  },
+  "form": {
+    "pair": "Pair",
+    "aiModel": "AI Model",
+    "tradingStyle": "Trading Style",
+    "timeHorizon": "Time Horizon",
+    "riskTolerance": "Risk Tolerance",
+    "promptText": "Prompt Text",
+    "beginnerMode": "Beginner Mode",
+    "proMode": "Pro Mode",
+    "generatedPromptPreview": "Generated Prompt Preview",
+    "promptPlaceholder": "You are a crypto trading agent. Define your strategy...",
+    "proModeTip": "Write your own trading prompt. Full control over constraints, position sizing, and risk handling.",
+    "proModeHint": "Tip: be explicit about risk limits, leverage, holding period, and token preference."
+  }
+}

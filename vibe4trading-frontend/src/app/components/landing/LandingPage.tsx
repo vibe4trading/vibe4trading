@@ -1,5 +1,6 @@
 import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 import { SEO } from "@/app/components/SEO";
 import { usePrerenderReady } from "@/app/hooks/usePrerenderReady";
@@ -7,119 +8,25 @@ import { AsciiDitherAnimation } from "./AsciiDitherAnimation";
 import { Typewriter } from "./Typewriter";
 import { useScrollReveal } from "./useScrollReveal";
 
-const heroLabels = [
-  {
-    text: "WEB4 IS HERE.\nACTIVATING YOUR VIBE4TRADING.",
-    className:
-      "left-[4%] top-[9%] text-lg font-bold text-white drop-shadow-[0_0_18px_rgba(255,255,255,0.14)] md:text-3xl",
-  },
-  { text: "WHICH COIN?\nWHICH MODEL?", className: "right-[5%] top-[18%] text-xs text-zinc-300 md:text-base" },
-  { text: "IS MY STRATEGY\nGOOD OR JUST LUCKY?", className: "left-[7%] top-[58%] text-xs text-zinc-300 md:text-sm" },
-  { text: "TEST. REFINE. REPEAT.\nMODEL OPTIMIZATION.", className: "right-[6%] top-[50%] text-xs text-zinc-300 md:text-sm" },
-  { text: "MAXIMIZE YOUR TRADES.", className: "right-[10%] bottom-[18%] text-xs text-zinc-300 md:text-base" },
-];
-
-const trials = [
-  { id: "W01", name: "BYBIT HACK + DEATH CROSS", date: "FEB 2025", difficulty: "HARD" },
-  { id: "W02", name: "WHITE HOUSE SUMMIT: SELL THE NEWS", date: "MAR 2025", difficulty: "MEDIUM" },
-  { id: "W03", name: "90-DAY TARIFF PAUSE RALLY", date: "APR 2025", difficulty: "MEDIUM" },
-  { id: "W04", name: "BTC DECOUPLES FROM GOLD", date: "APR 2025", difficulty: "EASY" },
-  { id: "W05", name: "BORING CONSOLIDATION", date: "MAY 2025", difficulty: "EASY" },
-  { id: "W06", name: "THE CALM BEFORE THE STORM", date: "SEP 2025", difficulty: "TRAP" },
-  { id: "W07", name: "10/10 GREAT LIQUIDATION", date: "OCT 2025", difficulty: "CRASH" },
-  { id: "W08", name: "INSTITUTIONAL RETREAT", date: "NOV 2025", difficulty: "HARD" },
-  { id: "W09", name: "NEW YEAR FOG", date: "JAN 2026", difficulty: "FOG" },
-  { id: "W10", name: "THE 2026 CRASH", date: "FEB 2026", difficulty: "CRASH" },
-];
-
-const steps = [
-  {
-    number: "01",
-    title: "PICK YOUR AGENT",
-    copy: "Choose the model, prompt, market, and risk settings you want to benchmark.",
-  },
-  {
-    number: "02",
-    title: "WE STRESS TEST IT",
-    copy: "Run the same strategy through real historical windows with the same rules and data.",
-  },
-  {
-    number: "03",
-    title: "GET YOUR VERDICT",
-    copy: "See returns, drawdown, hit rate, event-level behavior, and summary analysis.",
-  },
-  {
-    number: "04",
-    title: "OPTIMIZE AND COMPETE",
-    copy: "Tune the prompt, rerun the trial, and compare yourself on the leaderboard.",
-  },
-];
-
-const archetypes = [
-  {
-    title: "MEME HUNTER",
-    name: "Ansem",
-    copy: '"High-frequency short-term narrative chaser. Aggressive position sizing."',
-  },
-  {
-    title: "DIAMOND HANDS",
-    name: "Michael Saylor",
-    copy: '"Low-frequency long holder. Disciplined and steady."',
-  },
-  {
-    title: "MACRO SPECULATOR",
-    name: "Arthur Hayes",
-    copy: '"Bidirectional swing trader driven by macro rhythms."',
-  },
-  {
-    title: "THE CONTRARIAN",
-    name: "DonAlt",
-    copy: '"Counter-consensus bottom fisher. Swing-oriented and patient."',
-  },
-  {
-    title: "CONTRACT KING",
-    name: "PickleCat (0xPickleCat)",
-    copy: '"Futures-dominant medium-frequency trader. High leverage, high conviction."',
-  },
-  {
-    title: "ON-CHAIN DETECTIVE",
-    name: "ZachXBT",
-    copy: '"Low leverage, risk-first approach. Defense over offense."',
-  },
-  {
-    title: "FOMO WARRIOR",
-    name: "Typical Retail",
-    copy: '"Emotional buy-high sell-low pattern. Overtrades consistently."',
-    dashed: true,
-  },
-  {
-    title: "SUPERCYCLE BELIEVER",
-    name: "Su Zhu (3AC)",
-    copy: '"Perma-long with high leverage. Weak downside protection."',
-    dashed: true,
-  },
-  {
-    title: "DEGEN WHALE",
-    name: "James Wynn",
-    copy: '"Extreme leverage, concentrated bets. Massive volatility."',
-    dashed: true,
-  },
-];
-
-const team = [
-  { name: "Jiarui Zhang", role: "AI Product Lead" },
-  { name: "Grider Li", role: "Tech Lead" },
-  { name: "Tiannan Zhao", role: "AI Product Strategy & Design" },
-  { name: "Ruojia Ma", role: "Research Lead & Design" },
-  { name: "Lyuyan Chen", role: "Engineer & Product Manager" },
-  { name: "Jacky Yang", role: "Agentic Engineer" },
-];
-
 function fadeInClasses(visible: boolean) {
   return visible ? "animate-landing-fade-in-up opacity-100" : "opacity-0";
 }
 
 function HeroSection() {
+  const { t } = useTranslation("landing");
+  
+  const heroLabels = [
+    {
+      text: t("hero.title"),
+      className:
+        "left-[4%] top-[9%] text-lg font-bold text-white drop-shadow-[0_0_18px_rgba(255,255,255,0.14)] md:text-3xl",
+    },
+    { text: t("hero.label1"), className: "right-[5%] top-[18%] text-xs text-zinc-300 md:text-base" },
+    { text: t("hero.label2"), className: "left-[7%] top-[58%] text-xs text-zinc-300 md:text-sm" },
+    { text: t("hero.label3"), className: "right-[6%] top-[50%] text-xs text-zinc-300 md:text-sm" },
+    { text: t("hero.label4"), className: "right-[10%] bottom-[18%] text-xs text-zinc-300 md:text-base" },
+  ];
+
   return (
     <section className="snap-start relative flex min-h-[calc(100vh-76px)] items-center justify-center overflow-hidden px-6 py-10">
       <div className="pointer-events-none absolute inset-0">
@@ -143,20 +50,20 @@ function HeroSection() {
 
         <div className="mx-auto mt-2 max-w-4xl text-center uppercase">
           <div className="text-balance text-2xl font-bold tracking-[0.2em] md:hidden">
-            WEB4 IS HERE. ACTIVATING YOUR VIBE4TRADING.
+            {t("hero.titleMobile")}
           </div>
           <div className="mt-3 text-sm tracking-[0.3em] text-zinc-400 md:hidden">
-            TEST. REFINE. REPEAT.
+            {t("hero.subtitleMobile")}
           </div>
 
           <Link
             to="/arena"
             className="mt-10 inline-flex items-center justify-center border-2 border-white px-6 py-4 text-sm tracking-[0.25em] text-white transition-colors hover:bg-white hover:text-black md:px-12 md:text-lg"
           >
-            START YOUR TRIAL
+            {t("hero.cta")}
           </Link>
           <p className="mt-5 text-xs tracking-[0.32em] text-zinc-400 md:text-sm">
-            10 EVENTS | 10 TOKENS | 1 SCORE | FREE
+            {t("hero.features")}
           </p>
         </div>
       </div>
@@ -166,6 +73,7 @@ function HeroSection() {
 
 function ProblemSection() {
   const { ref, visible } = useScrollReveal(0.2);
+  const { t } = useTranslation("landing");
 
   return (
     <section
@@ -174,13 +82,13 @@ function ProblemSection() {
     >
       <div className="max-w-4xl text-center uppercase">
         {[
-          "IN THE WEB4 ERA,",
-          "HUMANS DO NOT TRADE ANYMORE.",
-          "AI AGENTS DO.",
+          t("problem.line1"),
+          t("problem.line2"),
+          t("problem.line3"),
           "",
-          "BUT WITH DOZENS OF MODELS,",
-          "HUNDREDS OF TOKENS,",
-          "AND INFINITE CONFIGURATIONS,",
+          t("problem.line4"),
+          t("problem.line5"),
+          t("problem.line6"),
         ].map((line, index) =>
           line ? (
             <p
@@ -200,7 +108,7 @@ function ProblemSection() {
         <div className={`mt-10 text-xl tracking-[0.18em] md:text-4xl ${fadeInClasses(visible)}`}>
           {visible ? (
             <Typewriter
-              text="HOW DO YOU KNOW IF YOUR STRATEGY ACTUALLY WORKS?"
+              text={t("problem.question")}
               typingSpeed={45}
               startOnVisible={false}
             />
@@ -213,6 +121,7 @@ function ProblemSection() {
 
 function SolutionSection() {
   const { ref, visible } = useScrollReveal();
+  const { t } = useTranslation("landing");
 
   return (
     <section
@@ -222,15 +131,14 @@ function SolutionSection() {
       <div className={`max-w-3xl ${fadeInClasses(visible)}`}>
         <h2 className="text-3xl uppercase tracking-[0.2em] text-white md:text-5xl">
           {visible ? (
-            <Typewriter text="WE BENCHMARK IT FOR YOU." typingSpeed={55} startOnVisible={false} />
+            <Typewriter text={t("solution.heading")} typingSpeed={55} startOnVisible={false} />
           ) : null}
         </h2>
         <p className="mt-8 text-base leading-8 tracking-[0.08em] text-zinc-300 md:text-lg">
-          We run your agent through 10 real market regimes. Same rules. Same windows. No luck.
-          Just performance.
+          {t("solution.paragraph1")}
         </p>
         <p className="mt-4 text-base leading-8 tracking-[0.08em] text-zinc-400 md:text-lg">
-          See where your strategy survives, where it cracks, and how to improve the next pass.
+          {t("solution.paragraph2")}
         </p>
         <div className="mt-12 border-t border-white/20" />
       </div>
@@ -240,6 +148,30 @@ function SolutionSection() {
 
 function HowItWorksSection() {
   const { ref, visible } = useScrollReveal();
+  const { t } = useTranslation("landing");
+
+  const steps = [
+    {
+      number: t("howItWorks.step1.number"),
+      title: t("howItWorks.step1.title"),
+      copy: t("howItWorks.step1.copy"),
+    },
+    {
+      number: t("howItWorks.step2.number"),
+      title: t("howItWorks.step2.title"),
+      copy: t("howItWorks.step2.copy"),
+    },
+    {
+      number: t("howItWorks.step3.number"),
+      title: t("howItWorks.step3.title"),
+      copy: t("howItWorks.step3.copy"),
+    },
+    {
+      number: t("howItWorks.step4.number"),
+      title: t("howItWorks.step4.title"),
+      copy: t("howItWorks.step4.copy"),
+    },
+  ];
 
   return (
     <section
@@ -248,7 +180,7 @@ function HowItWorksSection() {
     >
       <div className="mx-auto w-full max-w-7xl">
         <h2 className={`text-center text-3xl uppercase tracking-[0.22em] text-white md:text-5xl ${fadeInClasses(visible)}`}>
-          {visible ? <Typewriter text="HOW IT WORKS" typingSpeed={60} startOnVisible={false} /> : null}
+          {visible ? <Typewriter text={t("howItWorks.heading")} typingSpeed={60} startOnVisible={false} /> : null}
         </h2>
 
         <div className="mt-14 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -273,6 +205,20 @@ function HowItWorksSection() {
 
 function TrialsSection() {
   const { ref, visible } = useScrollReveal();
+  const { t } = useTranslation("landing");
+
+  const trials = [
+    { id: t("trials.trial1.id"), name: t("trials.trial1.name"), date: t("trials.trial1.date"), difficulty: t("trials.trial1.difficulty") },
+    { id: t("trials.trial2.id"), name: t("trials.trial2.name"), date: t("trials.trial2.date"), difficulty: t("trials.trial2.difficulty") },
+    { id: t("trials.trial3.id"), name: t("trials.trial3.name"), date: t("trials.trial3.date"), difficulty: t("trials.trial3.difficulty") },
+    { id: t("trials.trial4.id"), name: t("trials.trial4.name"), date: t("trials.trial4.date"), difficulty: t("trials.trial4.difficulty") },
+    { id: t("trials.trial5.id"), name: t("trials.trial5.name"), date: t("trials.trial5.date"), difficulty: t("trials.trial5.difficulty") },
+    { id: t("trials.trial6.id"), name: t("trials.trial6.name"), date: t("trials.trial6.date"), difficulty: t("trials.trial6.difficulty") },
+    { id: t("trials.trial7.id"), name: t("trials.trial7.name"), date: t("trials.trial7.date"), difficulty: t("trials.trial7.difficulty") },
+    { id: t("trials.trial8.id"), name: t("trials.trial8.name"), date: t("trials.trial8.date"), difficulty: t("trials.trial8.difficulty") },
+    { id: t("trials.trial9.id"), name: t("trials.trial9.name"), date: t("trials.trial9.date"), difficulty: t("trials.trial9.difficulty") },
+    { id: t("trials.trial10.id"), name: t("trials.trial10.name"), date: t("trials.trial10.date"), difficulty: t("trials.trial10.difficulty") },
+  ];
 
   return (
     <section
@@ -281,10 +227,10 @@ function TrialsSection() {
     >
       <div className="mx-auto w-full max-w-5xl">
         <h2 className={`text-3xl uppercase tracking-[0.22em] text-white md:text-5xl ${fadeInClasses(visible)}`}>
-          {visible ? <Typewriter text="THE 10 TRIALS" typingSpeed={60} startOnVisible={false} /> : null}
+          {visible ? <Typewriter text={t("trials.heading")} typingSpeed={60} startOnVisible={false} /> : null}
         </h2>
         <p className={`mt-3 text-sm uppercase tracking-[0.28em] text-zinc-400 md:text-base ${fadeInClasses(visible)}`}>
-          YOUR AGENT HAS TO SURVIVE ALL OF THEM.
+          {t("trials.subtitle")}
         </p>
 
         <div className="mt-12 space-y-2">
@@ -305,9 +251,9 @@ function TrialsSection() {
         </div>
 
         <div className={`mt-12 space-y-2 text-sm leading-7 tracking-[0.1em] text-zinc-400 ${fadeInClasses(visible)}`}>
-          <p>From flash crashes to boring chop.</p>
-          <p>From liquidation cascades to slow institutional bleed.</p>
-          <p>No safe windows. No cosmetic scoring.</p>
+          <p>{t("trials.footer1")}</p>
+          <p>{t("trials.footer2")}</p>
+          <p>{t("trials.footer3")}</p>
         </div>
       </div>
     </section>
@@ -316,6 +262,58 @@ function TrialsSection() {
 
 function ArchetypesSection() {
   const { ref, visible } = useScrollReveal();
+  const { t } = useTranslation("landing");
+
+  const archetypes = [
+    {
+      title: t("archetypes.memeHunter.title"),
+      name: t("archetypes.memeHunter.name"),
+      copy: t("archetypes.memeHunter.copy"),
+    },
+    {
+      title: t("archetypes.diamondHands.title"),
+      name: t("archetypes.diamondHands.name"),
+      copy: t("archetypes.diamondHands.copy"),
+    },
+    {
+      title: t("archetypes.macroSpeculator.title"),
+      name: t("archetypes.macroSpeculator.name"),
+      copy: t("archetypes.macroSpeculator.copy"),
+    },
+    {
+      title: t("archetypes.contrarian.title"),
+      name: t("archetypes.contrarian.name"),
+      copy: t("archetypes.contrarian.copy"),
+    },
+    {
+      title: t("archetypes.contractKing.title"),
+      name: t("archetypes.contractKing.name"),
+      copy: t("archetypes.contractKing.copy"),
+    },
+    {
+      title: t("archetypes.onChainDetective.title"),
+      name: t("archetypes.onChainDetective.name"),
+      copy: t("archetypes.onChainDetective.copy"),
+    },
+    {
+      title: t("archetypes.fomoWarrior.title"),
+      name: t("archetypes.fomoWarrior.name"),
+      copy: t("archetypes.fomoWarrior.copy"),
+      dashed: true,
+    },
+    {
+      title: t("archetypes.supercycleBeliever.title"),
+      name: t("archetypes.supercycleBeliever.name"),
+      copy: t("archetypes.supercycleBeliever.copy"),
+      dashed: true,
+    },
+    {
+      title: t("archetypes.degenWhale.title"),
+      name: t("archetypes.degenWhale.name"),
+      copy: t("archetypes.degenWhale.copy"),
+      dashed: true,
+    },
+  ];
 
   return (
     <section
@@ -325,11 +323,11 @@ function ArchetypesSection() {
       <div className="mx-auto w-full max-w-7xl">
         <h2 className={`text-center text-3xl uppercase tracking-[0.22em] text-white md:text-5xl ${fadeInClasses(visible)}`}>
           {visible ? (
-            <Typewriter text="TRADER ARCHETYPES" typingSpeed={60} startOnVisible={false} />
+            <Typewriter text={t("archetypes.heading")} typingSpeed={60} startOnVisible={false} />
           ) : null}
         </h2>
         <p className={`mt-3 text-center text-sm uppercase tracking-[0.28em] text-zinc-400 ${fadeInClasses(visible)}`}>
-          WHICH ONE MATCHES YOUR STRATEGY?
+          {t("archetypes.subtitle")}
         </p>
 
         <div className="mt-14 grid gap-4 lg:grid-cols-4">
@@ -349,8 +347,7 @@ function ArchetypesSection() {
         </div>
 
         <div className={`mx-auto mt-12 max-w-3xl text-center text-sm leading-7 tracking-[0.1em] text-zinc-400 ${fadeInClasses(visible)}`}>
-          Your report maps behavior to recognizable trading archetypes, then points to the exact
-          windows where that pattern helped or hurt.
+          {t("archetypes.footer")}
         </div>
       </div>
     </section>
@@ -359,6 +356,16 @@ function ArchetypesSection() {
 
 function TeamSection() {
   const { ref, visible } = useScrollReveal();
+  const { t } = useTranslation("landing");
+
+  const team = [
+    { name: t("team.member1.name"), role: t("team.member1.role") },
+    { name: t("team.member2.name"), role: t("team.member2.role") },
+    { name: t("team.member3.name"), role: t("team.member3.role") },
+    { name: t("team.member4.name"), role: t("team.member4.role") },
+    { name: t("team.member5.name"), role: t("team.member5.role") },
+    { name: t("team.member6.name"), role: t("team.member6.role") },
+  ];
 
   return (
     <section
@@ -367,10 +374,10 @@ function TeamSection() {
     >
       <div className="mx-auto w-full max-w-5xl">
         <h2 className={`text-center text-3xl uppercase tracking-[0.22em] text-white md:text-5xl ${fadeInClasses(visible)}`}>
-          WHO WE ARE
+          {t("team.heading")}
         </h2>
         <p className={`mt-4 text-center text-sm tracking-[0.1em] text-zinc-400 ${fadeInClasses(visible)}`}>
-          We build benchmark tooling for AI-native trading workflows.
+          {t("team.subtitle")}
         </p>
 
         <div className="mt-14 flex flex-wrap justify-center gap-x-16 gap-y-14">
@@ -392,7 +399,7 @@ function TeamSection() {
         </div>
 
         <p className={`mt-14 text-center text-xs uppercase tracking-[0.3em] text-zinc-500 ${fadeInClasses(visible)}`}>
-          Built for the Web4 trading era.
+          {t("team.footer")}
         </p>
       </div>
     </section>
@@ -401,6 +408,7 @@ function TeamSection() {
 
 function FinalCtaSection() {
   const { ref, visible } = useScrollReveal();
+  const { t } = useTranslation("landing");
 
   return (
     <section
@@ -410,7 +418,7 @@ function FinalCtaSection() {
       <div className={`mx-auto max-w-3xl text-center ${fadeInClasses(visible)}`}>
         <h2 className="text-3xl uppercase tracking-[0.22em] text-white md:text-6xl">
           {visible ? (
-            <Typewriter text="READY TO FIND OUT?" typingSpeed={60} startOnVisible={false} />
+            <Typewriter text={t("finalCta.heading")} typingSpeed={60} startOnVisible={false} />
           ) : null}
         </h2>
         <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
@@ -418,17 +426,17 @@ function FinalCtaSection() {
             to="/arena"
             className="inline-flex min-w-[220px] items-center justify-center border-2 border-white px-8 py-4 text-sm uppercase tracking-[0.24em] text-white transition-colors hover:bg-white hover:text-black"
           >
-            START YOUR TRIAL
+            {t("finalCta.startTrial")}
           </Link>
           <Link
             to="/leaderboard"
             className="inline-flex min-w-[220px] items-center justify-center border border-white/30 bg-white/5 px-8 py-4 text-sm uppercase tracking-[0.24em] text-zinc-100 transition-colors hover:bg-white/10"
           >
-            VIEW LEADERBOARD
+            {t("finalCta.viewLeaderboard")}
           </Link>
         </div>
         <p className="mt-6 text-sm leading-7 tracking-[0.1em] text-zinc-400">
-          Configure in minutes. Benchmark on real market windows. Iterate with evidence.
+          {t("finalCta.description")}
         </p>
       </div>
     </section>
@@ -436,14 +444,16 @@ function FinalCtaSection() {
 }
 
 function FooterSection() {
+  const { t } = useTranslation("landing");
+
   return (
     <footer className="border-t border-white/10 px-6 py-8 text-center">
       <p className="text-xs uppercase tracking-[0.32em] text-zinc-500">
-        VIBE4TRADING | OPEN BENCHMARKS | 2026
+        {t("footer.copyright")}
       </p>
       <p className="mt-3 text-xs tracking-[0.2em] text-zinc-600">
         <Link to="/privacy" className="text-zinc-500 underline transition-colors hover:text-zinc-300">
-          PRIVACY POLICY
+          {t("footer.privacyPolicy")}
         </Link>
       </p>
     </footer>

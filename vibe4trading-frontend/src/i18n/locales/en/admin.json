@@ -1,0 +1,64 @@
+{
+  "page": {
+    "title": "Admin: Models",
+    "description": "Model registry management.",
+    "header": "ADMIN • MODEL REGISTRY",
+    "heading": "Models",
+    "intro": "Define the predefined models list plus any per-model API base URL and API key overrides.",
+    "accessDenied": "Admin access required."
+  },
+  "actions": {
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "add": "Add",
+    "save": "Save",
+    "saving": "Saving…",
+    "delete": "Delete",
+    "deleting": "Deleting…",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "form": {
+    "addModel": "Add Model",
+    "modelKey": "model_key",
+    "label": "label",
+    "apiBaseUrl": "api_base_url",
+    "apiKey": "api_key",
+    "enabled": "enabled",
+    "clearStoredKey": "clear stored key",
+    "modelKeyPlaceholder": "gpt-4o-mini",
+    "labelPlaceholder": "GPT-4o mini",
+    "apiBaseUrlPlaceholder": "https://openrouter.ai/api/v1",
+    "apiKeyPlaceholder": "sk-...",
+    "apiKeyReplacePrompt": "Enter new key to replace",
+    "apiKeyStorePrompt": "Enter key to store",
+    "modelAllowlistOverride": "model_allowlist_override",
+    "overridePlaceholder": "+deepseekv3,-gemini-3-pro"
+  },
+  "status": {
+    "stored": "STORED",
+    "notStored": "NOT STORED",
+    "modelKey": "MODEL_KEY",
+    "selectableNow": "Selectable now",
+    "stubOnly": "stub only"
+  },
+  "models": {
+    "heading": "Models",
+    "empty": "No models defined yet."
+  },
+  "users": {
+    "heading": "Per-User Allowlist Overrides",
+    "intro": "Base access comes from the env default allowlist. Store overrides like",
+    "introSuffix": "to add or remove access on top.",
+    "defaultAllowsAll": "Default env allowlist: all registered models",
+    "defaultAllowlist": "Default env allowlist: {{models}}",
+    "defaultAllowlistNone": "Default env allowlist: none",
+    "showing": "Showing {{count}} users starting at {{offset}}",
+    "showingTotal": "Showing {{count}} users starting at {{offset}} of {{total}}",
+    "empty": "No users have signed in yet."
+  },
+  "errors": {
+    "modelKeyRequired": "model_key is required",
+    "apiKeyConflict": "Enter a new API key or clear the stored one, not both"
+  }
+}

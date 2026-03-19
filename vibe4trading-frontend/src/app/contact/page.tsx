@@ -1,15 +1,17 @@
 import { SEO } from "@/app/components/SEO";
 import { usePrerenderReady } from "@/app/hooks/usePrerenderReady";
 import { Helmet } from "react-helmet-async";
+import { useTranslation } from "react-i18next";
 
 export default function ContactPage() {
+  const { t } = useTranslation();
   usePrerenderReady(true);
 
   return (
     <main className="contact-page-main">
       <SEO
-        title="Contact"
-        description="Get in touch with the Vibe4Trading team. Building the Web4 future where Web3 meets AI."
+        title={t("meta.contact.title")}
+        description={t("meta.contact.description")}
         canonicalPath="/contact"
       />
       <Helmet>

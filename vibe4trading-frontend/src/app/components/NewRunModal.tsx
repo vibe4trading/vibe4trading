@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 
 import { PromptInput } from "@/app/components/PromptInput";
 import { useModalA11y } from "@/app/hooks/useModalA11y";
@@ -50,6 +51,7 @@ export function NewRunModal({
   submitError,
   loadError,
 }: NewRunModalProps) {
+  const { t } = useTranslation('errors');
   const [error, setError] = React.useState<string | null>(null);
   const firstFieldRef = React.useRef<HTMLSelectElement | null>(null);
   const { panelRef } = useModalA11y(open, submitting ? () => {} : onClose);
@@ -101,15 +103,15 @@ export function NewRunModal({
   const selectedModel = models.find((model) => model.model_key === modelKey) ?? null;
 
   function validate() {
-    if (!marketsReady) return "Loading coins...";
-    if (!arenaConfigured) return "Tournament markets are not configured.";
-    if (!marketId) return "Select a coin.";
-    if (!modelsReady) return "Loading models...";
-    if (!modelsConfigured) return "No models are configured.";
-    if (!selectableModelsConfigured) return "No models are enabled for your account.";
-    if (!modelKey.trim()) return "Model is required.";
-    if (!selectedModel?.selectable) return selectedModel?.disabled_reason ?? "Model is not available.";
-    if (!promptText.trim()) return "Prompt is required.";
+    if (!marketsReady) return t('validation.loadingCoins');
+    if (!arenaConfigured) return t('validation.marketsNotConfigured');
+    if (!marketId) return t('validation.selectCoin');
+    if (!modelsReady) return t('validation.loadingModels');
+    if (!modelsConfigured) return t('validation.noModelsConfigured');
+    if (!selectableModelsConfigured) return t('validation.noModelsEnabled');
+    if (!modelKey.trim()) return t('validation.modelRequired');
+    if (!selectedModel?.selectable) return selectedModel?.disabled_reason ?? t('validation.modelNotAvailable');
+    if (!promptText.trim()) return t('validation.promptRequired');
     return null;
   }
 
@@ -173,7 +175,7 @@ export function NewRunModal({
           <div className="flex-1 overflow-y-auto px-6 py-6 md:px-8 md:py-7">
             {loadError ? (
               <div className="mb-5 border border-[#b58a3e] bg-[#f5efd7] px-4 py-3 text-[12px] uppercase tracking-[0.14em] text-[#7a5f1e]">
-                Failed to load configuration: {loadError}
+                {t('validation.loadConfigFailed')}: {loadError}
               </div>
             ) : null}
             {error || submitError ? (
@@ -185,7 +187,7 @@ export function NewRunModal({
             <div className="grid gap-5">
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="grid gap-2" data-tour="arena-pair-selector">
-                  <span className="text-[11px] uppercase tracking-[0.22em] text-[#585858]">Pair</span>
+                  <span className="text-[11px] uppercase tracking-[0.22em] text-[#585858]">{t('form.pair')}</span>
                   <div className="relative">
                     <select
                       ref={firstFieldRef}
@@ -216,7 +218,7 @@ export function NewRunModal({
                 </label>
 
                 <label className="grid gap-2" data-tour="arena-model-selector">
-                  <span className="text-[11px] uppercase tracking-[0.22em] text-[#585858]">AI Model</span>
+                  <span className="text-[11px] uppercase tracking-[0.22em] text-[#585858]">{t('form.aiModel')}</span>
                   <div className="relative">
                     <select
                       value={modelKey}

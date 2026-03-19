@@ -13,6 +13,7 @@ import { useProductTour } from "@/app/hooks/useProductTour";
 import { useTourPersistence } from "@/app/hooks/useTourPersistence";
 import { useTourContext } from "@/app/components/TourProvider";
 import { trialsSteps } from "@/app/tours/trials-tour";
+import { useTranslation } from "react-i18next";
 
 function mergeSubmissions(current: ArenaSubmissionOut[], fresh: ArenaSubmissionOut[]) {
   const freshIds = new Set(fresh.map((submission) => submission.submission_id));
@@ -33,6 +34,7 @@ function pairName(marketId: string) {
 }
 
 export default function ArenaPage() {
+  const { t } = useTranslation("arena");
   const { openNewRun } = useNewRunModal();
   const { user } = useAuth();
   const isAdmin = Boolean(user?.is_admin);
@@ -137,8 +139,8 @@ export default function ArenaPage() {
   return (
     <main className="trials-page-main animate-rise">
       <SEO
-        title="Strategy Arena — Web4 AI Trading Agent Benchmarks"
-        description="Submit your AI trading agent to the Web4 arena. Benchmark across 10 real crypto market scenarios. Scored on returns, Sharpe ratio, drawdown, and more. Web3 + AI."
+        title={t("meta.arena.title")}
+        description={t("meta.arena.description")}
         canonicalPath="/arena"
       />
       <Helmet>
@@ -160,11 +162,11 @@ export default function ArenaPage() {
       <section className="trials-head block">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
-            <h1>TRIALS / Historical Prompt Records</h1>
-            <p>Open any submission to inspect the full report across the scenario set.</p>
+            <h1>{t("page.title")}</h1>
+            <p>{t("page.subtitle")}</p>
           </div>
           <button type="button" className="newrun-action-btn" data-tour="trials-new-run-button" onClick={openNewRun}>
-            Start a new run
+            {t("page.newRunButton")}
           </button>
         </div>
         {refreshError && <p className="text-red-600 mt-2">{refreshError}</p>}
@@ -172,7 +174,7 @@ export default function ArenaPage() {
 
       <section className="trials-list block" data-tour="trials-submissions-list">
         {subs.length === 0 && !refreshError && (
-          <div className="p-4 text-center text-[#555]">No recent runs found.</div>
+          <div className="p-4 text-center text-[#555]">{t("page.noRuns")}</div>
         )}
         {subs.map((row) =>
           (() => {
@@ -192,15 +194,15 @@ export default function ArenaPage() {
                     <span>{fmt(row.created_at)}</span>
                   </div>
                   <div className="trial-main">
-                    <p className="trial-prompt">Scenario: {row.scenario_set_key}</p>
+                    <p className="trial-prompt">{t("submission.scenario")}: {row.scenario_set_key}</p>
                     <div className="trial-tags">
-                      <span>Model: {row.model_key}</span>
-                      <span>Pair: {pairName(row.market_id)}</span>
-                      {row.status && <span>Status: {statusDisplay.label}</span>}
-                      {statusDisplay.isQueued ? <span>Waiting for worker</span> : null}
+                      <span>{t("submission.model")}: {row.model_key}</span>
+                      <span>{t("submission.pair")}: {pairName(row.market_id)}</span>
+                      {row.status && <span>{t("submission.status")}: {statusDisplay.label}</span>}
+                      {statusDisplay.isQueued ? <span>{t("submission.waitingForWorker")}</span> : null}
                       {row.windows_total > 0 && (
                         <span>
-                          Progress: {row.windows_completed}/{row.windows_total}
+                          {t("submission.progress")}: {row.windows_completed}/{row.windows_total}
                         </span>
                       )}
                     </div>
@@ -219,7 +221,7 @@ export default function ArenaPage() {
                     disabled={deletingId === row.submission_id}
                     onClick={() => handleDeleteSubmission(row.submission_id)}
                   >
-                    {deletingId === row.submission_id ? "Deleting\u2026" : "Delete"}
+                    {deletingId === row.submission_id ? t("submission.deleting") : t("submission.delete")}
                   </button>
                 )}
               </div>
@@ -234,7 +236,7 @@ export default function ArenaPage() {
               onClick={loadMoreSubmissions}
               disabled={loadingMore}
             >
-              {loadingMore ? "Loading..." : "Load more"}
+              {loadingMore ? t("leaderboard.loading") : "Load more"}
             </button>
           </div>
         ) : null}
