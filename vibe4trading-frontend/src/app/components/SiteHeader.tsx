@@ -7,6 +7,7 @@ import { useAuth } from "@/auth";
 import { useNewRunModal } from "@/app/components/NewRunProvider";
 import TourButton from "@/app/components/TourButton";
 import { LanguageSwitcher } from "@/app/components/LanguageSwitcher";
+import { WalletAuthButton } from "@/app/components/WalletAuthButton";
 import { apiJson, type MeApiTokenOut } from "@/app/lib/v4t";
 
 type TokenStatus =
@@ -259,15 +260,18 @@ export function SiteHeader({ isHome }: { isHome?: boolean }) {
             </div>
           </>
         ) : status === "unauthenticated" ? (
-          <button
-            type="button"
-            className={`waitlist${loginPending ? " waitlist-pending" : ""}`}
-            disabled={loginPending}
-            onClick={() => { setLoginPending(true); signIn(pathname); }}
-          >
-            {loginPending && <span className="waitlist-spinner" aria-hidden="true" />}
-            {loginPending ? t("nav.signingIn") : t("nav.login")}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={`waitlist${loginPending ? " waitlist-pending" : ""}`}
+              disabled={loginPending}
+              onClick={() => { setLoginPending(true); signIn(pathname); }}
+            >
+              {loginPending && <span className="waitlist-spinner" aria-hidden="true" />}
+              {loginPending ? t("nav.signingIn") : t("nav.login")}
+            </button>
+            <WalletAuthButton />
+          </div>
         ) : null}
       </div>
     </header>

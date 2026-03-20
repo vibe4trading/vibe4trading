@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -7,8 +8,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pandas as pd
-
-import re
 
 from v4t.contracts.events import EventEnvelope, make_event
 from v4t.contracts.numbers import decimal_to_str

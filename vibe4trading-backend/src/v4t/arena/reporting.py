@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import math
 import statistics
-import structlog
 
 # pyright: reportUnusedFunction=false
 from collections import defaultdict
@@ -12,10 +11,9 @@ from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
-log = structlog.get_logger("arena.reporting")
 
 from v4t.arena.metrics import compute_run_metrics
 from v4t.contracts.arena_report import (
@@ -37,6 +35,8 @@ from v4t.llm.gateway import LlmGateway
 from v4t.settings import get_settings
 from v4t.utils.datetime import now
 from v4t.utils.tracing import capture_context, create_span
+
+log = structlog.get_logger("arena.reporting")
 
 
 def compute_sharpe_from_returns(returns_pct: list[float]) -> float | None:

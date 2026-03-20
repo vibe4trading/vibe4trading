@@ -7,10 +7,14 @@ import App from "@/App";
 import "@/app/globals.css";
 import "@/styles/fonts.css";
 import "@/i18n/config";
+import { initJoyID } from "@/lib/joyid";
 
 // Initialize prerender readiness flag before React mounts.
 // Prerender service will wait for this to become `true` before capturing.
 window.prerenderReady = false;
+
+// Initialize JoyID SDK
+initJoyID();
 
 createRoot(document.getElementById("root")!).render(
   <HelmetProvider>

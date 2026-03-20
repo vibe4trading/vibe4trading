@@ -10,7 +10,9 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from v4t.arena.reporting import _build_fallback_window_breakdown  # pyright: ignore[reportPrivateUsage]
+from v4t.arena.reporting import (
+    _build_fallback_window_breakdown,  # pyright: ignore[reportPrivateUsage]
+)
 from v4t.contracts.arena_report import WindowBreakdown
 from v4t.llm.gateway import LlmGateway
 

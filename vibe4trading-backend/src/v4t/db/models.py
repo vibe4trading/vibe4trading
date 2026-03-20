@@ -64,6 +64,9 @@ class UserRow(Base):
     user_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     oidc_issuer: Mapped[str | None] = mapped_column(String(256), nullable=True)
     oidc_sub: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    wallet_address: Mapped[str | None] = mapped_column(
+        String(42), nullable=True, unique=True, index=True
+    )
     api_token: Mapped[str | None] = mapped_column(
         String(64), nullable=True, unique=True, index=True
     )

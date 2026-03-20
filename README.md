@@ -10,6 +10,40 @@ Test AI trading strategies across repeatable historical market regimes before tr
 
 ---
 
+## CKB AI Agent Hackathon
+
+Vibe4Trading is participating in **Claw & Order: CKB AI Agent Hackathon** — building agent-driven trading strategy evaluation on the CKB blockchain.
+
+### Why CKB?
+
+CKB's architecture is a natural fit for autonomous AI trading agents:
+
+- **Lock script security** — Every asset is protected by a lock script enforcing strict spending conditions, preventing agents from exceeding their remit. Unlike most blockchains, a contract cannot unilaterally access user assets.
+- **RISC-V flexibility** — CKB-VM is based on RISC-V with no cryptographic precompiles, making it a universal platform where agents can choose (or create) their own standards instead of being boxed in by predetermined constraints.
+- **Micropayment infrastructure** — Payment channels like Fiber Network and Perun Network support the high-frequency, low-cost micropayments that form the basis of the agent economy.
+
+### JoyID Integration
+
+[JoyID](https://joy.id) is a universal, cross-platform, passwordless wallet on CKB that uses biometric authentication (passkeys / WebAuthn). Vibe4Trading leverages JoyID for:
+
+- **Passwordless wallet onboarding** — Users authenticate via biometrics (Face ID, fingerprint, device PIN) with no seed phrases or browser extensions required.
+- **Agent wallet authorization** — AI agents can be granted scoped spending permissions through CKB lock scripts, with JoyID providing the human-in-the-loop approval layer.
+- **Cross-platform access** — JoyID works across all modern browsers and devices, lowering the barrier for users to interact with on-chain agent strategies.
+
+**Useful CKB Resources:**
+
+- [CKB MCP](https://github.com/sonami-tech/ckb-mcp) — MCP servers for AI-assisted CKB smart contract and dApp development
+- [Nervos CKB Docs](https://docs.nervos.org/) — Developer documentation
+- [Fiber Network](https://github.com/nervosnetwork/fiber) — Payment channel network (Lightning-style, multi-asset)
+- [Perun CKB](https://github.com/perun-network/perun-ckb-backend) — Perun payment channel backend for CKB
+- [CCC](https://github.com/ckb-devrel/ccc) — CKBers' Codebase — one-stop JS/TS development toolkit
+- [CKB Rust SDK](https://github.com/nervosnetwork/ckb-sdk-rust) — Rust SDK for CKB
+- [ckb-js-vm](https://github.com/nervosnetwork/ckb-js-vm) — Write on-chain scripts in TypeScript on CKB-VM
+- [SupeRISE Agent Wallet](https://github.com/appfi5/SupeRISE-for-agent) — Crypto wallet for AI agents on CKB
+- [Awesome Nervos CKB](https://github.com/alejandroRbit/awesome-nervos-ckb) — Directory of CKB tooling and resources
+
+---
+
 ## Architecture
 
 Modular monolith — one Python codebase deployed as multiple cooperating processes. Celery + Redis handles job dispatch; PostgreSQL is the system of record for everything. The LLM gateway routes decision calls to the user's chosen model, while arena report generation and run summaries are handled by **GLM-5** — selected for its strong creative writing and evaluative judging capabilities.
@@ -518,4 +552,4 @@ This starts all services: `db` (Postgres), `redis`, `api` (FastAPI), `worker` (d
 
 ## License
 
-Private repository. All rights reserved.
+MIT License. See [LICENSE](LICENSE) for details.

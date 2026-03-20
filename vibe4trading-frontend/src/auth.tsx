@@ -13,6 +13,7 @@ export type SessionUser = {
   user_id: string;
   email: string | null;
   display_name: string | null;
+  wallet_address?: string;
   has_api_token: boolean;
   is_admin: boolean;
   quota: {
@@ -32,6 +33,7 @@ type AuthContextType = {
   status: AuthStatus;
   user: SessionUser | null;
   signIn: (redirectTo?: string) => void;
+  signInWithWallet: (challenge: string, signature: string, address: string, pubkey: string) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -95,6 +97,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = `${base}/auth/login${params}`;
   }, []);
 
+  const signInWithWallet = useCallback(async (challenge: string, signature: string, address: string, pubkey: string) => {
+    const base = getApiBaseUrl();
+    const res = await fetch(`${base}/auth/wallet/verify`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ challenge, signature, address, pubkey }),
+    });
+    if (!res.ok) throw new Error("Wallet auth failed");
+    await fetchSession();
+  }, [fetchSession]);
+
   const signOut = useCallback(async () => {
     try {
       const base = getApiBaseUrl();
@@ -110,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ status, user, signIn, signOut, refresh: fetchSession }}
+      value={{ status, user, signIn, signInWithWallet, signOut, refresh: fetchSession }}
     >
       {children}
     </AuthContext.Provider>

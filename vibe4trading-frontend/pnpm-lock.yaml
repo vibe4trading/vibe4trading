@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@joyid/evm':
+        specifier: ^0.4.5
+        version: 0.4.5(typescript@5.9.3)
       driver.js:
         specifier: ^1.4.0
         version: 1.4.0
@@ -551,6 +554,12 @@ packages:
     resolution: {integrity: sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ==}
     engines: {node: '>=18.18'}
 
+  '@joyid/common@0.2.2':
+    resolution: {integrity: sha512-Sh9cBlbL+WgcKJ7jngELg5oY0qAO1trHm4iq1Ao0drWwi4biF8p3cb5mAEoO36UxXOy3CYSDbECWLGIP9lWNgg==}
+
+  '@joyid/evm@0.4.5':
+    resolution: {integrity: sha512-xlRsHv8TNZxfcaDNd14C7/NRFpE6vhQ2tmytO0tNPfjM0gpCDmqcmYIwbkEXNeQ0wymSETXYXaj7np6q8Z4pdw==}
+
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
 
@@ -894,6 +903,15 @@ packages:
 
   '@vitest/utils@2.1.9':
     resolution: {integrity: sha512-v0psaMSkNJ3A2NMrUEHFRzJtDPFn+/VWZ5WxImB21T9fjucJRmS7xCS3ppEnARb9y11OAzaD+P2Ps+b+BGX5iQ==}
+
+  abitype@0.8.7:
+    resolution: {integrity: sha512-wQ7hV8Yg/yKmGyFpqrNZufCxbszDe5es4AZGYPBitocfSqXtjrTG9JMWFcc4N30ukl2ve48aBTwt7NJxVQdU3w==}
+    peerDependencies:
+      typescript: '>=5.0.4'
+      zod: ^3 >=3.19.1
+    peerDependenciesMeta:
+      zod:
+        optional: true
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -1750,6 +1768,10 @@ packages:
     resolution: {integrity: sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==}
     engines: {node: '>= 0.8.0'}
 
+  type-fest@4.6.0:
+    resolution: {integrity: sha512-rLjWJzQFOq4xw7MgJrCZ6T1jIOvvYElXT12r+y0CC6u67hegDHaxcPqb2fZHOGlqxugGQPNB1EnTezjBetkwkw==}
+    engines: {node: '>=16'}
+
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
@@ -2290,6 +2312,21 @@ snapshots:
 
   '@humanwhocodes/retry@0.4.3': {}
 
+  '@joyid/common@0.2.2(typescript@5.9.3)':
+    dependencies:
+      abitype: 0.8.7(typescript@5.9.3)
+      type-fest: 4.6.0
+    transitivePeerDependencies:
+      - typescript
+      - zod
+
+  '@joyid/evm@0.4.5(typescript@5.9.3)':
+    dependencies:
+      '@joyid/common': 0.2.2(typescript@5.9.3)
+    transitivePeerDependencies:
+      - typescript
+      - zod
+
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
@@ -2579,6 +2616,10 @@ snapshots:
       '@vitest/pretty-format': 2.1.9
       loupe: 3.2.1
       tinyrainbow: 1.2.0
+
+  abitype@0.8.7(typescript@5.9.3):
+    dependencies:
+      typescript: 5.9.3
 
   acorn-jsx@5.3.2(acorn@8.16.0):
     dependencies:
@@ -3402,6 +3443,8 @@ snapshots:
   type-check@0.4.0:
     dependencies:
       prelude-ls: 1.2.1
+
+  type-fest@4.6.0: {}
 
   typescript@5.9.3: {}
 

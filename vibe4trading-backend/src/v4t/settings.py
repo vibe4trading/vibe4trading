@@ -236,7 +236,7 @@ class Settings(BaseSettings):
     )
 
     @model_validator(mode="after")
-    def validate_secrets(self) -> "Settings":
+    def validate_secrets(self) -> Settings:
         if self.llm_model != "stub" and not self.llm_api_key:
             raise ValueError("llm_api_key required when llm_model is not stub")
         if not self.database_url:

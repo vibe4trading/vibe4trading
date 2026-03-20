@@ -8,15 +8,19 @@ from urllib.parse import urlencode
 
 import httpx
 import structlog
+from eth_utils.address import to_checksum_address
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from v4t.api.deps import get_db
 from v4t.auth.deps import is_admin_user, provision_user_from_jwt
+from v4t.auth.nonce import generate_nonce, store_nonce, verify_and_consume_nonce
 from v4t.auth.oidc import validate_jwt
 from v4t.auth.quota import check_quota
 from v4t.auth.tokens import create_token_for_user, validate_token
+from v4t.auth.wallet import verify_wallet_signature
 from v4t.settings import get_settings
 
 logger = structlog.get_logger()
@@ -25,6 +29,26 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 _oidc_config_cache: dict[str, Any] | None = None
 _oidc_config_lock = asyncio.Lock()
+
+
+class WalletChallengeRequest(BaseModel):
+    wallet_address: str
+
+
+class WalletChallengeResponse(BaseModel):
+    nonce: str
+    message: str
+
+
+class WalletVerifyRequest(BaseModel):
+    wallet_address: str
+    signature: str
+    nonce: str
+
+
+class WalletVerifyResponse(BaseModel):
+    user_id: str
+    wallet_address: str
 
 
 async def _get_oidc_config() -> dict[str, Any]:
@@ -262,3 +286,63 @@ def logout() -> RedirectResponse:
 def logout_json(response: Response) -> dict[str, bool]:
     response.delete_cookie(**_cookie_params())
     return {"ok": True}
+
+
+@router.post("/wallet/challenge")
+def wallet_challenge(req: WalletChallengeRequest) -> WalletChallengeResponse:
+    try:
+        checksummed = to_checksum_address(req.wallet_address)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid wallet address"
+        ) from err
+
+    nonce = generate_nonce()
+    store_nonce(checksummed, nonce)
+    message = f"Sign in to Vibe4Trading\n\nNonce: {nonce}\nChain ID: 1"
+    return WalletChallengeResponse(nonce=nonce, message=message)
+
+
+@router.post("/wallet/verify")
+def wallet_verify(
+    req: WalletVerifyRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> WalletVerifyResponse:
+    checksummed = to_checksum_address(req.wallet_address)
+
+    if not verify_and_consume_nonce(checksummed, req.nonce):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired nonce"
+        )
+
+    message = f"Sign in to Vibe4Trading\n\nNonce: {req.nonce}\nChain ID: 1"
+    if not verify_wallet_signature(checksummed, message, req.signature):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
+
+    from sqlalchemy import select
+
+    from v4t.db.models import UserRow
+
+    stmt = select(UserRow).where(UserRow.wallet_address == checksummed)
+    user = db.execute(stmt).scalar_one_or_none()
+
+    if not user:
+        user = UserRow(wallet_address=checksummed)
+        db.add(user)
+        db.flush()
+
+    if not user.api_token:
+        create_token_for_user(db, user.user_id)
+        db.refresh(user)
+
+    db.commit()
+
+    if user.api_token:
+        response.set_cookie(
+            **_cookie_params(),
+            value=user.api_token,
+            max_age=60 * 60 * 24 * 30,
+        )
+
+    return WalletVerifyResponse(user_id=str(user.user_id), wallet_address=checksummed)

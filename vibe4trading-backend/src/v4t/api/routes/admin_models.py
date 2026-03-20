@@ -14,7 +14,6 @@ from v4t.api.schemas import ModelAdminCreateRequest, ModelAdminOut, ModelAdminUp
 from v4t.api.utils import now
 from v4t.auth.deps import get_admin_user
 from v4t.db.models import LlmModelRow, UserRow
-from v4t.settings import get_settings
 
 router = APIRouter(prefix="/admin/models", tags=["admin-models"])
 
